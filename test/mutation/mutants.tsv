@@ -56,6 +56,9 @@ src/Cribrum/AA/Typed.idr	hasAltAttr (MkHAttr "alt" _ :: _)   = True	hasAltAttr (
 src/Cribrum/AA/Typed.idr	hasAltAttr []                       = False	hasAltAttr []                       = True	Typed: empty attrs default flipped
 src/Cribrum/AA/Typed.idr	  h :: assert_total (concatMap walkNodes cs)	  assert_total (concatMap walkNodes cs)	Typed: walk drops root
 src/Cribrum/AA/Typed.idr	h :: assert_total (concatMap walkNodes cs)	[h]	Typed: walk drops descendants
+src/Cribrum/AA/Typed.idr	anchorOkBool (Element "a" attrs _) = hasHrefAttr attrs	anchorOkBool (Element "a" attrs _) = True	Typed: anchor-href always passes
+src/Cribrum/AA/Typed.idr	hasHrefAttr (MkHAttr "href" _ :: _)  = True	hasHrefAttr (MkHAttr "href" _ :: _)  = False	Typed: href detection inverted
+src/Cribrum/AA/Typed.idr	hasHrefAttr []                       = False	hasHrefAttr []                       = True	Typed: empty attrs href default flipped
 
 
 src/Cribrum/Html/Valid.idr	decideHtml (Text _)            = Yes ValidText	decideHtml (Text _)            = decideHtml (Element "bogus" [] [])	Text classification routed to known-unknown

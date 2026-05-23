@@ -187,6 +187,50 @@ pbt_bool_agrees_with_dec = property $ do
     Yes _ => imgsAllOk h === True
     No  _ => imgsAllOk h === False
 
+--------------------------------------------------------------------------------
+-- anchor-href tests (mirrors img-alt; second rule demonstrates generalisation).
+--------------------------------------------------------------------------------
+
+export
+ext_anchor_with_href_ok : Property
+ext_anchor_with_href_ok = oneShot $
+  anchorsAllOk (Element "a" [MkHAttr "href" (Str "/x")] [Text "go"]) === True
+
+export
+ext_anchor_without_href_fails : Property
+ext_anchor_without_href_fails = oneShot $
+  anchorsAllOk (Element "a" [] [Text "go"]) === False
+
+export
+ext_nested_anchor_without_href_fails : Property
+ext_nested_anchor_without_href_fails = oneShot $
+  anchorsAllOk
+    (Element "section" []
+       [ Element "p" [] [Element "a" [] [Text "x"]] ]) === False
+
+anchorCases : List (Bool, HExpr)
+anchorCases =
+  [ (True,  Text "x")
+  , (True,  Element "p" [] [])
+  , (True,  Element "a" [MkHAttr "href" (Str "/x")] [Text "go"])
+  , (False, Element "a" [] [Text "go"])
+  , (False, Element "a" [MkHAttr "title" (Str "x")] [Text "go"])
+  ]
+
+export
+pddt_anchorsAllOk_table : Property
+pddt_anchorsAllOk_table = withTests 1 . property $ do
+  for_ anchorCases $ \(expected, tree) =>
+    anchorsAllOk tree === expected
+
+export
+pbt_anchor_with_href_always_ok : Property
+pbt_anchor_with_href_always_ok = property $ do
+  href <- forAll (string (linear 1 16) ascii)
+  body <- forAll (string (linear 0 8) ascii)
+  anchorsAllOk
+    (Element "a" [MkHAttr "href" (Str href)] [Text body]) === True
+
 export
 group : Group
 group = MkGroup "Cribrum.AA.Typed"
@@ -205,4 +249,9 @@ group = MkGroup "Cribrum.AA.Typed"
   , ("pbt_tree_with_bare_img_always_fails",    pbt_tree_with_bare_img_always_fails)
   , ("pbt_decision_total",                     pbt_decision_total)
   , ("pbt_bool_agrees_with_dec",               pbt_bool_agrees_with_dec)
+  , ("ext_anchor_with_href_ok",                ext_anchor_with_href_ok)
+  , ("ext_anchor_without_href_fails",          ext_anchor_without_href_fails)
+  , ("ext_nested_anchor_without_href_fails",   ext_nested_anchor_without_href_fails)
+  , ("pddt_anchorsAllOk_table",                pddt_anchorsAllOk_table)
+  , ("pbt_anchor_with_href_always_ok",         pbt_anchor_with_href_always_ok)
   ]

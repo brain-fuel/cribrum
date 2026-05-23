@@ -91,3 +91,48 @@ imgsAllOk : HExpr -> Bool
 imgsAllOk h = case decImgsAllOk h of
   Yes _ => True
   No  _ => False
+
+--------------------------------------------------------------------------------
+-- anchor-href: identical shape to img-alt; second rule wired in to
+-- demonstrate that each Structural rule generalises mechanically.
+--------------------------------------------------------------------------------
+
+hasHrefAttr : List HAttr -> Bool
+hasHrefAttr []                       = False
+hasHrefAttr (MkHAttr "href" _ :: _)  = True
+hasHrefAttr (_                :: xs) = hasHrefAttr xs
+
+public export
+anchorOkBool : HExpr -> Bool
+anchorOkBool (Element "a" attrs _) = hasHrefAttr attrs
+anchorOkBool _                     = True
+
+public export
+AnchorHereOk : HExpr -> Type
+AnchorHereOk h = So (anchorOkBool h)
+
+public export
+decAnchorHereOk : (h : HExpr) -> Dec (AnchorHereOk h)
+decAnchorHereOk h = decSo (anchorOkBool h)
+
+public export
+AnchorsAllOk : HExpr -> Type
+AnchorsAllOk h = All AnchorHereOk (walkNodes h)
+
+decAllAnchor : (xs : List HExpr) -> Dec (All AnchorHereOk xs)
+decAllAnchor []        = Yes []
+decAllAnchor (x :: xs) = case decAnchorHereOk x of
+  No  contraHead => No (\(headOk :: _) => contraHead headOk)
+  Yes headOk     => case decAllAnchor xs of
+    No  contraTail => No (\(_ :: tailOk) => contraTail tailOk)
+    Yes tailOk     => Yes (headOk :: tailOk)
+
+public export
+decAnchorsAllOk : (h : HExpr) -> Dec (AnchorsAllOk h)
+decAnchorsAllOk h = decAllAnchor (walkNodes h)
+
+public export
+anchorsAllOk : HExpr -> Bool
+anchorsAllOk h = case decAnchorsAllOk h of
+  Yes _ => True
+  No  _ => False
