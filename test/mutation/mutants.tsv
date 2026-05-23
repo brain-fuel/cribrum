@@ -1,0 +1,14 @@
+src/Cribrum/Djot/Parser.idr	n >= 1 && n <= 6	n >= 1 && n <= 5	heading level cap: 6 -> 5 (drops H6 support)
+src/Cribrum/Djot/Parser.idr	n >= 1 && n <= 6	n >= 1 && n <= 7	heading level cap: 6 -> 7 (accepts H7)
+src/Cribrum/Djot/Parser.idr	n >= 1 && n <= 6	n >= 0 && n <= 6	heading level floor: 1 -> 0 (accepts no-hash)
+src/Cribrum/Djot/Parser.idr	(' ' :: rest) => Just	('\t' :: rest) => Just	heading separator: space -> tab
+src/Cribrum/Djot/Parser.idr	parseInlineLine "" = []	parseInlineLine "" = [InlText ""]	inline emit on empty line
+src/Cribrum/Djot/Parser.idr	softThenLine x = InlSoftBreak :: parseInlineLine x	softThenLine x = parseInlineLine x	drop SoftBreak between paragraph lines
+src/Cribrum/Djot/Parser.idr	if isNil ls	if not (isNil ls)	flip heading/paragraph selection condition
+src/Cribrum/Djot/Parser.idr	then go [] (flush (reverse cur) acc) xs	then go cur acc xs	blank line no longer flushes paragraph
+src/Cribrum/Djot/Parser.idr	go cur acc []        = reverse (flush (reverse cur) acc)	go cur acc []        = reverse acc	drop final paragraph at EOF
+src/Cribrum/Djot/Parser.idr	flush []           acc = acc	flush []           acc = []	flush wipes accumulated groups when empty
+src/Cribrum/Djot/Surface.idr	blockSize (Paragraph _ _)         = 1	blockSize (Paragraph _ _)         = 0	paragraph size off-by-one
+src/Cribrum/Djot/Surface.idr	blockSize (Heading _ _ _)         = 1	blockSize (Heading _ _ _)         = 0	heading size off-by-one
+src/Cribrum/Node.idr	size (Text _)            = 1	size (Text _)            = 0	text node size off-by-one
+src/Cribrum/Node.idr	walk h@(Element _ _ cs) = h :: assert_total (concatMap walk cs)	walk h@(Element _ _ cs) = assert_total (concatMap walk cs)	walk drops the root

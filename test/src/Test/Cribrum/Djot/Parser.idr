@@ -112,6 +112,20 @@ ext_heading_marker_with_following_line_is_paragraph = oneShot $
   parseDoc "# H\nmore"
     === ok (doc [paraMulti [InlText "# H", InlSoftBreak, InlText "more"]])
 
+||| Line starting with a space (no '#') is a paragraph, NOT a heading-of-level-0.
+||| (Mutant-kill: bounds 6->5/7 are tested; this pins the lower bound at 1.)
+export
+ext_space_leading_line_is_paragraph : Property
+ext_space_leading_line_is_paragraph = oneShot $
+  parseDoc " hello" === ok (doc [para " hello"])
+
+||| `# ` (marker + space, empty body) is a heading with EMPTY inline content,
+||| not a heading carrying `InlText ""`. (Mutant-kill on parseInlineLine "".)
+export
+ext_heading_empty_body : Property
+ext_heading_empty_body = oneShot $
+  parseDoc "# " === ok (doc [Heading emptyAttrs 1 []])
+
 --------------------------------------------------------------------------------
 -- PDDTs.
 --------------------------------------------------------------------------------
@@ -189,15 +203,18 @@ pbt_safe_single_line_is_paragraph = property $ do
   let s = pack (c :: unpack rest)
   parseDoc s === ok (doc [para s])
 
-||| Block count == number of non-blank groups in the input.
-||| Use safe text so each group cleanly maps to one paragraph (or one heading).
+||| Block count == number of non-blank groups in the input. Use chunks built
+||| from non-space alphanumerics so each generated chunk is guaranteed to be a
+||| non-blank line and thus exactly one paragraph block.
 export
 pbt_block_count_eq_group_count : Property
 pbt_block_count_eq_group_count = property $ do
-  -- pick a small list of non-blank chunks
+  let chunkChar = element $ the (Vect _ Char)
+        ['a','b','c','d','e','f','g','h','i','j','k','l','m'
+        ,'n','o','p','q','r','s','t','u','v','w','x','y','z'
+        ,'0','1','2','3','4','5','6','7','8','9']
   chunks <- forAll $ list (linear 0 4)
-              [| pack (list (linear 1 6) safeWordChar) |]
-  -- separate by double newline
+              [| pack (list (linear 1 6) chunkChar) |]
   let src = unwords' chunks
   case parseDoc src of
     Right (MkDoc bs) => length bs === length chunks
@@ -229,6 +246,8 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_trailing_blank_ignored",               ext_trailing_blank_ignored)
   , ("ext_heading_marker_with_following_line_is_paragraph",
         ext_heading_marker_with_following_line_is_paragraph)
+  , ("ext_space_leading_line_is_paragraph",      ext_space_leading_line_is_paragraph)
+  , ("ext_heading_empty_body",                   ext_heading_empty_body)
   , ("pddt_heading_levels",                      pddt_heading_levels)
   , ("pddt_non_heading_levels",                  pddt_non_heading_levels)
   , ("pddt_blank_inputs",                        pddt_blank_inputs)
