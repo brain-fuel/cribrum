@@ -12,5 +12,6 @@ main = Main
 executable = "cribrum-tests"
 
 modules = Test.Cribrum.Node
+        , Test.Cribrum.Djot.Surface
         , Test.Cribrum.Gen
         , Main

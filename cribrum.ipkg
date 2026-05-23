@@ -8,3 +8,4 @@ depends   = base
           , contrib
 
 modules = Cribrum.Node
+        , Cribrum.Djot.Surface
