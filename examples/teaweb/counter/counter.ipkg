@@ -1,0 +1,12 @@
+package counter
+version = 0.1.0
+brief   = "TEAWeb MVP demo — Counter + Focus."
+
+sourcedir = "src"
+depends   = base
+          , contrib
+          , cribrum
+          , teaweb
+
+main       = Main
+executable = "counter"

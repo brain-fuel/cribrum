@@ -98,14 +98,20 @@ through Cribrum's own pipeline (matching `README.dj`'s role).
   deferred ones in `docs/conventions.md` §4). Pattern is locked by the two
   rules already promoted.
 - **Phase 5 DOM render execution**: FFI surface + `renderDom` +
-  `reconcile` ship as a chez-type-checked spike, but actual browser
-  execution lands with the TEAWeb MVP demo (Phase T runtime +
-  `examples/teaweb/counter`). `removeEventListener` deferred.
+  `reconcile` chez-type-checked AND JS-bundled via the
+  `examples/teaweb/counter` MVP demo. Browser execution validated
+  manually by loading `examples/teaweb/counter/index.html` (no
+  automated browser test in CI yet). `removeEventListener` deferred
+  to keyed-children diff.
 - **Convention layer**: §2 of `docs/conventions.md` is mostly deferred —
   elaboration currently only wraps blocks in `<main>`; `:::nav` etc. don't
   promote yet.
 - **Ingest pipeline**: HTML content model + WCAG AA catalog are
   hand-listed (the spike subsets) rather than ingested from W3C upstreams.
-- **Phase T (TEAWeb)**: entire layer not started — no view-builder, no
-  event model, no Program/mount, no Cmd/Sub interpreter, no Ports. Blocks
-  on Phase 5 DOM bridge for the MVP demo.
+- **Phase T (TEAWeb) full inventory**: MVP slice ships (Html, Event,
+  Cmd None/Batch/Focus/Blur, Sub None/Batch, Program, Runtime, plus
+  examples/teaweb/counter demo). Still missing: Sub leaf variants
+  (OnKeyDown/Every/OnAnimationFrame/Port), Cmd Http/Random/After,
+  Ports module, post-Phase-2 typed view-builders, post-Phase-4
+  StructuralAA-in-view-codomain, keyed-children reconcile, T6 docs
+  nav demo.
