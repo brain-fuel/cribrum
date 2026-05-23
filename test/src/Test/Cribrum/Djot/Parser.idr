@@ -1,5 +1,6 @@
 module Test.Cribrum.Djot.Parser
 
+import Data.List
 import Data.String
 import Data.Vect
 import Hedgehog
@@ -302,6 +303,102 @@ pbt_safe_single_line_is_paragraph = property $ do
   let s = pack (c :: unpack rest)
   parseDoc s === ok (doc [para s])
 
+--- Block quotes -------------------------------------------------------------
+
+export
+ext_blockquote_single_line : Property
+ext_blockquote_single_line = oneShot $
+  parseDoc "> hi"
+    === ok (doc [BlockQuote emptyAttrs [para "hi"]])
+
+export
+ext_blockquote_multi_line_paragraph : Property
+ext_blockquote_multi_line_paragraph = oneShot $
+  parseDoc "> line1\n> line2"
+    === ok (doc [BlockQuote emptyAttrs
+                   [paraMulti [InlText "line1", InlSoftBreak, InlText "line2"]]])
+
+export
+ext_blockquote_with_heading_inside : Property
+ext_blockquote_with_heading_inside = oneShot $
+  parseDoc "> # Title"
+    === ok (doc [BlockQuote emptyAttrs [heading 1 "Title"]])
+
+export
+ext_blockquote_with_thematic_inside : Property
+ext_blockquote_with_thematic_inside = oneShot $
+  parseDoc "> ---"
+    === ok (doc [BlockQuote emptyAttrs [ThematicBreak emptyAttrs]])
+
+||| Nested quote: `>> x` → quote containing a quote containing "x".
+export
+ext_blockquote_nested : Property
+ext_blockquote_nested = oneShot $
+  parseDoc "> > inner"
+    === ok (doc [BlockQuote emptyAttrs
+                   [BlockQuote emptyAttrs [para "inner"]]])
+
+||| `> ` followed by `>` (empty quote line) splits paragraphs INSIDE the quote.
+export
+ext_blockquote_empty_quote_line_separates_paragraphs : Property
+ext_blockquote_empty_quote_line_separates_paragraphs = oneShot $
+  parseDoc "> p1\n>\n> p2"
+    === ok (doc [BlockQuote emptyAttrs [para "p1", para "p2"]])
+
+export
+ext_paragraph_then_blockquote : Property
+ext_paragraph_then_blockquote = oneShot $
+  parseDoc "before\n\n> quoted"
+    === ok (doc [para "before", BlockQuote emptyAttrs [para "quoted"]])
+
+||| A `>`-prefixed line directly after a paragraph (no blank line) still
+||| flushes the paragraph and starts a quote group, since `>` is a structural
+||| boundary not a paragraph-continuation.
+export
+ext_blockquote_then_paragraph_no_blank : Property
+ext_blockquote_then_paragraph_no_blank = oneShot $
+  parseDoc "> quoted\nafter"
+    === ok (doc [BlockQuote emptyAttrs [para "quoted"], para "after"])
+
+||| `>x` (no space) is NOT a quote — falls through to paragraph.
+export
+ext_greater_then_no_space_is_paragraph : Property
+ext_greater_then_no_space_is_paragraph = oneShot $
+  parseDoc ">x" === ok (doc [para ">x"])
+
+quotePrefixCases : List (String, Doc)
+quotePrefixCases =
+  [ ("> a",           doc [BlockQuote emptyAttrs [para "a"]])
+  , ("> a\n> b",      doc [BlockQuote emptyAttrs
+                              [paraMulti [InlText "a", InlSoftBreak, InlText "b"]]])
+  , ("> # T",         doc [BlockQuote emptyAttrs [heading 1 "T"]])
+  , ("> > x",         doc [BlockQuote emptyAttrs
+                              [BlockQuote emptyAttrs [para "x"]]])
+  ]
+
+export
+pddt_quote_prefix_variants : Property
+pddt_quote_prefix_variants = withTests 1 . property $ do
+  for_ quotePrefixCases $ \(src, expected) =>
+    parseDoc src === ok expected
+
+||| Any input whose lines all start with `> ` yields a single top-level
+||| BlockQuote block.
+export
+pbt_quote_prefixed_input_yields_blockquote_top_level : Property
+pbt_quote_prefixed_input_yields_blockquote_top_level = property $ do
+  let safe = element $ the (Vect _ Char)
+        ['a','b','c','d','e','f','g','h','i','j','k','l','m'
+        ,'n','o','p','q','r','s','t','u','v','w','x','y','z'
+        ,'0','1','2','3','4','5','6','7','8','9']
+  bodies <- forAll $ list (linear 1 4) $
+    [| pack (list (linear 1 6) safe) |]
+  let src = concat $ intersperse "\n" (map ("> " ++) bodies)
+  case parseDoc src of
+    Right (MkDoc [BlockQuote _ _]) => success
+    Right d => failWith Nothing ("expected single BlockQuote; got " ++ show d)
+    Left  e => failWith Nothing (show e)
+
 ||| Block count == number of non-blank groups in the input. Use chunks built
 ||| from non-space alphanumerics so each generated chunk is guaranteed to be a
 ||| non-blank line and thus exactly one paragraph block.
@@ -360,6 +457,19 @@ group = MkGroup "Cribrum.Djot.Parser"
         ext_dashes_first_in_multi_line_group_is_paragraph)
   , ("pddt_thematic_breaks",                     pddt_thematic_breaks)
   , ("pddt_non_thematic",                        pddt_non_thematic)
+  , ("ext_blockquote_single_line",               ext_blockquote_single_line)
+  , ("ext_blockquote_multi_line_paragraph",      ext_blockquote_multi_line_paragraph)
+  , ("ext_blockquote_with_heading_inside",       ext_blockquote_with_heading_inside)
+  , ("ext_blockquote_with_thematic_inside",      ext_blockquote_with_thematic_inside)
+  , ("ext_blockquote_nested",                    ext_blockquote_nested)
+  , ("ext_blockquote_empty_quote_line_separates_paragraphs",
+        ext_blockquote_empty_quote_line_separates_paragraphs)
+  , ("ext_paragraph_then_blockquote",            ext_paragraph_then_blockquote)
+  , ("ext_blockquote_then_paragraph_no_blank",   ext_blockquote_then_paragraph_no_blank)
+  , ("ext_greater_then_no_space_is_paragraph",   ext_greater_then_no_space_is_paragraph)
+  , ("pddt_quote_prefix_variants",               pddt_quote_prefix_variants)
+  , ("pbt_quote_prefixed_input_yields_blockquote_top_level",
+        pbt_quote_prefixed_input_yields_blockquote_top_level)
   , ("pddt_heading_levels",                      pddt_heading_levels)
   , ("pddt_non_heading_levels",                  pddt_non_heading_levels)
   , ("pddt_blank_inputs",                        pddt_blank_inputs)

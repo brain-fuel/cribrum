@@ -89,25 +89,71 @@ parseParagraphLines (l ::: ls) = case ls of
 
 --------------------------------------------------------------------------------
 -- Block grouping over the raw lines.
+--
+-- LineGroup is the intermediate that lets parsing handle constructs that
+-- span blank lines (block quote — and, in future slices, code blocks /
+-- fenced divs / lists). NormalGroup is a paragraph-like run of contiguous
+-- non-blank lines; QuoteGroup contains the LineGroups of its stripped
+-- interior so the inner structure is parsed recursively.
 --------------------------------------------------------------------------------
 
-||| Group consecutive non-blank lines; blank lines are separators and produce
-||| no group. Order is preserved.
 public export
-groupLines : List String -> List (List1 String)
-groupLines = go [] []
-  where
-    flush : List String -> List (List1 String) -> List (List1 String)
-    flush []           acc = acc
-    flush (l :: ls)    acc = (l ::: ls) :: acc
+data LineGroup
+  = NormalGroup (List1 String)
+  | QuoteGroup  (List LineGroup)
 
-    go : (cur : List String) -> (acc : List (List1 String))
-       -> List String -> List (List1 String)
-    go cur acc []        = reverse (flush (reverse cur) acc)
+||| `True` iff the line starts with `>` followed by space, OR is exactly `>`
+||| (an empty quote line — Djot allows this).
+isQuotePrefixed : String -> Bool
+isQuotePrefixed s = case unpack s of
+  ('>' :: ' ' :: _) => True
+  ['>']             => True
+  _                 => False
+
+||| Strip the leading `> ` (or just `>`) prefix, returning the inner line.
+stripQuotePrefix : String -> String
+stripQuotePrefix s = case unpack s of
+  ('>' :: ' ' :: rest) => pack rest
+  ['>']                => ""
+  _                    => s
+
+||| Take the longest prefix of `xs` that satisfies `p`. Returns
+||| `(taken, rest)`.
+spanList : (a -> Bool) -> List a -> (List a, List a)
+spanList _ []        = ([], [])
+spanList p (x :: xs) =
+  if p x
+    then let (ts, rs) = spanList p xs in (x :: ts, rs)
+    else ([], x :: xs)
+
+||| Group consecutive non-blank lines + recognise block-quote runs.
+||| Blank lines outside of a quote run are separators and produce no group.
+||| A quote run is the longest prefix of `>`-prefixed lines; its stripped
+||| interior is recursively grouped so the quote may itself contain
+||| paragraphs, headings, thematic breaks, and (recursively) more quotes.
+public export
+groupLines : List String -> List LineGroup
+groupLines xs = go [] [] xs
+  where
+    flushNormal : List String -> List LineGroup -> List LineGroup
+    flushNormal []           acc = acc
+    flushNormal (l :: ls)    acc = NormalGroup (l ::: ls) :: acc
+
+    go : (cur : List String) -> (acc : List LineGroup)
+       -> List String -> List LineGroup
+    go cur acc []        = reverse (flushNormal (reverse cur) acc)
     go cur acc (x :: xs) =
       if isBlankLine x
-        then go [] (flush (reverse cur) acc) xs
-        else go (x :: cur) acc xs
+        then go [] (flushNormal (reverse cur) acc) xs
+        else if isQuotePrefixed x
+          then
+            let (quoteLines, rest) =
+                  spanList isQuotePrefixed (x :: xs)
+                inner   = map stripQuotePrefix quoteLines
+                acc'    = flushNormal (reverse cur) acc
+                quoted  = QuoteGroup (assert_total (groupLines inner))
+             in assert_total (go [] (quoted :: acc') rest)
+          else go (x :: cur) acc xs
 
 --------------------------------------------------------------------------------
 -- Group -> Block.
@@ -127,13 +173,13 @@ isThematicBreak s =
             && length (c :: cs) >= 3
             && all (== c) cs
 
-||| Convert one non-blank line group into a block.
+||| Convert one NORMAL line group into a block.
 |||
 ||| Order matters: thematic break is checked first (a single `---` line is
 ||| not a heading and not a paragraph). Heading is checked next; everything
 ||| else falls through to paragraph.
-groupToBlock : List1 String -> Block
-groupToBlock (l ::: ls) =
+normalGroupToBlock : List1 String -> Block
+normalGroupToBlock (l ::: ls) =
   if isNil ls && isThematicBreak l
     then ThematicBreak emptyAttrs
     else case parseHeadingMarker l of
@@ -142,6 +188,13 @@ groupToBlock (l ::: ls) =
                then Heading emptyAttrs lvl (parseInlineLine rest)
                else Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
            Nothing => Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
+
+||| Convert a LineGroup into a Block. Quote groups recurse.
+public export
+groupToBlock : LineGroup -> Block
+groupToBlock (NormalGroup g)  = normalGroupToBlock g
+groupToBlock (QuoteGroup  gs) =
+  BlockQuote emptyAttrs (assert_total (map groupToBlock gs))
 
 --------------------------------------------------------------------------------
 -- Top-level.

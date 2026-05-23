@@ -5,9 +5,9 @@ src/Cribrum/Djot/Parser.idr	(' ' :: rest) => Just	('\t' :: rest) => Just	heading
 src/Cribrum/Djot/Parser.idr	parseInlineLine "" = []	parseInlineLine "" = [InlText ""]	inline emit on empty line
 src/Cribrum/Djot/Parser.idr	softThenLine x = InlSoftBreak :: parseInlineLine x	softThenLine x = parseInlineLine x	drop SoftBreak between paragraph lines
 src/Cribrum/Djot/Parser.idr	if isNil ls	if not (isNil ls)	flip heading/paragraph selection condition
-src/Cribrum/Djot/Parser.idr	then go [] (flush (reverse cur) acc) xs	then go cur acc xs	blank line no longer flushes paragraph
-src/Cribrum/Djot/Parser.idr	go cur acc []        = reverse (flush (reverse cur) acc)	go cur acc []        = reverse acc	drop final paragraph at EOF
-src/Cribrum/Djot/Parser.idr	flush []           acc = acc	flush []           acc = []	flush wipes accumulated groups when empty
+src/Cribrum/Djot/Parser.idr	then go [] (flushNormal (reverse cur) acc) xs	then go cur acc xs	blank line no longer flushes paragraph
+src/Cribrum/Djot/Parser.idr	go cur acc []        = reverse (flushNormal (reverse cur) acc)	go cur acc []        = reverse acc	drop final paragraph at EOF
+src/Cribrum/Djot/Parser.idr	flushNormal []           acc = acc	flushNormal []           acc = []	flushNormal wipes accumulated groups when empty
 src/Cribrum/Djot/Surface.idr	blockSize (Paragraph _ _)         = 1	blockSize (Paragraph _ _)         = 0	paragraph size off-by-one
 src/Cribrum/Djot/Surface.idr	blockSize (Heading _ _ _)         = 1	blockSize (Heading _ _ _)         = 0	heading size off-by-one
 src/Cribrum/Node.idr	size (Text _)            = 1	size (Text _)            = 0	text node size off-by-one
@@ -59,6 +59,12 @@ src/Cribrum/AA/Typed.idr	h :: assert_total (concatMap walkNodes cs)	[h]	Typed: w
 src/Cribrum/AA/Typed.idr	anchorOkBool (Element "a" attrs _) = hasHrefAttr attrs	anchorOkBool (Element "a" attrs _) = True	Typed: anchor-href always passes
 src/Cribrum/AA/Typed.idr	hasHrefAttr (MkHAttr "href" _ :: _)  = True	hasHrefAttr (MkHAttr "href" _ :: _)  = False	Typed: href detection inverted
 src/Cribrum/AA/Typed.idr	hasHrefAttr []                       = False	hasHrefAttr []                       = True	Typed: empty attrs href default flipped
+src/Cribrum/Djot/Parser.idr	('>' :: ' ' :: _) => True	('>' :: ' ' :: _) => False	parser: "> " no longer recognised as quote prefix
+src/Cribrum/Djot/Parser.idr	['>']             => True	['>']             => False	parser: bare ">" no longer recognised as quote
+src/Cribrum/Djot/Parser.idr	('>' :: ' ' :: rest) => pack rest	('>' :: ' ' :: rest) => pack ('>' :: rest)	parser: stripQuotePrefix leaves ">" in
+src/Cribrum/Djot/Parser.idr	in assert_total (go [] (quoted :: acc') rest)	in assert_total (go [] acc' rest)	parser: quote group dropped from output
+src/Cribrum/Djot/Parser.idr	BlockQuote emptyAttrs (assert_total (map groupToBlock gs))	BlockQuote emptyAttrs []	parser: blockquote emits empty body
+
 
 
 src/Cribrum/Html/Valid.idr	decideHtml (Text _)            = Yes ValidText	decideHtml (Text _)            = decideHtml (Element "bogus" [] [])	Text classification routed to known-unknown
