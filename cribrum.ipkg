@@ -1,0 +1,10 @@
+package cribrum
+version = 0.1.0
+authors = "Matthew Laine"
+brief   = "Single-IR HTML elaboration: Djot prose -> proof-carrying semantic accessible HExpr."
+
+sourcedir = "src"
+depends   = base
+          , contrib
+
+modules = Cribrum.Node

@@ -1,0 +1,16 @@
+package cribrum_test
+version = 0.1.0
+brief   = "Cribrum test suite: EXT + PDDT + PBT."
+
+sourcedir = "src"
+depends   = base
+          , contrib
+          , hedgehog
+          , cribrum
+
+main = Main
+executable = "cribrum-tests"
+
+modules = Test.Cribrum.Node
+        , Test.Cribrum.Gen
+        , Main

@@ -1,7 +1,9 @@
-# Idris 2
+*.o
+build/
 *.ttc
 *.ttm
-
-# Idris 1
 *.ibc
-*.o
+.idris2/
+depends/
+*.swp
+.DS_Store
