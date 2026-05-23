@@ -12,3 +12,10 @@ src/Cribrum/Djot/Surface.idr	blockSize (Paragraph _ _)         = 1	blockSize (Pa
 src/Cribrum/Djot/Surface.idr	blockSize (Heading _ _ _)         = 1	blockSize (Heading _ _ _)         = 0	heading size off-by-one
 src/Cribrum/Node.idr	size (Text _)            = 1	size (Text _)            = 0	text node size off-by-one
 src/Cribrum/Node.idr	walk h@(Element _ _ cs) = h :: assert_total (concatMap walk cs)	walk h@(Element _ _ cs) = assert_total (concatMap walk cs)	walk drops the root
+src/Cribrum/Djot/Parser.idr	length (c :: cs) >= 3	length (c :: cs) >= 2	thematic break: 3 -> 2 chars accepted
+src/Cribrum/Djot/Parser.idr	length (c :: cs) >= 3	length (c :: cs) >= 4	thematic break: 3 -> 4 chars required
+src/Cribrum/Djot/Parser.idr	(c == '-' || c == '*')	(c == '-')	thematic break: drop '*' marker
+src/Cribrum/Djot/Parser.idr	&& all (== c) cs	&& True	thematic break: drop homogeneity check
+src/Cribrum/Djot/Parser.idr	if isNil ls && isThematicBreak l	if isNil ls	thematic break: any single-line group becomes thematic
+src/Cribrum/Djot/Parser.idr	if isNil ls && isThematicBreak l	if isThematicBreak l	thematic break: multi-line groups starting --- become thematic
+

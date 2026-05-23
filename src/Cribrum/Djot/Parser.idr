@@ -113,18 +113,35 @@ groupLines = go [] []
 -- Group -> Block.
 --------------------------------------------------------------------------------
 
+||| Per Djot spec: a thematic break is a line consisting of three or more
+||| `-` or `*` characters, optionally separated by whitespace, alone on the
+||| line. (We don't yet handle the mixed-whitespace form `- - -` — that is a
+||| later slice; pin the simple `---`/`***` form here.)
+isThematicBreak : String -> Bool
+isThematicBreak s =
+  let trimmed = trim s
+   in case unpack trimmed of
+        []        => False
+        (c :: cs) =>
+          (c == '-' || c == '*')
+            && length (c :: cs) >= 3
+            && all (== c) cs
+
 ||| Convert one non-blank line group into a block.
 |||
-||| A group whose *first* line is an ATX heading produces a heading block
-||| (current slice: heading-only groups; multi-line headings arrive later).
-||| Everything else is a paragraph.
+||| Order matters: thematic break is checked first (a single `---` line is
+||| not a heading and not a paragraph). Heading is checked next; everything
+||| else falls through to paragraph.
 groupToBlock : List1 String -> Block
-groupToBlock (l ::: ls) = case parseHeadingMarker l of
-  Just (lvl, rest) =>
-    if isNil ls
-      then Heading emptyAttrs lvl (parseInlineLine rest)
-      else Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
-  Nothing => Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
+groupToBlock (l ::: ls) =
+  if isNil ls && isThematicBreak l
+    then ThematicBreak emptyAttrs
+    else case parseHeadingMarker l of
+           Just (lvl, rest) =>
+             if isNil ls
+               then Heading emptyAttrs lvl (parseInlineLine rest)
+               else Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
+           Nothing => Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
 
 --------------------------------------------------------------------------------
 -- Top-level.

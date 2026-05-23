@@ -126,6 +126,69 @@ ext_heading_empty_body : Property
 ext_heading_empty_body = oneShot $
   parseDoc "# " === ok (doc [Heading emptyAttrs 1 []])
 
+--- Thematic breaks -----------------------------------------------------------
+
+export
+ext_thematic_dashes : Property
+ext_thematic_dashes = oneShot $
+  parseDoc "---" === ok (doc [ThematicBreak emptyAttrs])
+
+export
+ext_thematic_stars : Property
+ext_thematic_stars = oneShot $
+  parseDoc "***" === ok (doc [ThematicBreak emptyAttrs])
+
+export
+ext_thematic_many_dashes : Property
+ext_thematic_many_dashes = oneShot $
+  parseDoc "----------" === ok (doc [ThematicBreak emptyAttrs])
+
+export
+ext_thematic_with_surrounding_whitespace : Property
+ext_thematic_with_surrounding_whitespace = oneShot $
+  parseDoc "   ---   " === ok (doc [ThematicBreak emptyAttrs])
+
+||| Two dashes is NOT a thematic break — falls through to paragraph.
+export
+ext_two_dashes_is_paragraph : Property
+ext_two_dashes_is_paragraph = oneShot $
+  parseDoc "--" === ok (doc [para "--"])
+
+||| Mixed `-`/`*` is NOT a thematic break.
+export
+ext_mixed_dashes_stars_is_paragraph : Property
+ext_mixed_dashes_stars_is_paragraph = oneShot $
+  parseDoc "-*-" === ok (doc [para "-*-"])
+
+||| Thematic break separates paragraphs even without a blank line on either
+||| side... but per current grouping logic, a thematic break only resolves
+||| when it stands alone in its group. Pin the surrounding-blank-line case.
+export
+ext_para_then_break_then_para : Property
+ext_para_then_break_then_para = oneShot $
+  parseDoc "before\n\n---\n\nafter"
+    === ok (doc [para "before", ThematicBreak emptyAttrs, para "after"])
+
+||| A `---` line GLUED to a paragraph (no surrounding blank line) is
+||| currently absorbed into the paragraph. This is a known limitation of the
+||| single-pass slice; a later iteration will treat a thematic break as a
+||| paragraph terminator. Pin the current behaviour so the regression is
+||| explicit.
+export
+ext_dashes_glued_to_paragraph_is_paragraph : Property
+ext_dashes_glued_to_paragraph_is_paragraph = oneShot $
+  parseDoc "hi\n---"
+    === ok (doc [paraMulti [InlText "hi", InlSoftBreak, InlText "---"]])
+
+||| Symmetric case: `---` as the FIRST line of a multi-line group is also
+||| absorbed (NOT a thematic break that drops the rest of the group).
+||| Pins the `isNil ls && ...` guard against mutants that drop the `isNil ls`.
+export
+ext_dashes_first_in_multi_line_group_is_paragraph : Property
+ext_dashes_first_in_multi_line_group_is_paragraph = oneShot $
+  parseDoc "---\nbody"
+    === ok (doc [paraMulti [InlText "---", InlSoftBreak, InlText "body"]])
+
 --------------------------------------------------------------------------------
 -- PDDTs.
 --------------------------------------------------------------------------------
@@ -171,6 +234,42 @@ pddt_blank_inputs : Property
 pddt_blank_inputs = withTests 1 . property $ do
   for_ blankInputs $ \s =>
     parseDoc s === ok (doc [])
+
+||| All thematic-break forms parse to a single ThematicBreak block.
+thematicCases : List String
+thematicCases =
+  [ "---"
+  , "----"
+  , "-----"
+  , "***"
+  , "****"
+  , "  ---  "
+  , "\t---\t"
+  , "---------------"
+  ]
+
+export
+pddt_thematic_breaks : Property
+pddt_thematic_breaks = withTests 1 . property $ do
+  for_ thematicCases $ \s =>
+    parseDoc s === ok (doc [ThematicBreak emptyAttrs])
+
+||| Variants that look thematic-ish but are NOT.
+nonThematicCases : List String
+nonThematicCases =
+  [ "--"        -- only 2
+  , "**"
+  , "- - -"     -- whitespace-separated form — later slice
+  , "-*-"       -- mixed
+  , "-=-"       -- non-marker chars
+  , "===---"    -- garbage prefix
+  ]
+
+export
+pddt_non_thematic : Property
+pddt_non_thematic = withTests 1 . property $ do
+  for_ nonThematicCases $ \s =>
+    parseDoc s === ok (doc [para s])
 
 --------------------------------------------------------------------------------
 -- PBTs.
@@ -248,6 +347,19 @@ group = MkGroup "Cribrum.Djot.Parser"
         ext_heading_marker_with_following_line_is_paragraph)
   , ("ext_space_leading_line_is_paragraph",      ext_space_leading_line_is_paragraph)
   , ("ext_heading_empty_body",                   ext_heading_empty_body)
+  , ("ext_thematic_dashes",                      ext_thematic_dashes)
+  , ("ext_thematic_stars",                       ext_thematic_stars)
+  , ("ext_thematic_many_dashes",                 ext_thematic_many_dashes)
+  , ("ext_thematic_with_surrounding_whitespace", ext_thematic_with_surrounding_whitespace)
+  , ("ext_two_dashes_is_paragraph",              ext_two_dashes_is_paragraph)
+  , ("ext_mixed_dashes_stars_is_paragraph",      ext_mixed_dashes_stars_is_paragraph)
+  , ("ext_para_then_break_then_para",            ext_para_then_break_then_para)
+  , ("ext_dashes_glued_to_paragraph_is_paragraph",
+        ext_dashes_glued_to_paragraph_is_paragraph)
+  , ("ext_dashes_first_in_multi_line_group_is_paragraph",
+        ext_dashes_first_in_multi_line_group_is_paragraph)
+  , ("pddt_thematic_breaks",                     pddt_thematic_breaks)
+  , ("pddt_non_thematic",                        pddt_non_thematic)
   , ("pddt_heading_levels",                      pddt_heading_levels)
   , ("pddt_non_heading_levels",                  pddt_non_heading_levels)
   , ("pddt_blank_inputs",                        pddt_blank_inputs)
