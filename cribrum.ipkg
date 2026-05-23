@@ -12,3 +12,4 @@ modules = Cribrum.Node
         , Cribrum.Djot.Parser
         , Cribrum.Html.Valid
         , Cribrum.Elaborate
+        , Cribrum.Render.Html

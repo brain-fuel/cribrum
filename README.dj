@@ -1,0 +1,17 @@
+# Cribrum
+
+A single intermediate representation — the HExpr — authored as prose in Djot,
+elaborated into full semantic, accessible HTML, typechecked as HTML, and
+checked for WCAG AA accessibility.
+
+## Why
+
+Each conformance layer is a sieve of increasing fineness. One tree passes
+through successively finer meshes.
+
+---
+
+## Pipeline
+
+The pipeline composes four phases: parse Djot, elaborate to HExpr, witness
+HTML validity, render to HTML.

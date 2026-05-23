@@ -32,6 +32,16 @@ src/Cribrum/Elaborate.idr	elaborateInline InlSoftBreak       = Text " "	elaborat
 src/Cribrum/Elaborate.idr	elaborateInline InlHardBreak       = Element "br" [] []	elaborateInline InlHardBreak       = Element "hr" [] []	elaborate: hardbreak -> hr
 src/Cribrum/Elaborate.idr	Element "em" [] (assert_total	Element "strong" [] (assert_total	elaborate: em -> strong
 src/Cribrum/Elaborate.idr	elaborateDoc (MkDoc bs) = Element "main" []	elaborateDoc (MkDoc bs) = Element "section" []	elaborate: doc wrapper main -> section
+src/Cribrum/Render/Html.idr	escapeChar '&'  = "&amp;"	escapeChar '&'  = "&"	render: skip & escape
+src/Cribrum/Render/Html.idr	escapeChar '<'  = "&lt;"	escapeChar '<'  = "<"	render: skip < escape
+src/Cribrum/Render/Html.idr	escapeChar '>'  = "&gt;"	escapeChar '>'  = ">"	render: skip > escape
+src/Cribrum/Render/Html.idr	escapeChar '"'  = "&quot;"	escapeChar '"'  = "\""	render: skip " escape
+src/Cribrum/Render/Html.idr	"br", "col", "embed", "hr"	"col", "embed", "hr"	render: drop br from voidElements
+src/Cribrum/Render/Html.idr	"br", "col", "embed", "hr"	"br", "col", "embed"	render: drop hr from voidElements
+src/Cribrum/Render/Html.idr	isVoid t = elem t voidElements	isVoid t = False	render: nothing is void (always emits close tag)
+src/Cribrum/Render/Html.idr	isVoid t = elem t voidElements	isVoid t = True	render: everything is void (no close ever)
+src/Cribrum/Render/Html.idr	" data-on-" ++ ev ++ "=\""	" data-on-x=\""	render: handler attribute name loses event suffix
+
 
 src/Cribrum/Html/Valid.idr	decideHtml (Text _)            = Yes ValidText	decideHtml (Text _)            = decideHtml (Element "bogus" [] [])	Text classification routed to known-unknown
 
