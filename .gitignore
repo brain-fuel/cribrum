@@ -7,3 +7,5 @@ build/
 depends/
 *.swp
 .DS_Store
+.claude/
+*.bak
