@@ -7,6 +7,7 @@ import Test.Cribrum.Djot.Parser
 import Test.Cribrum.Html.Valid
 import Test.Cribrum.Elaborate
 import Test.Cribrum.Render.Html
+import Test.Cribrum.AA.Pass
 import Test.Cribrum.Integration
 
 main : IO ()
@@ -17,5 +18,6 @@ main = test
   , Test.Cribrum.Html.Valid.group
   , Test.Cribrum.Elaborate.group
   , Test.Cribrum.Render.Html.group
+  , Test.Cribrum.AA.Pass.group
   , Test.Cribrum.Integration.group
   ]

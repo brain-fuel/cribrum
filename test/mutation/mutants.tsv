@@ -41,6 +41,15 @@ src/Cribrum/Render/Html.idr	"br", "col", "embed", "hr"	"br", "col", "embed"	rend
 src/Cribrum/Render/Html.idr	isVoid t = elem t voidElements	isVoid t = False	render: nothing is void (always emits close tag)
 src/Cribrum/Render/Html.idr	isVoid t = elem t voidElements	isVoid t = True	render: everything is void (no close ever)
 src/Cribrum/Render/Html.idr	" data-on-" ++ ev ++ "=\""	" data-on-x=\""	render: handler attribute name loses event suffix
+src/Cribrum/AA/Pass.idr	checkImgAlt p "img" attrs	checkImgAlt p "image" attrs	AA: img-alt rule keyed on wrong tag
+src/Cribrum/AA/Pass.idr	checkAnchorHref p "a" attrs	checkAnchorHref p "anchor" attrs	AA: anchor-href rule keyed on wrong tag
+src/Cribrum/AA/Pass.idr	if hasAttr "alt" attrs	if not (hasAttr "alt" attrs)	AA: img-alt inverted
+src/Cribrum/AA/Pass.idr	if hasAttr "href" attrs	if not (hasAttr "href" attrs)	AA: anchor-href inverted
+src/Cribrum/AA/Pass.idr	if l > S prev	if l > prev	AA: heading-skip cap weakened (consecutive flagged)
+src/Cribrum/AA/Pass.idr	isHeadingTag "h1" = Just 1	isHeadingTag "h1" = Just 2	AA: h1 mislabeled as level 2
+src/Cribrum/AA/Pass.idr	filter ((== Structural) . confidence . rule)	filter ((== Heuristic) . confidence . rule)	AA: structuralFindings returns heuristic instead
+src/Cribrum/AA/Pass.idr	checkAA h _ = walkNodes [] h ++ checkHeadingNoSkip h	checkAA h _ = walkNodes [] h	AA: heading-skip check disabled
+src/Cribrum/AA/Pass.idr	checkAA h _ = walkNodes [] h ++ checkHeadingNoSkip h	checkAA h _ = checkHeadingNoSkip h	AA: per-node checks disabled
 
 
 src/Cribrum/Html/Valid.idr	decideHtml (Text _)            = Yes ValidText	decideHtml (Text _)            = decideHtml (Element "bogus" [] [])	Text classification routed to known-unknown

@@ -13,3 +13,5 @@ modules = Cribrum.Node
         , Cribrum.Html.Valid
         , Cribrum.Elaborate
         , Cribrum.Render.Html
+        , Cribrum.AA.Catalog
+        , Cribrum.AA.Pass
