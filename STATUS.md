@@ -19,10 +19,10 @@
 | `Cribrum.AA.Typed`        | 4     | **Spike**: img-alt and anchor-href promoted to type-level propositions via `So`. Decision via `decSo` + `All` over walked nodes. Each rule wires in independently. |
 | `TEAWeb.Html`             | T1    | **Spike**: view-builder smart constructors for 34 elements; `Attr msg` data type (`Plain` / `On`); `View msg` record = (HExpr, HandlerTable); leaf nodes (`text_`, `comment_`); void elements (`br_`, `hr_`); plain attribute helpers (`class_`, `id_`, `href_`, ...). `viewSafe` returns `Either ViewError ((h ** IsValidHtml h), HandlerTable)` — Phase-2 typing replaces this dynamic gate later. |
 | `TEAWeb.Event`            | T2    | **Spike**: `onClick`/`onSubmit`/`onFocus`/`onBlur`/`onDoubleClick`/`onMouseEnter`/`onMouseLeave` (msg-form); `onInput`/`onChange` (String-callback form, dispatch-side value extraction lands with `TEAWeb.Runtime`). Callback ids app-supplied for MVP; deterministic `hash(path, event)` when keyed diff lands. |
-| `TEAWeb.Program`          | T3    | Not started. `Program model msg` record + `mount`; tail-recursive interpreter loop in Idris. |
-| `TEAWeb.Cmd`              | T4    | Not started. `Cmd msg` variants (Http, Focus, Blur, Random, After). |
-| `TEAWeb.Sub`              | T4    | Not started. `Sub msg` variants (OnAnimationFrame, OnKeyDown, OnResize, Every, Port). |
-| `TEAWeb.Runtime`          | T3+T4 | Not started. Effect dispatcher; the only consumer of `Cribrum.Render.Dom`. |
+| `TEAWeb.Program`          | T3    | **Spike**: `Program model msg` record (init/update/view/subscriptions). |
+| `TEAWeb.Cmd`              | T4    | **Spike**: `None`/`Batch`/`Focus`/`Blur`. `flatten : Cmd msg -> List (Cmd msg)`. Http/Random/After deferred to TEAWeb T6 demo's needs. |
+| `TEAWeb.Sub`              | T4    | **Spike**: `None`/`Batch` only. Leaf variants (`OnKeyDown`, `OnAnimationFrame`, `Every`, `OnResize`, `Port`) deferred to T6 (Counter+Focus doesn't need them). |
+| `TEAWeb.Runtime`          | T3+T4 | **Spike**: `mount` + tail-recursive interpreter loop in Idris; `installDispatch` installs single global `window.__cribrumDispatch`; `runCmd` interprets Focus/Blur via FFI; reconcile after each update keeps state ref + handler table in lockstep. JS-backend execution only. |
 | `TEAWeb.Ports`            | T5    | Not started. Typed JSON FFI boundary for app-specific JS. |
 
 ## Tests (176 total, all green)

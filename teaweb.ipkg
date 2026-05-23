@@ -10,3 +10,7 @@ depends   = base
 
 modules = TEAWeb.Html
         , TEAWeb.Event
+        , TEAWeb.Cmd
+        , TEAWeb.Sub
+        , TEAWeb.Program
+        , TEAWeb.Runtime
