@@ -50,6 +50,12 @@ src/Cribrum/AA/Pass.idr	isHeadingTag "h1" = Just 1	isHeadingTag "h1" = Just 2	AA
 src/Cribrum/AA/Pass.idr	filter ((== Structural) . confidence . rule)	filter ((== Heuristic) . confidence . rule)	AA: structuralFindings returns heuristic instead
 src/Cribrum/AA/Pass.idr	checkAA h _ = walkNodes [] h ++ checkHeadingNoSkip h	checkAA h _ = walkNodes [] h	AA: heading-skip check disabled
 src/Cribrum/AA/Pass.idr	checkAA h _ = walkNodes [] h ++ checkHeadingNoSkip h	checkAA h _ = checkHeadingNoSkip h	AA: per-node checks disabled
+src/Cribrum/AA/Typed.idr	imgOkBool (Element "img" attrs _) = hasAltAttr attrs	imgOkBool (Element "img" attrs _) = True	Typed: img-alt always passes
+src/Cribrum/AA/Typed.idr	imgOkBool _                       = True	imgOkBool _                       = False	Typed: non-img always fails
+src/Cribrum/AA/Typed.idr	hasAltAttr (MkHAttr "alt" _ :: _)   = True	hasAltAttr (MkHAttr "alt" _ :: _)   = False	Typed: alt detection inverted
+src/Cribrum/AA/Typed.idr	hasAltAttr []                       = False	hasAltAttr []                       = True	Typed: empty attrs default flipped
+src/Cribrum/AA/Typed.idr	  h :: assert_total (concatMap walkNodes cs)	  assert_total (concatMap walkNodes cs)	Typed: walk drops root
+src/Cribrum/AA/Typed.idr	h :: assert_total (concatMap walkNodes cs)	[h]	Typed: walk drops descendants
 
 
 src/Cribrum/Html/Valid.idr	decideHtml (Text _)            = Yes ValidText	decideHtml (Text _)            = decideHtml (Element "bogus" [] [])	Text classification routed to known-unknown

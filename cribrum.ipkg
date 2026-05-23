@@ -15,3 +15,4 @@ modules = Cribrum.Node
         , Cribrum.Render.Html
         , Cribrum.AA.Catalog
         , Cribrum.AA.Pass
+        , Cribrum.AA.Typed

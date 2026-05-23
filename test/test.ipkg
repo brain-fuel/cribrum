@@ -18,6 +18,7 @@ modules = Test.Cribrum.Node
         , Test.Cribrum.Elaborate
         , Test.Cribrum.Render.Html
         , Test.Cribrum.AA.Pass
+        , Test.Cribrum.AA.Typed
         , Test.Cribrum.Integration
         , Test.Cribrum.Gen
         , Main
