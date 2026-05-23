@@ -13,6 +13,7 @@ modules = Cribrum.Node
         , Cribrum.Html.Valid
         , Cribrum.Elaborate
         , Cribrum.Render.Html
+        , Cribrum.Render.Dom
         , Cribrum.AA.Catalog
         , Cribrum.AA.Pass
         , Cribrum.AA.Typed

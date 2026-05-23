@@ -12,7 +12,8 @@
 | `Cribrum.Djot.Parser`     | 1a    | **Slice**: paragraph, ATX heading (1-6), thematic break, block quote (recursive), fenced code block. Lists, inline emphasis parsing, tables → deferred. |
 | `Cribrum.Html.Valid`      | 2     | **Spike**: IsKnownTag membership only; per-element content model + attribute permission deferred. Indexed proposition + total Dec works. |
 | `Cribrum.Elaborate`       | 1b    | Strict elaboration `Doc -> Either ElabError (h ** (IsValidHtml h, StructuralAA h))`. StructuralAA is unit in this spike. |
-| `Cribrum.Render.Html`     | 5     | Total `HExpr -> String`. HTML 5 void-element handling, escaping, handler attrs render as `data-on-<event>`. DOM render → deferred. |
+| `Cribrum.Render.Html`     | 5     | Total `HExpr -> String`. HTML 5 void-element handling, escaping, handler attrs render as `data-on-<event>`. |
+| `Cribrum.Render.Dom`      | 5     | **Spike**: tiny FFI surface (createElement/createTextNode/createComment/setAttribute/removeAttribute/addEventListener/appendChild/replaceChild/getElementById/clearChildren). `renderDom : HExpr -> IO DomNode`, `reconcile` (Day-1 blow-and-rebuild), `mountInto`. JS-backend only at runtime; chez type-checks. Handler attrs dispatch via `window.__cribrumDispatch`. |
 | `Cribrum.AA.Catalog`      | 3+4   | Shared rule catalog (single source of truth across pass + future types). |
 | `Cribrum.AA.Pass`         | 3     | **Spike**: img-alt, anchor-href, alt-meaningful, heading-no-skip. Total. Confidence-partitioned (Structural / Heuristic). |
 | `Cribrum.AA.Typed`        | 4     | **Spike**: img-alt and anchor-href promoted to type-level propositions via `So`. Decision via `decSo` + `All` over walked nodes. Each rule wires in independently. |
@@ -24,14 +25,15 @@
 | `TEAWeb.Runtime`          | T3+T4 | Not started. Effect dispatcher; the only consumer of `Cribrum.Render.Dom`. |
 | `TEAWeb.Ports`            | T5    | Not started. Typed JSON FFI boundary for app-specific JS. |
 
-## Tests (175 total, all green)
+## Tests (176 total, all green)
 
 ```
 $ pack run test/test.ipkg
 ```
 
 Counts per group: 18 Node + 16 Surface + 57 Parser + 14 Valid + 15 Elaborate
-+ 17 Render + 14 AA.Pass + 20 AA.Typed + 4 Integration (README.dj + plan.dj).
++ 17 Render.Html + 1 Render.Dom + 14 AA.Pass + 20 AA.Typed + 4 Integration
+(README.dj + plan.dj).
 
 Each module has:
 - **EXTs** (example tests) — canonical cases for each behaviour.
@@ -95,8 +97,10 @@ through Cribrum's own pipeline (matching `README.dj`'s role).
 - **Phase 4**: the remaining structural AA rules (heading-no-skip and the
   deferred ones in `docs/conventions.md` §4). Pattern is locked by the two
   rules already promoted.
-- **Phase 5 DOM render**: only the string-form renderer ships; the
-  Idris-2-JS-backend DOM bridge is future work.
+- **Phase 5 DOM render execution**: FFI surface + `renderDom` +
+  `reconcile` ship as a chez-type-checked spike, but actual browser
+  execution lands with the TEAWeb MVP demo (Phase T runtime +
+  `examples/teaweb/counter`). `removeEventListener` deferred.
 - **Convention layer**: §2 of `docs/conventions.md` is mostly deferred —
   elaboration currently only wraps blocks in `<main>`; `:::nav` etc. don't
   promote yet.
