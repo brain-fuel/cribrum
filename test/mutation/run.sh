@@ -31,13 +31,21 @@ fi
 
 # 0. Pack content-hashes installs; if the SAME source content was previously
 # installed and corrupted (e.g. by an interleaved mutant write), pack happily
-# reuses the stale .ttc. Wipe every cached cribrum install before each
-# reinstall so the build always reflects on-disk source.
+# reuses the stale .ttc. Wipe every cached cribrum + teaweb install before
+# each reinstall so the build always reflects on-disk source.
+#
+# teaweb depends on cribrum; when cribrum's content-hash changes (each
+# mutant iteration), the previously-installed teaweb references an
+# obsolete cribrum hash. Reinstalling teaweb here keeps the
+# examples/teaweb/counter demo (and the teaweb-test suite) buildable
+# *between* gate runs, not just at the end.
 reinstall_cribrum () {
   rm -rf build test/build
-  find "$HOME/.local/state/pack/install" -type d -name cribrum \
+  find "$HOME/.local/state/pack/install" \
+    \( -type d -name cribrum -o -type d -name teaweb \) \
     -exec rm -rf {} + 2>/dev/null
   "$PACK_BIN" install cribrum >/tmp/cribrum-mut-install.log 2>&1
+  "$PACK_BIN" install teaweb  >/tmp/teaweb-mut-install.log  2>&1
 }
 
 # 1. Baseline: tests must pass before we mutate anything.

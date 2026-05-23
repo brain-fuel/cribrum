@@ -132,14 +132,21 @@ mount prog hostId = do
         let msg                = fn event
         let (newModel, newCmd) = prog.update msg state.current
         let nextView           = prog.view newModel
-        -- Apply the diff and stash the new state before running the
-        -- Cmd, so any synchronous Cmd-fired event sees the new state.
-        reconcile state.host state.tree (tree nextView)
+        let nextTree           = tree nextView
+        -- Skip reconcile when the view tree is unchanged. Day-1
+        -- "blow-and-rebuild" otherwise nukes DOM-resident state
+        -- (input values, scroll position, ...) on every dispatch,
+        -- *including* dispatches whose Cmd is the only observable
+        -- effect (Focus, Blur). Structural HExpr equality is a cheap
+        -- O(tree) check; the keyed-children diff that arrives in
+        -- Day-2 subsumes this guard.
+        let dirty = nextTree /= state.tree
+        when dirty (reconcile state.host state.tree nextTree)
         writeIORef
           stateRef
           (MkRuntimeState
             newModel
-            (tree nextView)
+            nextTree
             (handlers nextView)
             state.host)
         runCmd newCmd
