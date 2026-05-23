@@ -303,6 +303,111 @@ pbt_safe_single_line_is_paragraph = property $ do
   let s = pack (c :: unpack rest)
   parseDoc s === ok (doc [para s])
 
+--- Code blocks --------------------------------------------------------------
+
+code : String -> String -> Block
+code info body = CodeBlock emptyAttrs info body
+
+export
+ext_code_block_empty : Property
+ext_code_block_empty = oneShot $
+  parseDoc "```\n```" === ok (doc [code "" ""])
+
+export
+ext_code_block_single_line : Property
+ext_code_block_single_line = oneShot $
+  parseDoc "```\nhi\n```" === ok (doc [code "" "hi"])
+
+export
+ext_code_block_multi_line : Property
+ext_code_block_multi_line = oneShot $
+  parseDoc "```\nline1\nline2\n```"
+    === ok (doc [code "" "line1\nline2"])
+
+export
+ext_code_block_with_info : Property
+ext_code_block_with_info = oneShot $
+  parseDoc "```idris\nfoo\n```" === ok (doc [code "idris" "foo"])
+
+export
+ext_code_block_info_trimmed : Property
+ext_code_block_info_trimmed = oneShot $
+  parseDoc "```   bash   \nx\n```" === ok (doc [code "bash" "x"])
+
+||| Body preserves blank lines INSIDE the fence.
+export
+ext_code_block_blank_lines_inside : Property
+ext_code_block_blank_lines_inside = oneShot $
+  parseDoc "```\na\n\nb\n```"
+    === ok (doc [code "" "a\n\nb"])
+
+||| Closing fence must match opener length exactly.
+export
+ext_code_block_longer_close_fence_does_not_close : Property
+ext_code_block_longer_close_fence_does_not_close = oneShot $
+  parseDoc "```\nx\n````\nstill body\n```"
+    === ok (doc [code "" "x\n````\nstill body"])
+
+||| Unclosed code block auto-closes at EOF (tolerant of malformed input).
+export
+ext_code_block_unclosed_auto_closes : Property
+ext_code_block_unclosed_auto_closes = oneShot $
+  parseDoc "```\nbody\nmore"
+    === ok (doc [code "" "body\nmore"])
+
+||| 2 backticks is NOT a fence — falls through to paragraph.
+export
+ext_two_backticks_is_paragraph : Property
+ext_two_backticks_is_paragraph = oneShot $
+  parseDoc "``" === ok (doc [para "``"])
+
+||| Backticks INSIDE the opener's info string disqualify (Djot rule).
+||| Under the rule: opener line is rejected; the line becomes paragraph
+||| content; only the standalone ``` line at the end opens a real (empty)
+||| code block.
+export
+ext_info_with_backticks_is_not_fence : Property
+ext_info_with_backticks_is_not_fence = oneShot $
+  parseDoc "```` ` `\nbody\n```"
+    === ok (doc [ paraMulti [InlText "```` ` `", InlSoftBreak, InlText "body"]
+                , code "" ""
+                ])
+
+||| A code block separates surrounding paragraphs.
+export
+ext_paragraph_then_code_then_paragraph : Property
+ext_paragraph_then_code_then_paragraph = oneShot $
+  parseDoc "before\n\n```\nin\n```\n\nafter"
+    === ok (doc [para "before", code "" "in", para "after"])
+
+codeFenceCases : List (String, Doc)
+codeFenceCases =
+  [ ("```\n```",            doc [code "" ""])
+  , ("```\nx\n```",         doc [code "" "x"])
+  , ("```js\nx\n```",       doc [code "js" "x"])
+  , ("````\nx\n````",       doc [code "" "x"])
+  , ("`````\nx\n`````",     doc [code "" "x"])
+  ]
+
+export
+pddt_code_fence_variants : Property
+pddt_code_fence_variants = withTests 1 . property $ do
+  for_ codeFenceCases $ \(src, expected) =>
+    parseDoc src === ok expected
+
+||| Any well-formed `\`\`\`\\nBODY\\n\`\`\`` always yields one CodeBlock.
+export
+pbt_code_block_round_trip_body : Property
+pbt_code_block_round_trip_body = property $ do
+  let safeChar = element $ the (Vect _ Char)
+        ['a','b','c','d','x','y','z','0','1','2',' ', '_']
+  body <- forAll $ pack <$> list (linear 0 24) safeChar
+  let src = "```\n" ++ body ++ "\n```"
+  case parseDoc src of
+    Right (MkDoc [CodeBlock _ "" b]) => b === body
+    Right d => failWith Nothing ("expected single CodeBlock; got " ++ show d)
+    Left  e => failWith Nothing (show e)
+
 --- Block quotes -------------------------------------------------------------
 
 export
@@ -457,6 +562,20 @@ group = MkGroup "Cribrum.Djot.Parser"
         ext_dashes_first_in_multi_line_group_is_paragraph)
   , ("pddt_thematic_breaks",                     pddt_thematic_breaks)
   , ("pddt_non_thematic",                        pddt_non_thematic)
+  , ("ext_code_block_empty",                     ext_code_block_empty)
+  , ("ext_code_block_single_line",               ext_code_block_single_line)
+  , ("ext_code_block_multi_line",                ext_code_block_multi_line)
+  , ("ext_code_block_with_info",                 ext_code_block_with_info)
+  , ("ext_code_block_info_trimmed",              ext_code_block_info_trimmed)
+  , ("ext_code_block_blank_lines_inside",        ext_code_block_blank_lines_inside)
+  , ("ext_code_block_longer_close_fence_does_not_close",
+        ext_code_block_longer_close_fence_does_not_close)
+  , ("ext_code_block_unclosed_auto_closes",      ext_code_block_unclosed_auto_closes)
+  , ("ext_two_backticks_is_paragraph",           ext_two_backticks_is_paragraph)
+  , ("ext_info_with_backticks_is_not_fence",     ext_info_with_backticks_is_not_fence)
+  , ("ext_paragraph_then_code_then_paragraph",   ext_paragraph_then_code_then_paragraph)
+  , ("pddt_code_fence_variants",                 pddt_code_fence_variants)
+  , ("pbt_code_block_round_trip_body",           pbt_code_block_round_trip_body)
   , ("ext_blockquote_single_line",               ext_blockquote_single_line)
   , ("ext_blockquote_multi_line_paragraph",      ext_blockquote_multi_line_paragraph)
   , ("ext_blockquote_with_heading_inside",       ext_blockquote_with_heading_inside)

@@ -64,6 +64,14 @@ src/Cribrum/Djot/Parser.idr	['>']             => True	['>']             => False
 src/Cribrum/Djot/Parser.idr	('>' :: ' ' :: rest) => pack rest	('>' :: ' ' :: rest) => pack ('>' :: rest)	parser: stripQuotePrefix leaves ">" in
 src/Cribrum/Djot/Parser.idr	in assert_total (go [] (quoted :: acc') rest)	in assert_total (go [] acc' rest)	parser: quote group dropped from output
 src/Cribrum/Djot/Parser.idr	BlockQuote emptyAttrs (assert_total (map groupToBlock gs))	BlockQuote emptyAttrs []	parser: blockquote emits empty body
+src/Cribrum/Djot/Parser.idr	if n >= 3 && not (any (== '`') (unpack after))	if n >= 2 && not (any (== '`') (unpack after))	parser: code fence accepts 2 backticks
+src/Cribrum/Djot/Parser.idr	if n >= 3 && not (any (== '`') (unpack after))	if n >= 4 && not (any (== '`') (unpack after))	parser: code fence requires 4 backticks
+src/Cribrum/Djot/Parser.idr	if n >= 3 && not (any (== '`') (unpack after))	if n >= 3	parser: code fence info allows backticks
+src/Cribrum/Djot/Parser.idr	bs == n && length (unpack trimmed) == n	bs >= n	parser: close fence length relaxed
+src/Cribrum/Djot/Parser.idr	collectCodeBody _ body [] = (reverse body, [])	collectCodeBody _ body [] = ([], [])	parser: unclosed code block drops body
+src/Cribrum/Djot/Parser.idr	CodeGroup info (concat (intersperse "\n" body))	CodeGroup info ""	parser: code body always empty
+src/Cribrum/Djot/Parser.idr	CodeBlock emptyAttrs info b	CodeBlock emptyAttrs "" b	parser: code block strips info
+
 
 
 

@@ -98,9 +98,10 @@ parseParagraphLines (l ::: ls) = case ls of
 --------------------------------------------------------------------------------
 
 public export
-data LineGroup
-  = NormalGroup (List1 String)
-  | QuoteGroup  (List LineGroup)
+data LineGroup : Type where
+  NormalGroup : List1 String        -> LineGroup
+  QuoteGroup  : List LineGroup      -> LineGroup
+  CodeGroup   : (info : String) -> (body : String) -> LineGroup
 
 ||| `True` iff the line starts with `>` followed by space, OR is exactly `>`
 ||| (an empty quote line — Djot allows this).
@@ -109,6 +110,36 @@ isQuotePrefixed s = case unpack s of
   ('>' :: ' ' :: _) => True
   ['>']             => True
   _                 => False
+
+||| Count leading backticks in a string.
+countBackticks : String -> Nat
+countBackticks = go 0 . unpack
+  where
+    go : Nat -> List Char -> Nat
+    go n ('`' :: cs) = go (S n) cs
+    go n _           = n
+
+||| If `s` is a fenced code-block opening line — `\`\`\`` (3+) optionally
+||| followed by an info string with NO further backticks — return
+||| `Just (fenceLen, info)`. Otherwise `Nothing`.
+|||
+||| Djot spec: opener is 3+ backticks; info string is the rest of the line
+||| (trimmed); info must not contain backticks.
+parseCodeFenceOpen : String -> Maybe (Nat, String)
+parseCodeFenceOpen s =
+  let n     = countBackticks s
+      after = pack (drop n (unpack s))
+   in if n >= 3 && not (any (== '`') (unpack after))
+        then Just (n, trim after)
+        else Nothing
+
+||| `True` if `s` is a CLOSING fence of length `n`: exactly `n` backticks
+||| (and only whitespace afterwards).
+isCodeFenceClose : Nat -> String -> Bool
+isCodeFenceClose n s =
+  let trimmed = trim s
+      bs      = countBackticks trimmed
+   in bs == n && length (unpack trimmed) == n
 
 ||| Strip the leading `> ` (or just `>`) prefix, returning the inner line.
 stripQuotePrefix : String -> String
@@ -126,11 +157,16 @@ spanList p (x :: xs) =
     then let (ts, rs) = spanList p xs in (x :: ts, rs)
     else ([], x :: xs)
 
-||| Group consecutive non-blank lines + recognise block-quote runs.
-||| Blank lines outside of a quote run are separators and produce no group.
-||| A quote run is the longest prefix of `>`-prefixed lines; its stripped
-||| interior is recursively grouped so the quote may itself contain
-||| paragraphs, headings, thematic breaks, and (recursively) more quotes.
+||| Group consecutive non-blank lines + recognise block-quote runs and
+||| fenced code blocks.
+|||
+||| - Blank lines outside a quote/code run are separators.
+||| - A quote run is the longest prefix of `>`-prefixed lines; the stripped
+|||   interior is recursively grouped.
+||| - A code fence opens with 3+ backticks and consumes EVERY following line
+|||   (including blanks) until the matching closing fence. If EOF arrives
+|||   before a closing fence, the block is auto-closed at EOF (matches the
+|||   reference Djot implementation's tolerance).
 public export
 groupLines : List String -> List LineGroup
 groupLines xs = go [] [] xs
@@ -139,21 +175,41 @@ groupLines xs = go [] [] xs
     flushNormal []           acc = acc
     flushNormal (l :: ls)    acc = NormalGroup (l ::: ls) :: acc
 
+    -- Consume body lines until the closing fence; return (body, rest).
+    collectCodeBody :
+         (fenceLen : Nat)
+      -> (body : List String)
+      -> (rest : List String)
+      -> (List String, List String)
+    collectCodeBody _ body [] = (reverse body, [])
+    collectCodeBody n body (l :: ls) =
+      if isCodeFenceClose n l
+        then (reverse body, ls)
+        else collectCodeBody n (l :: body) ls
+
     go : (cur : List String) -> (acc : List LineGroup)
        -> List String -> List LineGroup
     go cur acc []        = reverse (flushNormal (reverse cur) acc)
     go cur acc (x :: xs) =
       if isBlankLine x
         then go [] (flushNormal (reverse cur) acc) xs
-        else if isQuotePrefixed x
-          then
-            let (quoteLines, rest) =
-                  spanList isQuotePrefixed (x :: xs)
-                inner   = map stripQuotePrefix quoteLines
-                acc'    = flushNormal (reverse cur) acc
-                quoted  = QuoteGroup (assert_total (groupLines inner))
-             in assert_total (go [] (quoted :: acc') rest)
-          else go (x :: cur) acc xs
+        else case parseCodeFenceOpen x of
+          Just (n, info) =>
+            let (body, rest) = collectCodeBody n [] xs
+                acc'         = flushNormal (reverse cur) acc
+                code         =
+                  CodeGroup info (concat (intersperse "\n" body))
+             in assert_total (go [] (code :: acc') rest)
+          Nothing =>
+            if isQuotePrefixed x
+              then
+                let (quoteLines, rest) =
+                      spanList isQuotePrefixed (x :: xs)
+                    inner   = map stripQuotePrefix quoteLines
+                    acc'    = flushNormal (reverse cur) acc
+                    quoted  = QuoteGroup (assert_total (groupLines inner))
+                 in assert_total (go [] (quoted :: acc') rest)
+              else go (x :: cur) acc xs
 
 --------------------------------------------------------------------------------
 -- Group -> Block.
@@ -192,9 +248,11 @@ normalGroupToBlock (l ::: ls) =
 ||| Convert a LineGroup into a Block. Quote groups recurse.
 public export
 groupToBlock : LineGroup -> Block
-groupToBlock (NormalGroup g)  = normalGroupToBlock g
-groupToBlock (QuoteGroup  gs) =
+groupToBlock (NormalGroup g)    = normalGroupToBlock g
+groupToBlock (QuoteGroup  gs)   =
   BlockQuote emptyAttrs (assert_total (map groupToBlock gs))
+groupToBlock (CodeGroup info b) =
+  CodeBlock emptyAttrs info b
 
 --------------------------------------------------------------------------------
 -- Top-level.
