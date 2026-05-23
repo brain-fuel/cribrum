@@ -44,6 +44,7 @@ knownTags =
   , "a", "img", "figure", "figcaption"
   , "section", "article", "nav", "aside", "main", "header", "footer"
   , "pre", "code", "blockquote"
+  , "em", "strong", "mark", "sup", "sub", "ins", "del"
   ]
 
 ||| Decidable membership in `knownTags`.

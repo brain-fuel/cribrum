@@ -24,5 +24,14 @@ src/Cribrum/Html/Valid.idr	"section", "article", "nav", "aside"	"article", "nav"
 src/Cribrum/Html/Valid.idr	"div", "span", "br"	"divx", "span", "br"	knownTags: typo "div" -> "divx"
 src/Cribrum/Html/Valid.idr	  Yes _ => True	  Yes _ => False	isValidHtml: Yes branch returns False (inversion)
 src/Cribrum/Html/Valid.idr	  No  _ => False	  No  _ => True	isValidHtml: No branch returns True (inversion)
+src/Cribrum/Elaborate.idr	headingTag 3 = "h3"	headingTag 3 = "h1"	elaborate: h3 collapsed to h1
+src/Cribrum/Elaborate.idr	headingTag 6 = "h6"	headingTag 6 = "h1"	elaborate: h6 collapsed to h1
+src/Cribrum/Elaborate.idr	  Element "p" [] (map elaborateInline inlines)	  Element "div" [] (map elaborateInline inlines)	elaborate: paragraph -> div
+src/Cribrum/Elaborate.idr	  Element "hr" [] []	  Element "br" [] []	elaborate: thematic break emits br instead of hr
+src/Cribrum/Elaborate.idr	elaborateInline InlSoftBreak       = Text " "	elaborateInline InlSoftBreak       = Text ""	elaborate: softbreak -> empty
+src/Cribrum/Elaborate.idr	elaborateInline InlHardBreak       = Element "br" [] []	elaborateInline InlHardBreak       = Element "hr" [] []	elaborate: hardbreak -> hr
+src/Cribrum/Elaborate.idr	Element "em" [] (assert_total	Element "strong" [] (assert_total	elaborate: em -> strong
+src/Cribrum/Elaborate.idr	elaborateDoc (MkDoc bs) = Element "main" []	elaborateDoc (MkDoc bs) = Element "section" []	elaborate: doc wrapper main -> section
+
 src/Cribrum/Html/Valid.idr	decideHtml (Text _)            = Yes ValidText	decideHtml (Text _)            = decideHtml (Element "bogus" [] [])	Text classification routed to known-unknown
 
