@@ -18,4 +18,11 @@ src/Cribrum/Djot/Parser.idr	(c == '-' || c == '*')	(c == '-')	thematic break: dr
 src/Cribrum/Djot/Parser.idr	&& all (== c) cs	&& True	thematic break: drop homogeneity check
 src/Cribrum/Djot/Parser.idr	if isNil ls && isThematicBreak l	if isNil ls	thematic break: any single-line group becomes thematic
 src/Cribrum/Djot/Parser.idr	if isNil ls && isThematicBreak l	if isThematicBreak l	thematic break: multi-line groups starting --- become thematic
+src/Cribrum/Html/Valid.idr	"p", "div", "span", "br", "hr"	"div", "span", "br", "hr"	knownTags: drop "p"
+src/Cribrum/Html/Valid.idr	, "p", "div"	, "div"	knownTags: drop "p" (alt form)
+src/Cribrum/Html/Valid.idr	"section", "article", "nav", "aside"	"article", "nav", "aside"	knownTags: drop "section"
+src/Cribrum/Html/Valid.idr	"div", "span", "br"	"divx", "span", "br"	knownTags: typo "div" -> "divx"
+src/Cribrum/Html/Valid.idr	  Yes _ => True	  Yes _ => False	isValidHtml: Yes branch returns False (inversion)
+src/Cribrum/Html/Valid.idr	  No  _ => False	  No  _ => True	isValidHtml: No branch returns True (inversion)
+src/Cribrum/Html/Valid.idr	decideHtml (Text _)            = Yes ValidText	decideHtml (Text _)            = decideHtml (Element "bogus" [] [])	Text classification routed to known-unknown
 

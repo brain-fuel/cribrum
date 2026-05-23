@@ -4,10 +4,12 @@ import Hedgehog
 import Test.Cribrum.Node
 import Test.Cribrum.Djot.Surface
 import Test.Cribrum.Djot.Parser
+import Test.Cribrum.Html.Valid
 
 main : IO ()
 main = test
   [ Test.Cribrum.Node.group
   , Test.Cribrum.Djot.Surface.group
   , Test.Cribrum.Djot.Parser.group
+  , Test.Cribrum.Html.Valid.group
   ]
