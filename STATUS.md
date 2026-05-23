@@ -9,21 +9,22 @@
 |---------------------------|-------|--------|
 | `Cribrum.Node`            | core  | HExpr IR (Element/Text/Comment, HAttr w/ handler-capable AttrValue, traversal). |
 | `Cribrum.Djot.Surface`    | 1a    | Faithful Djot AST — full construct inventory representable. |
-| `Cribrum.Djot.Parser`     | 1a    | **Slice**: paragraph, ATX heading (1-6), thematic break. Code block, block quote, lists, inline emphasis parsing → deferred. |
+| `Cribrum.Djot.Parser`     | 1a    | **Slice**: paragraph, ATX heading (1-6), thematic break, block quote (recursive), fenced code block. Lists, inline emphasis parsing, tables → deferred. |
 | `Cribrum.Html.Valid`      | 2     | **Spike**: IsKnownTag membership only; per-element content model + attribute permission deferred. Indexed proposition + total Dec works. |
 | `Cribrum.Elaborate`       | 1b    | Strict elaboration `Doc -> Either ElabError (h ** (IsValidHtml h, StructuralAA h))`. StructuralAA is unit in this spike. |
 | `Cribrum.Render.Html`     | 5     | Total `HExpr -> String`. HTML 5 void-element handling, escaping, handler attrs render as `data-on-<event>`. DOM render → deferred. |
 | `Cribrum.AA.Catalog`      | 3+4   | Shared rule catalog (single source of truth across pass + future types). |
 | `Cribrum.AA.Pass`         | 3     | **Spike**: img-alt, anchor-href, alt-meaningful, heading-no-skip. Total. Confidence-partitioned (Structural / Heuristic). |
+| `Cribrum.AA.Typed`        | 4     | **Spike**: img-alt and anchor-href promoted to type-level propositions via `So`. Decision via `decSo` + `All` over walked nodes. Each rule wires in independently. |
 
-## Tests (129 total, all green)
+## Tests (173 total, all green)
 
 ```
 $ pack run test/test.ipkg
 ```
 
-Counts per group: 18 Node + 16 Surface + 33 Parser + 14 Valid + 15 Elaborate
-+ 17 Render + 14 AA + 2 Integration.
+Counts per group: 18 Node + 16 Surface + 57 Parser + 14 Valid + 15 Elaborate
++ 17 Render + 14 AA.Pass + 20 AA.Typed + 2 Integration.
 
 Each module has:
 - **EXTs** (example tests) — canonical cases for each behaviour.
@@ -32,7 +33,7 @@ Each module has:
 - **PBTs** (property-based tests via hedgehog) — invariants over generated
   inputs.
 
-## Mutation gate (53 mutants, 0 surviving)
+## Mutation gate (74 mutants, 0 surviving)
 
 ```
 $ test/mutation/run.sh
@@ -73,14 +74,17 @@ the whole pipeline and asserts:
 
 ## What's NOT shipped yet
 
-- **Phase 1a parser**: code blocks, block quotes, lists, tables, inline
-  emphasis/links/images/footnotes parsing, generic attribute block parsing,
-  reference link definitions, raw blocks, smart-punctuation tokenisation.
+- **Phase 1a parser**: lists, tables, inline emphasis/links/images/footnotes
+  parsing, generic attribute block parsing, reference link definitions, raw
+  blocks, smart-punctuation tokenisation. (Block quote, fenced code block,
+  paragraph, heading, thematic break already shipped.)
 - **Phase 2 content model**: per-element permitted children, per-element
   permitted attributes, ingestion from HTML spec.
 - **Phase 3 catalog**: full WCAG AA rule set (currently 4 of ~50 success
   criteria).
-- **Phase 4**: type-level promotion of structural AA rules.
+- **Phase 4**: the remaining structural AA rules (heading-no-skip and the
+  deferred ones in `docs/conventions.md` §4). Pattern is locked by the two
+  rules already promoted.
 - **Phase 5 DOM render**: only the string-form renderer ships; the
   Idris-2-JS-backend DOM bridge is future work.
 - **Convention layer**: §2 of `docs/conventions.md` is mostly deferred —
