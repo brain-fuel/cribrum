@@ -1,4 +1,4 @@
-||| Elaboration — Phase 1b per `plan.md`.
+||| Elaboration — Phase 1b per `plan.dj`.
 |||
 ||| Maps Djot's surface AST to the single IR (HExpr), promoting div/span/class
 ||| soup into semantic HTML elements. Strict mode (the default) is total into
@@ -32,7 +32,7 @@ import Cribrum.Html.Valid
 -- StructuralAA placeholder.
 --------------------------------------------------------------------------------
 
-||| Structurally-decidable accessibility, per plan.md §Phase 4. Phase 4 will
+||| Structurally-decidable accessibility, per plan.dj §Phase 4. Phase 4 will
 ||| land the actual rule set; the spike treats it as the universally true
 ||| proposition so the elaboration codomain is the right *shape*.
 public export
@@ -172,7 +172,7 @@ elaborateDoc : Doc -> HExpr
 elaborateDoc (MkDoc bs) = Element "main" [] (map elaborateBlock bs)
 
 ||| Strict elaboration: returns the HExpr together with proofs of validity
-||| and structural accessibility. Per plan.md §Governing principle, callers
+||| and structural accessibility. Per plan.dj §Governing principle, callers
 ||| that demand `(h : HExpr ** IsValidHtml h × StructuralAA h)` are unable
 ||| to receive a malformed tree — the decision procedure manufactures the
 ||| witness or we return a located rejection.

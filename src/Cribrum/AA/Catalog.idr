@@ -1,6 +1,6 @@
 ||| WCAG AA rule catalog — Phase 3 + Phase 4 *shared* source of truth.
 |||
-||| Per plan.md §Phase 4: "One shared rule catalog across Phase 1b (elaboration
+||| Per plan.dj §Phase 4: "One shared rule catalog across Phase 1b (elaboration
 ||| enforcement), Phase 3 (pass), and Phase 4 (types). A rule 'graduates' from
 ||| finding to proposition; it is never defined twice."
 |||
@@ -11,7 +11,7 @@ module Cribrum.AA.Catalog
 
 %default total
 
-||| Confidence with which a check can claim a verdict. Per plan.md the
+||| Confidence with which a check can claim a verdict. Per plan.dj the
 ||| heuristic/runtime classes NEVER claim proof status — they are pass-only.
 public export
 data Confidence

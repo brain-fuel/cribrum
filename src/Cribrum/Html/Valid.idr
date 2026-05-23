@@ -1,4 +1,4 @@
-||| `IsValidHtml` — Phase 2 spike per `plan.md` §Phase 2.
+||| `IsValidHtml` — Phase 2 spike per `plan.dj` §Phase 2.
 |||
 ||| HTML well-formedness as an indexed proposition `IsValidHtml : HExpr -> Type`
 ||| with a total decision procedure `decideHtml : (h : HExpr) -> Dec (IsValidHtml h)`.
@@ -32,7 +32,7 @@ import Cribrum.Node
 --------------------------------------------------------------------------------
 
 ||| The seed subset. Future iteration: read this from the HTML spec's
-||| machine-readable element definitions (per plan.md §Phase 2 "ingested
+||| machine-readable element definitions (per plan.dj §Phase 2 "ingested
 ||| from machine-readable upstreams").
 public export
 knownTags : List String

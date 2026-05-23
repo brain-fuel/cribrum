@@ -1,4 +1,4 @@
-||| AA checking pass — Phase 3 per plan.md.
+||| AA checking pass — Phase 3 per plan.dj.
 |||
 ||| `checkAA : (h : HExpr) -> IsValidHtml h -> AAReport`, total. Walks the
 ||| tree, emits findings tagged by the shared catalog (`Cribrum.AA.Catalog`).
@@ -166,7 +166,7 @@ walkNodes p h@(Element _ _ cs) =
       assert_total (walkNodes (p ++ [i]) c) ++ childWalk (S i) rest
 walkNodes _ _ = []
 
-||| Full pass. Per plan.md the function takes the `IsValidHtml` proof as a
+||| Full pass. Per plan.dj the function takes the `IsValidHtml` proof as a
 ||| precondition; we do not extract from it (the proof exists so the type
 ||| signature reflects the soundness story).
 public export

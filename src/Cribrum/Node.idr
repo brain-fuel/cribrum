@@ -1,6 +1,6 @@
 ||| The HExpr — Cribrum's single intermediate representation.
 |||
-||| Per `plan.md` §Governing principle: there is exactly one datatype. Its tag
+||| Per `plan.dj` §Governing principle: there is exactly one datatype. Its tag
 ||| space is the HTML element set; its attribute model is the HTML attribute
 ||| model (handler-capable). `div`/`span` are two elements among many, never a
 ||| catch-all. Conformance ("is valid HTML", "is AA-conformant") is a predicate

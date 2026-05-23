@@ -8,7 +8,7 @@
 **Language:** Idris 2 (core IR, elaboration, type-level conformance, decision
 procedures). JS via the Idris 2 JS backend for the final DOM render.
 
-See `plan.md` for the architectural narrative, `STATUS.md` for what currently
+See `plan.dj` for the architectural narrative, `STATUS.md` for what currently
 ships, and `docs/conventions.md` for the convention catalog.
 
 ## Build + run
@@ -33,21 +33,35 @@ src/Cribrum/
   AA/Typed.idr           # img-alt as a type-level proposition (Phase 4)
   Render/Html.idr        # HExpr -> String
 
+src/TEAWeb/              # Phase T: Elm++ frontend library on top of Cribrum
+  Html.idr               # view-builder smart constructors (Phase T1)
+  Event.idr              # onClick / onInput / ... attribute helpers (Phase T2)
+  Program.idr            # Program model msg + mount (Phase T3)
+  Cmd.idr                # Cmd msg variants (Phase T4)
+  Sub.idr                # Sub msg variants (Phase T4)
+  Runtime.idr            # interpreter loop + effect dispatch (Phase T3 + T4)
+  Ports.idr              # typed JSON FFI boundary (Phase T5)
+
 test/
   src/Test/Cribrum/...   # one test module per src module
   src/Main.idr           # hedgehog test entry
   mutation/              # mutants.tsv + run.sh
+  teaweb/                # TEAWeb test suites (Phase T)
+
+examples/teaweb/
+  counter/               # MVP demo (Counter + Focus)
+  docs-nav/              # Phase T6 real demo
 
 docs/
   conventions.md         # the Djot/class -> semantic-HTML convention catalog
 
 README.dj                # dogfood — project's own README in Djot
 README.md                # this file
-plan.md                  # authoritative architectural narrative
+plan.dj                  # authoritative architectural narrative (in Djot)
 STATUS.md                # snapshot of phase progress
 ```
 
-## Testing discipline (per `plan.md` cross-cutting commitments)
+## Testing discipline (per `plan.dj` cross-cutting commitments)
 
 Every module ships:
 

@@ -1,6 +1,6 @@
 ||| Phase 4 spike — type-level promotion of one structural AA rule.
 |||
-||| Per plan.md §Phase 4: "the essence of Phase 2 applied to Phase 3." Reuse
+||| Per plan.dj §Phase 4: "the essence of Phase 2 applied to Phase 3." Reuse
 ||| the indexed-proposition + `Dec` machinery from Phase 2 on the
 ||| `Structural` rules from Phase 3. A rule **graduates** from finding to
 ||| proposition; it is never defined twice.

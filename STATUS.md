@@ -1,6 +1,6 @@
 # Cribrum — Current Status
 
-> Snapshot of what's built. Authoritative narrative is `plan.md`; the
+> Snapshot of what's built. Authoritative narrative is `plan.dj`; the
 > convention catalog is `docs/conventions.md`.
 
 ## Modules
@@ -16,15 +16,22 @@
 | `Cribrum.AA.Catalog`      | 3+4   | Shared rule catalog (single source of truth across pass + future types). |
 | `Cribrum.AA.Pass`         | 3     | **Spike**: img-alt, anchor-href, alt-meaningful, heading-no-skip. Total. Confidence-partitioned (Structural / Heuristic). |
 | `Cribrum.AA.Typed`        | 4     | **Spike**: img-alt and anchor-href promoted to type-level propositions via `So`. Decision via `decSo` + `All` over walked nodes. Each rule wires in independently. |
+| `TEAWeb.Html`             | T1    | Not started. View-builder smart constructors (`div_`, `button_`, …) returning HExpr; pre-Phase-2 uses dynamic `viewSafe` gate. |
+| `TEAWeb.Event`            | T2    | Not started. `onClick`/`onInput`/… handlers; `View msg` wrapper + `HandlerTable msg`; callback ids = `hash(path, event)`. |
+| `TEAWeb.Program`          | T3    | Not started. `Program model msg` record + `mount`; tail-recursive interpreter loop in Idris. |
+| `TEAWeb.Cmd`              | T4    | Not started. `Cmd msg` variants (Http, Focus, Blur, Random, After). |
+| `TEAWeb.Sub`              | T4    | Not started. `Sub msg` variants (OnAnimationFrame, OnKeyDown, OnResize, Every, Port). |
+| `TEAWeb.Runtime`          | T3+T4 | Not started. Effect dispatcher; the only consumer of `Cribrum.Render.Dom`. |
+| `TEAWeb.Ports`            | T5    | Not started. Typed JSON FFI boundary for app-specific JS. |
 
-## Tests (173 total, all green)
+## Tests (175 total, all green)
 
 ```
 $ pack run test/test.ipkg
 ```
 
 Counts per group: 18 Node + 16 Surface + 57 Parser + 14 Valid + 15 Elaborate
-+ 17 Render + 14 AA.Pass + 20 AA.Typed + 2 Integration.
++ 17 Render + 14 AA.Pass + 20 AA.Typed + 4 Integration (README.dj + plan.dj).
 
 Each module has:
 - **EXTs** (example tests) — canonical cases for each behaviour.
@@ -66,11 +73,14 @@ Gate: zero non-approved survivors.
             └── checkAA    (Cribrum.AA.Pass)     -> AAReport
 ```
 
-The integration test (`Test.Cribrum.Integration`) runs `README.dj` through
-the whole pipeline and asserts:
+The integration tests in `Test.Cribrum.Integration` run `README.dj` *and*
+`plan.dj` through the whole pipeline and assert:
 - Every heading + thematic break + `<main>` landmark survives.
 - No bare top-level `<div>` (the "no div/span soup" commitment).
 - The dependent pair carries a real `IsValidHtml h` witness.
+
+`plan.dj` is the project's authoritative architectural narrative, dogfooded
+through Cribrum's own pipeline (matching `README.dj`'s role).
 
 ## What's NOT shipped yet
 
@@ -92,3 +102,6 @@ the whole pipeline and asserts:
   promote yet.
 - **Ingest pipeline**: HTML content model + WCAG AA catalog are
   hand-listed (the spike subsets) rather than ingested from W3C upstreams.
+- **Phase T (TEAWeb)**: entire layer not started — no view-builder, no
+  event model, no Program/mount, no Cmd/Sub interpreter, no Ports. Blocks
+  on Phase 5 DOM bridge for the MVP demo.

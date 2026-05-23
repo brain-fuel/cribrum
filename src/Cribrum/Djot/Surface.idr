@@ -1,4 +1,4 @@
-||| Djot surface AST — Phase 1a per `plan.md`.
+||| Djot surface AST — Phase 1a per `plan.dj`.
 |||
 ||| Faithful, lossless representation of a `.dj` document. Divs/spans/classes
 ||| live here because that is what Djot is. Downstream consumers never see this
@@ -7,7 +7,7 @@
 ||| compatible Djot parser.
 |||
 ||| Inventory follows `doc/syntax.html` in `jgm/djot` (block + inline + cross-
-||| cutting). Every construct enumerated in plan.md §Phase 1a is representable.
+||| cutting). Every construct enumerated in plan.dj §Phase 1a is representable.
 module Cribrum.Djot.Surface
 
 %default total

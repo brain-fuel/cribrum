@@ -4,11 +4,11 @@
 > stock grammar; the conventions below give meaning to particular class /
 > attribute idioms during elaboration (`Cribrum.Elaborate`, Phase 1b).
 >
-> **No new Djot surface syntax is introduced** (plan.md §central design
+> **No new Djot surface syntax is introduced** (plan.dj §central design
 > commitment). Everything here is class-and-attribute idioms the stock Djot
 > parser already accepts.
 
-This document is the **pinned** catalog per plan.md §Phase 1b. It is the
+This document is the **pinned** catalog per plan.dj §Phase 1b. It is the
 single source of truth for:
 
 1. The canonical Djot-construct → HExpr-element tag mapping.
@@ -76,7 +76,7 @@ honour.
 
 ## 2. Class / attribute conventions (semantic promotion)
 
-> Goal per plan.md §central design commitment: **no `div`/`span` soup**.
+> Goal per plan.dj §central design commitment: **no `div`/`span` soup**.
 > Elaboration promotes Djot's flat div/span into proper landmark / sectioning
 > elements based on class hints.
 
@@ -108,7 +108,7 @@ implements them.
 | Top-level heading + body → `<main>` wrapper     | `:::main` explicit; or `{role=main}`. |
 | Anchor in nav-region → `<nav>` landmark         | `:::nav`. |
 
-The **inference with override** policy (plan.md §central design commitment):
+The **inference with override** policy (plan.dj §central design commitment):
 elaboration infers semantic structure where it is safe and deterministic;
 anything inferred can be explicitly overridden by a convention annotation;
 ambiguous semantics that cannot be safely inferred require an explicit
@@ -118,7 +118,7 @@ convention annotation.
 
 ## 4. Structural-AA enforcement boundary
 
-> Per plan.md §central design commitment: **only structurally decidable**
+> Per plan.dj §central design commitment: **only structurally decidable**
 > failures can be elaboration errors. The undecidable ones live in the
 > Phase 3 pass.
 
@@ -145,7 +145,7 @@ convention annotation.
 
 ## 5. Round-trip / normalization expectations
 
-Goals (plan.md §1a acceptance):
+Goals (plan.dj §1a acceptance):
 
 - The parser accepts the Djot reference test-suite input corpus and renders
   HTML matching the reference implementation's expected output.
@@ -159,7 +159,7 @@ Goals (plan.md §1a acceptance):
 
 ## Draft mode
 
-`draft` mode (plan.md §central design commitment) downgrades the structural
+`draft` mode (plan.dj §central design commitment) downgrades the structural
 hard-errors to located findings so work-in-progress (a half-captioned
 `README.dj`) can still render. Strict mode is the **default** and is where
 the by-construction guarantee holds. The guarantee is stated **only** for
