@@ -1,0 +1,12 @@
+package teaweb
+version = 0.1.0
+authors = "Matthew Laine"
+brief   = "TEAWeb — The Elm Architecture on top of Cribrum, with proof-carrying views."
+
+sourcedir = "src"
+depends   = base
+          , contrib
+          , cribrum
+
+modules = TEAWeb.Html
+        , TEAWeb.Event

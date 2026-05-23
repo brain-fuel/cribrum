@@ -17,8 +17,8 @@
 | `Cribrum.AA.Catalog`      | 3+4   | Shared rule catalog (single source of truth across pass + future types). |
 | `Cribrum.AA.Pass`         | 3     | **Spike**: img-alt, anchor-href, alt-meaningful, heading-no-skip. Total. Confidence-partitioned (Structural / Heuristic). |
 | `Cribrum.AA.Typed`        | 4     | **Spike**: img-alt and anchor-href promoted to type-level propositions via `So`. Decision via `decSo` + `All` over walked nodes. Each rule wires in independently. |
-| `TEAWeb.Html`             | T1    | Not started. View-builder smart constructors (`div_`, `button_`, …) returning HExpr; pre-Phase-2 uses dynamic `viewSafe` gate. |
-| `TEAWeb.Event`            | T2    | Not started. `onClick`/`onInput`/… handlers; `View msg` wrapper + `HandlerTable msg`; callback ids = `hash(path, event)`. |
+| `TEAWeb.Html`             | T1    | **Spike**: view-builder smart constructors for 34 elements; `Attr msg` data type (`Plain` / `On`); `View msg` record = (HExpr, HandlerTable); leaf nodes (`text_`, `comment_`); void elements (`br_`, `hr_`); plain attribute helpers (`class_`, `id_`, `href_`, ...). `viewSafe` returns `Either ViewError ((h ** IsValidHtml h), HandlerTable)` — Phase-2 typing replaces this dynamic gate later. |
+| `TEAWeb.Event`            | T2    | **Spike**: `onClick`/`onSubmit`/`onFocus`/`onBlur`/`onDoubleClick`/`onMouseEnter`/`onMouseLeave` (msg-form); `onInput`/`onChange` (String-callback form, dispatch-side value extraction lands with `TEAWeb.Runtime`). Callback ids app-supplied for MVP; deterministic `hash(path, event)` when keyed diff lands. |
 | `TEAWeb.Program`          | T3    | Not started. `Program model msg` record + `mount`; tail-recursive interpreter loop in Idris. |
 | `TEAWeb.Cmd`              | T4    | Not started. `Cmd msg` variants (Http, Focus, Blur, Random, After). |
 | `TEAWeb.Sub`              | T4    | Not started. `Sub msg` variants (OnAnimationFrame, OnKeyDown, OnResize, Every, Port). |

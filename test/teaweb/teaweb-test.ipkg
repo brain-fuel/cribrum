@@ -1,0 +1,17 @@
+package teaweb_test
+version = 0.1.0
+brief   = "TEAWeb test suite: EXT + PDDT + PBT."
+
+sourcedir = "src"
+depends   = base
+          , contrib
+          , hedgehog
+          , cribrum
+          , teaweb
+
+main = Main
+executable = "teaweb-tests"
+
+modules = Test.TEAWeb.Html
+        , Test.TEAWeb.Event
+        , Main
