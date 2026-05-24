@@ -10,14 +10,16 @@
 | `Cribrum.Node`            | core  | HExpr IR (Element/Text/Comment, HAttr w/ handler-capable AttrValue, traversal). |
 | `Cribrum.Djot.Surface`    | 1a    | Faithful Djot AST — full construct inventory representable. |
 | `Cribrum.Djot.Parser`     | 1a    | **Slice**: paragraph, ATX heading (1-6), thematic break, block quote (recursive), fenced code block. Lists, inline emphasis parsing, tables → deferred. |
-| `Cribrum.Html.Valid`      | 2     | **Spike**: IsKnownTag membership only; per-element content model + attribute permission deferred. Indexed proposition + total Dec works. |
-| `Cribrum.Elaborate`       | 1b    | Strict elaboration `Doc -> Either ElabError (h ** (IsValidHtml h, StructuralAA h))`. StructuralAA is unit in this spike. |
+| `Cribrum.Html.Category`   | 2     | Content-category enum (Metadata/Flow/Sectioning/Heading/Phrasing/Embedded/Interactive/Palpable/ScriptSupporting/FormAssociated). |
+| `Cribrum.Html.Model`      | 2     | Element catalog (~95 elements) with void / raw-text flags, category lists, `ChildPolicy` content-model entries (NoChildren / OnlyTags / OnlyCategories / TextOnly / AnyContent), and per-element local-attribute sets. Global-attribute set + `data-*` / `aria-*` / `on*` prefix recognition. Hand-curated seed; `ingest/html-model.ts` is the regeneration scaffold. |
+| `Cribrum.Html.Valid`      | 2     | `IsValidHtml = IsKnownTag × All AttrAllowedIn × All ChildAllowedIn × All IsValidHtml`. Total `decideHtml : (h : HExpr) -> Dec (IsValidHtml h)`. Located rejection (`decideHtmlLocated`) returns path-into-tree + `RejectionClass` (UnknownTag / DisallowedAttr / IllegalChild / BlockInPhrasing / MalformedTable / TextNotAllowedIn / CommentNotAllowedIn). |
+| `Cribrum.Elaborate`       | 1b    | Strict elaboration `Doc -> Either ElabError (h ** (IsValidHtml h, StructuralAA h))`. Phase-2 sharpened: failure path uses `LocatedHtmlError` carrying a `LocatedReject`. StructuralAA still unit in this spike (Phase 4 promotion outstanding). |
 | `Cribrum.Render.Html`     | 5     | Total `HExpr -> String`. HTML 5 void-element handling, escaping, handler attrs render as `data-on-<event>`. |
 | `Cribrum.Render.Dom`      | 5     | **Spike**: tiny FFI surface (createElement/createTextNode/createComment/setAttribute/removeAttribute/addEventListener/appendChild/replaceChild/getElementById/clearChildren) + `currentEventValue` (input-value extraction) + `captureFocus`/`restoreFocus` (focus + selection-range preservation across reconcile). `renderDom : HExpr -> IO DomNode`, `reconcile` (Day-1 blow-and-rebuild, skip on unchanged tree, focus bracketed), `mountInto`. JS-backend only at runtime; chez type-checks via multi-spec %foreign with a scheme: fallback. Handler attrs dispatch via `window.__cribrumDispatch`; the dispatcher pre-extracts `event.target.value` into `window.__cribrumValue` for `onInput`/`onChange`. |
-| `Cribrum.AA.Catalog`      | 3+4   | Shared rule catalog (single source of truth across pass + future types). |
-| `Cribrum.AA.Pass`         | 3     | **Spike**: img-alt, anchor-href, alt-meaningful, heading-no-skip. Total. Confidence-partitioned (Structural / Heuristic). |
-| `Cribrum.AA.Typed`        | 4     | **Spike**: img-alt and anchor-href promoted to type-level propositions via `So`. Decision via `decSo` + `All` over walked nodes. Each rule wires in independently. |
-| `TEAWeb.Html`             | T1    | **Spike**: view-builder smart constructors for 34 elements; `Attr msg` data type (`Plain` / `On`); `View msg` record = (HExpr, HandlerTable with `Event -> IO msg` closures); leaf nodes (`text_`, `comment_`); void elements (`br_`, `hr_`); plain attribute helpers (`class_`, `id_`, `href_`, ...). `viewSafe` returns `Either ViewError ((h ** IsValidHtml h), HandlerTable)` — Phase-2 typing replaces this dynamic gate later. `eventTargetValue` re-exports the value-extraction primitive from `Cribrum.Render.Dom`. |
+| `Cribrum.AA.Catalog`      | 3+4   | Shared rule catalog (single source of truth across pass + future types). 11 rules: img-alt, anchor-href, alt-meaningful, heading-no-skip, document-lang, iframe-title, label-for-control, fieldset-legend, link-name, button-name, duplicate-id. |
+| `Cribrum.AA.Pass`         | 3     | Per-rule traversal: 4 spike rules + 7 added (document-lang root check, iframe-title, label-for-control with implicit-control support, fieldset-legend, link-name with `aria-label`/`title`/text fallbacks, button-name, duplicate-id whole-tree). Total. Confidence-partitioned (Structural / Heuristic). Data-interpreter refactor still ahead — current style is per-rule hand-written walkers. |
+| `Cribrum.AA.Typed`        | 4     | 5 structural rules promoted to type-level propositions via `So`: img-alt, anchor-href, iframe-title, label-for-control, button-name. Decision via `decSo` + `All` over walked nodes. Each rule wires in independently (~30 lines). Plan §P4.2 calls for factoring the boilerplate into `Cribrum.AA.Promote`; deferred until catalog passes ~12 promotions. |
+| `TEAWeb.Html`             | T1    | **Spike**: view-builder smart constructors for 34 elements; `Attr msg` data type (`Plain` / `On`); `View msg` record = (HExpr, HandlerTable with `Event -> IO msg` closures); leaf nodes (`text_`, `comment_`); void elements (`br_`, `hr_`); plain attribute helpers (`class_`, `id_`, `href_`, ...). `viewSafe` routes through Phase-2's `decideHtmlLocated`, returning `Either ViewError ((h ** IsValidHtml h), HandlerTable)` with `LocatedReject` on rejection — content-model + attribute-permission misuse is now caught dynamically with path-into-tree diagnostics. Statically-typed-by-construction constructors (e.g. `ul_ : List (h ** IsLiChild h) -> View msg`) are the planned post-Phase-2 follow-on; the dynamic gate covers the contract until that lands. `eventTargetValue` re-exports the value-extraction primitive from `Cribrum.Render.Dom`. |
 | `TEAWeb.Event`            | T2    | **Spike**: `onClick`/`onSubmit`/`onFocus`/`onBlur`/`onDoubleClick`/`onMouseEnter`/`onMouseLeave` (msg-form, IO-wrapped via `pure`); `onInput`/`onChange` (String-callback form; the closure runs `eventTargetValue` to read the pre-extracted `event.target.value`). Callback ids app-supplied for MVP; deterministic `hash(path, event)` when keyed diff lands. |
 | `TEAWeb.Program`          | T3    | **Spike**: `Program model msg` record (init/update/view/subscriptions). |
 | `TEAWeb.Cmd`              | T4    | **Spike**: `None`/`Batch`/`Focus`/`Blur`. `flatten : Cmd msg -> List (Cmd msg)`. Http/Random/After deferred to TEAWeb T6 demo's needs. |
@@ -25,15 +27,17 @@
 | `TEAWeb.Runtime`          | T3+T4 | **Spike**: `mount` + tail-recursive interpreter loop in Idris; `installDispatch` installs single global `window.__cribrumDispatch`; `runCmd` interprets Focus/Blur via FFI; reconcile after each update keeps state ref + handler table in lockstep. JS-backend execution only. |
 | `TEAWeb.Ports`            | T5    | Not started. Typed JSON FFI boundary for app-specific JS. |
 
-## Tests (176 total, all green)
+## Tests (298 total, all green)
 
 ```
-$ pack run test/test.ipkg
+$ make test-fast        # cribrum + teaweb suites
+$ make test             # adds mutation gate
 ```
 
-Counts per group: 18 Node + 16 Surface + 57 Parser + 14 Valid + 15 Elaborate
-+ 17 Render.Html + 1 Render.Dom + 14 AA.Pass + 20 AA.Typed + 4 Integration
-(README.dj + plan.dj).
+Counts per group: 18 Node + 16 Surface + 57 Parser + 18 Model + 39 Valid
++ 15 Elaborate + 17 Render.Html + 1 Render.Dom + 34 AA.Pass + 34 AA.Typed
++ 4 Integration (README.dj + plan.dj) = 263 Cribrum. 10 TEAWeb.Html
++ 10 TEAWeb.Event + 6 TEAWeb.Cmd + 9 TEAWeb.Program = 35 TEAWeb.
 
 Each module has:
 - **EXTs** (example tests) — canonical cases for each behaviour.
@@ -42,10 +46,11 @@ Each module has:
 - **PBTs** (property-based tests via hedgehog) — invariants over generated
   inputs.
 
-## Mutation gate (74 mutants, 0 surviving)
+## Mutation gate (98 mutants, 0 surviving)
 
 ```
-$ test/mutation/run.sh
+$ test/mutation/run.sh                # changed-file scope (default)
+$ MUTATION_BASE=ALL test/mutation/run.sh   # full sweep
 ```
 
 Data-driven mutation suite in `test/mutation/mutants.tsv`. Each row is
@@ -90,13 +95,30 @@ through Cribrum's own pipeline (matching `README.dj`'s role).
   parsing, generic attribute block parsing, reference link definitions, raw
   blocks, smart-punctuation tokenisation. (Block quote, fenced code block,
   paragraph, heading, thematic break already shipped.)
-- **Phase 2 content model**: per-element permitted children, per-element
-  permitted attributes, ingestion from HTML spec.
-- **Phase 3 catalog**: full WCAG AA rule set (currently 4 of ~50 success
-  criteria).
-- **Phase 4**: the remaining structural AA rules (heading-no-skip and the
-  deferred ones in `docs/conventions.md` §4). Pattern is locked by the two
-  rules already promoted.
+- **Phase 2 ingestion + statically-typed view constructors**: the
+  catalog + content-model + attribute-permission validator are in
+  place (`Cribrum.Html.Model` + `Cribrum.Html.Valid`), with located
+  rejection. Still outstanding: `@webref/elements` round-trip
+  ingestion is scaffolded in `ingest/html-model.ts` but the script's
+  seed is hand-synced with the Idris catalog (drift gate enabled,
+  spec-derived emission deferred until `@webref` ships richer
+  machine-readable content-model data). Statically-typed TEAWeb
+  smart constructors (`ul_ : List (h ** IsLiChild h) -> View msg`)
+  are deferred — dynamic `viewSafe` covers the contract today.
+- **Phase 3 catalog**: 11 of ~50 WCAG AA success criteria currently
+  modelled (img-alt, anchor-href, alt-meaningful, heading-no-skip,
+  document-lang, iframe-title, label-for-control, fieldset-legend,
+  link-name, button-name, duplicate-id). Plan calls for ACT-rule
+  ingestion to drive the full catalog; `ingest/aa.ts` is the
+  scaffold target. Pass implementation is still per-rule hand-
+  written; data-interpreter refactor (plan §P3.2) tracked separately.
+- **Phase 4**: 5 of the structural AA rules currently promoted to types
+  (img-alt, anchor-href, iframe-title, label-for-control, button-name).
+  Still ahead: heading-no-skip (whole-tree sequence), document-lang
+  (root-only), duplicate-id (whole-tree dedup), link-name, plus the
+  `Cribrum.AA.Promote` factor that compresses the per-rule boilerplate
+  (plan §P4.2) and the sharpening of `Elaborate`'s `StructuralAA`
+  codomain from unit to the actual conjunct.
 - **Phase 5 DOM render execution**: FFI surface + `renderDom` +
   `reconcile` chez-type-checked AND JS-bundled via the
   `examples/teaweb/counter` MVP demo. Browser execution validated
@@ -106,8 +128,10 @@ through Cribrum's own pipeline (matching `README.dj`'s role).
 - **Convention layer**: §2 of `docs/conventions.md` is mostly deferred —
   elaboration currently only wraps blocks in `<main>`; `:::nav` etc. don't
   promote yet.
-- **Ingest pipeline**: HTML content model + WCAG AA catalog are
-  hand-listed (the spike subsets) rather than ingested from W3C upstreams.
+- **Ingest pipeline**: HTML content model is in `Cribrum.Html.Model`
+  (hand-curated dataset, ~95 elements); `ingest/html-model.ts`
+  provides the round-trip scaffold. WCAG AA catalog is still hand-
+  listed (spike subset of 4 rules); `ingest/aa.ts` is Phase 3 work.
 - **Phase T (TEAWeb) full inventory**: MVP slice ships (Html, Event,
   Cmd None/Batch/Focus/Blur, Sub None/Batch, Program, Runtime, plus
   examples/teaweb/counter demo). Still missing: Sub leaf variants
