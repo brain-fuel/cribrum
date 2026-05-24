@@ -48,8 +48,8 @@ src/Cribrum/AA/Typed.idr	imgOkBool (Element "img" attrs _) = hasAltAttr attrs	im
 src/Cribrum/AA/Typed.idr	imgOkBool _                       = True	imgOkBool _                       = False	Typed: non-img always fails
 src/Cribrum/AA/Typed.idr	hasAltAttr (MkHAttr "alt" _ :: _)   = True	hasAltAttr (MkHAttr "alt" _ :: _)   = False	Typed: alt detection inverted
 src/Cribrum/AA/Typed.idr	hasAltAttr []                       = False	hasAltAttr []                       = True	Typed: empty attrs default flipped
-src/Cribrum/AA/Typed.idr	  h :: assert_total (concatMap walkNodes cs)	  assert_total (concatMap walkNodes cs)	Typed: walk drops root
-src/Cribrum/AA/Typed.idr	h :: assert_total (concatMap walkNodes cs)	[h]	Typed: walk drops descendants
+src/Cribrum/AA/Promote.idr	  h :: assert_total (concatMap walkNodes cs)	  assert_total (concatMap walkNodes cs)	Promote: walkNodes drops root
+src/Cribrum/AA/Promote.idr	h :: assert_total (concatMap walkNodes cs)	[h]	Promote: walkNodes drops descendants
 src/Cribrum/AA/Typed.idr	anchorOkBool (Element "a" attrs _) = hasHrefAttr attrs	anchorOkBool (Element "a" attrs _) = True	Typed: anchor-href always passes
 src/Cribrum/AA/Typed.idr	hasHrefAttr (MkHAttr "href" _ :: _)  = True	hasHrefAttr (MkHAttr "href" _ :: _)  = False	Typed: href detection inverted
 src/Cribrum/AA/Typed.idr	hasHrefAttr []                       = False	hasHrefAttr []                       = True	Typed: empty attrs href default flipped
@@ -97,11 +97,11 @@ src/Cribrum/AA/Typed.idr	iframeOkBool (Element "iframe" attrs _) = hasNonEmptyAt
 src/Cribrum/AA/Typed.idr	iframeOkBool _                          = True	iframeOkBool _                          = False	Typed: non-iframe always fails
 src/Cribrum/AA/Typed.idr	labelOkBool (Element "label" attrs cs) =	labelOkBool (Element "label" attrs cs) = True \&\&	Typed: label always passes
 src/Cribrum/AA/Typed.idr	  hasNonEmptyAttr "for" attrs || labelContainsControl cs	  True	Typed: label-for body always passes
-src/Cribrum/AA/Typed.idr	buttonOkBool (Element "button" attrs cs) = hasButtonAccessibleName attrs cs	buttonOkBool (Element "button" attrs cs) = True	Typed: button-name always passes
+src/Cribrum/AA/Typed.idr	buttonOkBool (Element "button" attrs cs) = hasAccessibleName attrs cs	buttonOkBool (Element "button" attrs cs) = True	Typed: button-name always passes
 src/Cribrum/AA/Pass.idr	    ++ checkHeadingNoSkip h	    ++ []	AA: heading-skip term dropped from checkAA
 src/Cribrum/AA/Pass.idr	    ++ checkDuplicateIds h	    ++ []	AA: duplicate-id term dropped from checkAA
 src/Cribrum/AA/Pass.idr	  walkNodes [] True h	  []	AA: per-node walker dropped from checkAA
-src/Cribrum/AA/Typed.idr	    then hasLinkAccessibleName attrs cs	    then True	Typed: link-name body always passes
+src/Cribrum/AA/Typed.idr	    then hasAccessibleName attrs cs	    then True	Typed: link-name body always passes
 src/Cribrum/AA/Typed.idr	  if hasHrefAttr attrs	  if not (hasHrefAttr attrs)	Typed: link-name href branch inverted
 src/Cribrum/AA/Typed.idr	documentLangOkBool (Element "html" attrs _) = hasNonEmptyAttr "lang" attrs	documentLangOkBool (Element "html" attrs _) = True	Typed: document-lang always passes
 src/Cribrum/AA/Typed.idr	documentLangOkBool _                        = True	documentLangOkBool _                        = False	Typed: document-lang non-html default flipped

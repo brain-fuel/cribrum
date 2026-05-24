@@ -6,7 +6,7 @@
 ||| proposition; it is never defined twice.
 |||
 ||| Promotions wired (10 of 10 Structural rules in the catalog):
-|||   per-node, So + All over walkNodes:
+|||   per-node, So + All over walkNodes — via `Cribrum.AA.Promote`:
 |||     img-alt, anchor-href, iframe-title, label-for-control,
 |||     fieldset-legend, button-name, link-name
 |||   root-only, So:
@@ -14,10 +14,9 @@
 |||   whole-tree bool + So:
 |||     heading-no-skip, duplicate-id
 |||
-||| Every Structural rule from `Cribrum.AA.Catalog` is now promoted; the
-||| data-interpreter factor (plan §P4.2 "generalise the So-trick") lands
-||| in `Cribrum.AA.Promote` if/when the boilerplate becomes annoying
-||| enough to compress.
+||| Every Structural rule from `Cribrum.AA.Catalog` is now promoted. Adding
+||| a new per-node rule is ~5 lines: a `<rule>OkBool` predicate plus four
+||| `public export` aliases through `Cribrum.AA.Promote`.
 |||
 ||| Convention: predicates are **functions returning `Type`** rather than
 ||| dedicated `data` declarations. This avoids the boilerplate of one
@@ -29,127 +28,14 @@
 module Cribrum.AA.Typed
 
 import Data.List
-import Data.List.Quantifiers
 import Data.So
 import Cribrum.Node
+import public Cribrum.AA.Promote
 
 %default total
 
 --------------------------------------------------------------------------------
--- img-alt at one node.
---
--- Reuses `Data.So.decSo : (b : Bool) -> Dec (So b)` directly; the proposition
--- machinery for Bool-shaped rules already lives in base.
---------------------------------------------------------------------------------
-
-hasAltAttr : List HAttr -> Bool
-hasAltAttr []                       = False
-hasAltAttr (MkHAttr "alt" _ :: _)   = True
-hasAltAttr (_                :: xs) = hasAltAttr xs
-
-||| `True` iff this single node satisfies the img-alt rule. Non-img nodes
-||| trivially satisfy.
-public export
-imgOkBool : HExpr -> Bool
-imgOkBool (Element "img" attrs _) = hasAltAttr attrs
-imgOkBool _                       = True
-
-||| Proposition: this node satisfies img-alt. Phase 4 callers carry the
-||| witness in `(h : HExpr ** ImgHereOk h)`.
-public export
-ImgHereOk : HExpr -> Type
-ImgHereOk h = So (imgOkBool h)
-
-public export
-decImgHereOk : (h : HExpr) -> Dec (ImgHereOk h)
-decImgHereOk h = decSo (imgOkBool h)
-
---------------------------------------------------------------------------------
--- img-alt over the whole tree.
---------------------------------------------------------------------------------
-
-||| Pre-order walk of every node in `h` (root included).
-public export
-walkNodes : HExpr -> List HExpr
-walkNodes h@(Text _)         = [h]
-walkNodes h@(Comment _)      = [h]
-walkNodes h@(Element _ _ cs) =
-  h :: assert_total (concatMap walkNodes cs)
-
-||| Whole-tree proposition: every node satisfies the img-alt rule.
-public export
-ImgsAllOk : HExpr -> Type
-ImgsAllOk h = All ImgHereOk (walkNodes h)
-
-||| Decision over the walked node list.
-decAllImg : (xs : List HExpr) -> Dec (All ImgHereOk xs)
-decAllImg []        = Yes []
-decAllImg (x :: xs) = case decImgHereOk x of
-  No  contraHead => No (\(headOk :: _) => contraHead headOk)
-  Yes headOk     => case decAllImg xs of
-    No  contraTail => No (\(_ :: tailOk) => contraTail tailOk)
-    Yes tailOk     => Yes (headOk :: tailOk)
-
-public export
-decImgsAllOk : (h : HExpr) -> Dec (ImgsAllOk h)
-decImgsAllOk h = decAllImg (walkNodes h)
-
-||| Bool projection for ergonomics. The proof, not this bool, is the value
-||| Phase 4 callers should carry — but most call sites just want to assert
-||| the precondition in tests.
-public export
-imgsAllOk : HExpr -> Bool
-imgsAllOk h = case decImgsAllOk h of
-  Yes _ => True
-  No  _ => False
-
---------------------------------------------------------------------------------
--- anchor-href: identical shape to img-alt; second rule wired in to
--- demonstrate that each Structural rule generalises mechanically.
---------------------------------------------------------------------------------
-
-hasHrefAttr : List HAttr -> Bool
-hasHrefAttr []                       = False
-hasHrefAttr (MkHAttr "href" _ :: _)  = True
-hasHrefAttr (_                :: xs) = hasHrefAttr xs
-
-public export
-anchorOkBool : HExpr -> Bool
-anchorOkBool (Element "a" attrs _) = hasHrefAttr attrs
-anchorOkBool _                     = True
-
-public export
-AnchorHereOk : HExpr -> Type
-AnchorHereOk h = So (anchorOkBool h)
-
-public export
-decAnchorHereOk : (h : HExpr) -> Dec (AnchorHereOk h)
-decAnchorHereOk h = decSo (anchorOkBool h)
-
-public export
-AnchorsAllOk : HExpr -> Type
-AnchorsAllOk h = All AnchorHereOk (walkNodes h)
-
-decAllAnchor : (xs : List HExpr) -> Dec (All AnchorHereOk xs)
-decAllAnchor []        = Yes []
-decAllAnchor (x :: xs) = case decAnchorHereOk x of
-  No  contraHead => No (\(headOk :: _) => contraHead headOk)
-  Yes headOk     => case decAllAnchor xs of
-    No  contraTail => No (\(_ :: tailOk) => contraTail tailOk)
-    Yes tailOk     => Yes (headOk :: tailOk)
-
-public export
-decAnchorsAllOk : (h : HExpr) -> Dec (AnchorsAllOk h)
-decAnchorsAllOk h = decAllAnchor (walkNodes h)
-
-public export
-anchorsAllOk : HExpr -> Bool
-anchorsAllOk h = case decAnchorsAllOk h of
-  Yes _ => True
-  No  _ => False
-
---------------------------------------------------------------------------------
--- iframe-title: identical shape.
+-- Shared attribute / accessible-name helpers.
 --------------------------------------------------------------------------------
 
 isNonEmptyStr : AttrValue -> Bool
@@ -163,6 +49,94 @@ hasNonEmptyAttr _    []                        = False
 hasNonEmptyAttr name (MkHAttr n v :: rest) =
   (n == name && isNonEmptyStr v) || hasNonEmptyAttr name rest
 
+hasAltAttr : List HAttr -> Bool
+hasAltAttr []                       = False
+hasAltAttr (MkHAttr "alt" _ :: _)   = True
+hasAltAttr (_                :: xs) = hasAltAttr xs
+
+hasHrefAttr : List HAttr -> Bool
+hasHrefAttr []                       = False
+hasHrefAttr (MkHAttr "href" _ :: _)  = True
+hasHrefAttr (_                :: xs) = hasHrefAttr xs
+
+collectText : HExpr -> String
+collectText (Text s)         = s
+collectText (Comment _)      = ""
+collectText (Element _ _ cs) = concatMap (assert_total collectText) cs
+
+hasAccessibleName : List HAttr -> List HExpr -> Bool
+hasAccessibleName attrs cs =
+     hasNonEmptyAttr "aria-label" attrs
+  || hasNonEmptyAttr "title"      attrs
+  || (let txt = concatMap collectText cs
+       in case unpack txt of
+            []   => False
+            xs   => not (all (== ' ') xs))
+
+--------------------------------------------------------------------------------
+-- img-alt: per-node, via Promote.
+--------------------------------------------------------------------------------
+
+||| `True` iff this single node satisfies the img-alt rule. Non-img nodes
+||| trivially satisfy.
+public export
+imgOkBool : HExpr -> Bool
+imgOkBool (Element "img" attrs _) = hasAltAttr attrs
+imgOkBool _                       = True
+
+public export
+ImgHereOk : HExpr -> Type
+ImgHereOk = NodeOk imgOkBool
+
+public export
+decImgHereOk : (h : HExpr) -> Dec (ImgHereOk h)
+decImgHereOk = decNodeOk imgOkBool
+
+public export
+ImgsAllOk : HExpr -> Type
+ImgsAllOk = AllNodesOk imgOkBool
+
+public export
+decImgsAllOk : (h : HExpr) -> Dec (ImgsAllOk h)
+decImgsAllOk = decAllNodesOk imgOkBool
+
+public export
+imgsAllOk : HExpr -> Bool
+imgsAllOk = allNodesOk imgOkBool
+
+--------------------------------------------------------------------------------
+-- anchor-href: per-node.
+--------------------------------------------------------------------------------
+
+public export
+anchorOkBool : HExpr -> Bool
+anchorOkBool (Element "a" attrs _) = hasHrefAttr attrs
+anchorOkBool _                     = True
+
+public export
+AnchorHereOk : HExpr -> Type
+AnchorHereOk = NodeOk anchorOkBool
+
+public export
+decAnchorHereOk : (h : HExpr) -> Dec (AnchorHereOk h)
+decAnchorHereOk = decNodeOk anchorOkBool
+
+public export
+AnchorsAllOk : HExpr -> Type
+AnchorsAllOk = AllNodesOk anchorOkBool
+
+public export
+decAnchorsAllOk : (h : HExpr) -> Dec (AnchorsAllOk h)
+decAnchorsAllOk = decAllNodesOk anchorOkBool
+
+public export
+anchorsAllOk : HExpr -> Bool
+anchorsAllOk = allNodesOk anchorOkBool
+
+--------------------------------------------------------------------------------
+-- iframe-title: per-node.
+--------------------------------------------------------------------------------
+
 public export
 iframeOkBool : HExpr -> Bool
 iframeOkBool (Element "iframe" attrs _) = hasNonEmptyAttr "title" attrs
@@ -170,38 +144,28 @@ iframeOkBool _                          = True
 
 public export
 IframeHereOk : HExpr -> Type
-IframeHereOk h = So (iframeOkBool h)
+IframeHereOk = NodeOk iframeOkBool
 
 public export
 decIframeHereOk : (h : HExpr) -> Dec (IframeHereOk h)
-decIframeHereOk h = decSo (iframeOkBool h)
+decIframeHereOk = decNodeOk iframeOkBool
 
 public export
 IframesAllOk : HExpr -> Type
-IframesAllOk h = All IframeHereOk (walkNodes h)
-
-decAllIframe : (xs : List HExpr) -> Dec (All IframeHereOk xs)
-decAllIframe []        = Yes []
-decAllIframe (x :: xs) = case decIframeHereOk x of
-  No  contraHead => No (\(headOk :: _) => contraHead headOk)
-  Yes headOk     => case decAllIframe xs of
-    No  contraTail => No (\(_ :: tailOk) => contraTail tailOk)
-    Yes tailOk     => Yes (headOk :: tailOk)
+IframesAllOk = AllNodesOk iframeOkBool
 
 public export
 decIframesAllOk : (h : HExpr) -> Dec (IframesAllOk h)
-decIframesAllOk h = decAllIframe (walkNodes h)
+decIframesAllOk = decAllNodesOk iframeOkBool
 
 public export
 iframesAllOk : HExpr -> Bool
-iframesAllOk h = case decIframesAllOk h of
-  Yes _ => True
-  No  _ => False
+iframesAllOk = allNodesOk iframeOkBool
 
 --------------------------------------------------------------------------------
--- label-for-control: a `<label>` is OK iff it has a non-empty `for`
--- attribute OR contains at least one form-control descendant. The
--- check looks at the label's direct children — implicit-label pattern.
+-- label-for-control: per-node. A `<label>` is OK iff it has a non-empty
+-- `for` attribute OR contains at least one form-control descendant
+-- (implicit-label pattern).
 --------------------------------------------------------------------------------
 
 labelContainsControl : List HExpr -> Bool
@@ -221,90 +185,27 @@ labelOkBool _                          = True
 
 public export
 LabelHereOk : HExpr -> Type
-LabelHereOk h = So (labelOkBool h)
+LabelHereOk = NodeOk labelOkBool
 
 public export
 decLabelHereOk : (h : HExpr) -> Dec (LabelHereOk h)
-decLabelHereOk h = decSo (labelOkBool h)
+decLabelHereOk = decNodeOk labelOkBool
 
 public export
 LabelsAllOk : HExpr -> Type
-LabelsAllOk h = All LabelHereOk (walkNodes h)
-
-decAllLabel : (xs : List HExpr) -> Dec (All LabelHereOk xs)
-decAllLabel []        = Yes []
-decAllLabel (x :: xs) = case decLabelHereOk x of
-  No  contraHead => No (\(headOk :: _) => contraHead headOk)
-  Yes headOk     => case decAllLabel xs of
-    No  contraTail => No (\(_ :: tailOk) => contraTail tailOk)
-    Yes tailOk     => Yes (headOk :: tailOk)
+LabelsAllOk = AllNodesOk labelOkBool
 
 public export
 decLabelsAllOk : (h : HExpr) -> Dec (LabelsAllOk h)
-decLabelsAllOk h = decAllLabel (walkNodes h)
+decLabelsAllOk = decAllNodesOk labelOkBool
 
 public export
 labelsAllOk : HExpr -> Bool
-labelsAllOk h = case decLabelsAllOk h of
-  Yes _ => True
-  No  _ => False
+labelsAllOk = allNodesOk labelOkBool
 
 --------------------------------------------------------------------------------
--- button-name: a `<button>` is OK iff it has an accessible name.
---------------------------------------------------------------------------------
-
-collectButtonText : HExpr -> String
-collectButtonText (Text s)         = s
-collectButtonText (Comment _)      = ""
-collectButtonText (Element _ _ cs) = concatMap (assert_total collectButtonText) cs
-
-hasButtonAccessibleName : List HAttr -> List HExpr -> Bool
-hasButtonAccessibleName attrs cs =
-     hasNonEmptyAttr "aria-label" attrs
-  || hasNonEmptyAttr "title"      attrs
-  || (let txt = concatMap collectButtonText cs
-       in case unpack txt of
-            []   => False
-            xs   => not (all (== ' ') xs))
-
-public export
-buttonOkBool : HExpr -> Bool
-buttonOkBool (Element "button" attrs cs) = hasButtonAccessibleName attrs cs
-buttonOkBool _                            = True
-
-public export
-ButtonHereOk : HExpr -> Type
-ButtonHereOk h = So (buttonOkBool h)
-
-public export
-decButtonHereOk : (h : HExpr) -> Dec (ButtonHereOk h)
-decButtonHereOk h = decSo (buttonOkBool h)
-
-public export
-ButtonsAllOk : HExpr -> Type
-ButtonsAllOk h = All ButtonHereOk (walkNodes h)
-
-decAllButton : (xs : List HExpr) -> Dec (All ButtonHereOk xs)
-decAllButton []        = Yes []
-decAllButton (x :: xs) = case decButtonHereOk x of
-  No  contraHead => No (\(headOk :: _) => contraHead headOk)
-  Yes headOk     => case decAllButton xs of
-    No  contraTail => No (\(_ :: tailOk) => contraTail tailOk)
-    Yes tailOk     => Yes (headOk :: tailOk)
-
-public export
-decButtonsAllOk : (h : HExpr) -> Dec (ButtonsAllOk h)
-decButtonsAllOk h = decAllButton (walkNodes h)
-
-public export
-buttonsAllOk : HExpr -> Bool
-buttonsAllOk h = case decButtonsAllOk h of
-  Yes _ => True
-  No  _ => False
-
---------------------------------------------------------------------------------
--- fieldset-legend: a `<fieldset>` is OK iff it contains a `<legend>`
--- child (its accessible name). Mirrors label-for-control.
+-- fieldset-legend: per-node. A `<fieldset>` is OK iff it contains a
+-- `<legend>` direct child.
 --------------------------------------------------------------------------------
 
 fieldsetHasLegend : List HExpr -> Bool
@@ -320,97 +221,91 @@ fieldsetOkBool _                          = True
 
 public export
 FieldsetHereOk : HExpr -> Type
-FieldsetHereOk h = So (fieldsetOkBool h)
+FieldsetHereOk = NodeOk fieldsetOkBool
 
 public export
 decFieldsetHereOk : (h : HExpr) -> Dec (FieldsetHereOk h)
-decFieldsetHereOk h = decSo (fieldsetOkBool h)
+decFieldsetHereOk = decNodeOk fieldsetOkBool
 
 public export
 FieldsetsAllOk : HExpr -> Type
-FieldsetsAllOk h = All FieldsetHereOk (walkNodes h)
-
-decAllFieldset : (xs : List HExpr) -> Dec (All FieldsetHereOk xs)
-decAllFieldset []        = Yes []
-decAllFieldset (x :: xs) = case decFieldsetHereOk x of
-  No  contraHead => No (\(headOk :: _) => contraHead headOk)
-  Yes headOk     => case decAllFieldset xs of
-    No  contraTail => No (\(_ :: tailOk) => contraTail tailOk)
-    Yes tailOk     => Yes (headOk :: tailOk)
+FieldsetsAllOk = AllNodesOk fieldsetOkBool
 
 public export
 decFieldsetsAllOk : (h : HExpr) -> Dec (FieldsetsAllOk h)
-decFieldsetsAllOk h = decAllFieldset (walkNodes h)
+decFieldsetsAllOk = decAllNodesOk fieldsetOkBool
 
 public export
 fieldsetsAllOk : HExpr -> Bool
-fieldsetsAllOk h = case decFieldsetsAllOk h of
-  Yes _ => True
-  No  _ => False
+fieldsetsAllOk = allNodesOk fieldsetOkBool
 
 --------------------------------------------------------------------------------
--- link-name: a `<a href>` is OK iff it has an accessible name (text content,
--- aria-label, or title). Mirrors button-name.
+-- button-name: per-node. A `<button>` is OK iff it has an accessible name.
 --------------------------------------------------------------------------------
 
-collectLinkText : HExpr -> String
-collectLinkText (Text s)         = s
-collectLinkText (Comment _)      = ""
-collectLinkText (Element _ _ cs) = concatMap (assert_total collectLinkText) cs
+public export
+buttonOkBool : HExpr -> Bool
+buttonOkBool (Element "button" attrs cs) = hasAccessibleName attrs cs
+buttonOkBool _                            = True
 
-hasLinkAccessibleName : List HAttr -> List HExpr -> Bool
-hasLinkAccessibleName attrs cs =
-     hasNonEmptyAttr "aria-label" attrs
-  || hasNonEmptyAttr "title"      attrs
-  || (let txt = concatMap collectLinkText cs
-       in case unpack txt of
-            []   => False
-            xs   => not (all (== ' ') xs))
+public export
+ButtonHereOk : HExpr -> Type
+ButtonHereOk = NodeOk buttonOkBool
 
-||| Anchors without `href` are skipped (the structural anchor-href rule
-||| handles them); only `<a href>` requires an accessible name here.
+public export
+decButtonHereOk : (h : HExpr) -> Dec (ButtonHereOk h)
+decButtonHereOk = decNodeOk buttonOkBool
+
+public export
+ButtonsAllOk : HExpr -> Type
+ButtonsAllOk = AllNodesOk buttonOkBool
+
+public export
+decButtonsAllOk : (h : HExpr) -> Dec (ButtonsAllOk h)
+decButtonsAllOk = decAllNodesOk buttonOkBool
+
+public export
+buttonsAllOk : HExpr -> Bool
+buttonsAllOk = allNodesOk buttonOkBool
+
+--------------------------------------------------------------------------------
+-- link-name: per-node. A `<a href>` is OK iff it has an accessible name.
+-- Anchors without `href` are skipped (the structural anchor-href rule
+-- handles those).
+--------------------------------------------------------------------------------
+
 public export
 linkOkBool : HExpr -> Bool
 linkOkBool (Element "a" attrs cs) =
   if hasHrefAttr attrs
-    then hasLinkAccessibleName attrs cs
+    then hasAccessibleName attrs cs
     else True
 linkOkBool _                       = True
 
 public export
 LinkHereOk : HExpr -> Type
-LinkHereOk h = So (linkOkBool h)
+LinkHereOk = NodeOk linkOkBool
 
 public export
 decLinkHereOk : (h : HExpr) -> Dec (LinkHereOk h)
-decLinkHereOk h = decSo (linkOkBool h)
+decLinkHereOk = decNodeOk linkOkBool
 
 public export
 LinksAllOk : HExpr -> Type
-LinksAllOk h = All LinkHereOk (walkNodes h)
-
-decAllLink : (xs : List HExpr) -> Dec (All LinkHereOk xs)
-decAllLink []        = Yes []
-decAllLink (x :: xs) = case decLinkHereOk x of
-  No  contraHead => No (\(headOk :: _) => contraHead headOk)
-  Yes headOk     => case decAllLink xs of
-    No  contraTail => No (\(_ :: tailOk) => contraTail tailOk)
-    Yes tailOk     => Yes (headOk :: tailOk)
+LinksAllOk = AllNodesOk linkOkBool
 
 public export
 decLinksAllOk : (h : HExpr) -> Dec (LinksAllOk h)
-decLinksAllOk h = decAllLink (walkNodes h)
+decLinksAllOk = decAllNodesOk linkOkBool
 
 public export
 linksAllOk : HExpr -> Bool
-linksAllOk h = case decLinksAllOk h of
-  Yes _ => True
-  No  _ => False
+linksAllOk = allNodesOk linkOkBool
 
 --------------------------------------------------------------------------------
--- document-lang: ROOT-only rule. The proposition fires only when the
--- top-level node is `<html>`; descendant `<html>` nodes (illegal anyway
--- under Phase-2 validity) are ignored here.
+-- document-lang: ROOT-only rule. Proposition fires only when the top-level
+-- node is `<html>`; descendant `<html>` nodes (illegal anyway under
+-- Phase-2 validity) are ignored here.
 --------------------------------------------------------------------------------
 
 public export
@@ -433,7 +328,7 @@ documentLangOk h = case decDocumentLangOk h of
   No  _ => False
 
 --------------------------------------------------------------------------------
--- heading-no-skip: WHOLE-TREE rule. The list of heading levels (pre-order)
+-- heading-no-skip: WHOLE-TREE rule. List of heading levels (pre-order)
 -- must not skip — e.g. h1 -> h3 is rejected; h1 -> h2 -> h2 is fine.
 --------------------------------------------------------------------------------
 
