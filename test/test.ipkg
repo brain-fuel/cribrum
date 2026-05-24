@@ -14,6 +14,7 @@ executable = "cribrum-tests"
 modules = Test.Cribrum.Node
         , Test.Cribrum.Djot.Surface
         , Test.Cribrum.Djot.Parser
+        , Test.Cribrum.Html.Model
         , Test.Cribrum.Html.Valid
         , Test.Cribrum.Elaborate
         , Test.Cribrum.Render.Html
