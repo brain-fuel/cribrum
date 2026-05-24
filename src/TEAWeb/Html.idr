@@ -359,27 +359,36 @@ checked_     = attrStr "checked" "checked"
 -- Dynamic safety gate (replaces a Phase-2 content-model type).
 --------------------------------------------------------------------------------
 
-||| Errors surfaced when a built view does not pass `decideHtml`.
+||| Errors surfaced when a built view does not pass `decideHtmlLocated`.
+||| Carries the Phase 2 `LocatedReject` so callers can pinpoint the
+||| offending node (path-into-tree + reason class: `UnknownTag`,
+||| `DisallowedAttr`, `IllegalChild`, `BlockInPhrasing`,
+||| `MalformedTable`, `TextNotAllowedIn`, ...).
 public export
 data ViewError : Type where
-  ||| The view's tree is not valid HTML under the current spike's
-  ||| `IsValidHtml` predicate (i.e. an unknown tag is present). Once
-  ||| Phase 2 lands, the located rejection class will carry path +
-  ||| reason; for the spike we only know "invalid".
-  InvalidHtml : ViewError
+  ||| The view's tree is not valid HTML; the `LocatedReject` names the
+  ||| first offending position. Pre-Phase-2 this carried only "invalid";
+  ||| Phase 2 sharpens it.
+  InvalidHtml : LocatedReject -> ViewError
 
 public export
 Show ViewError where
-  show InvalidHtml = "view produced an HExpr that fails IsValidHtml"
+  show (InvalidHtml lr) =
+    "view produced an HExpr that fails IsValidHtml: " ++ show lr
 
-||| Pre-Phase-2 dynamic-check fallback. Re-decides the tree's HTML
-||| validity and refuses to expose the view if the decision fails.
-||| Post-Phase-2 this disappears in favour of compile-time content-model
-||| typing on each smart constructor.
+||| Dynamic content-model check. Phase 2 makes `decideHtmlLocated`
+||| enforce the per-element content model + attribute permission, so
+||| the gate now refuses a `p_` containing a `div_`, an `img_` with
+||| children, an attribute mis-typed for its element, and so on — with
+||| a located reason. The eventual post-Phase-2 plan is to push these
+||| checks into the smart-constructor type signatures (e.g.
+||| `ul_ : List (h ** IsLiChild h) -> View msg`), at which point this
+||| dynamic gate becomes a redundant safety net rather than the only
+||| line of defence.
 public export
 viewSafe :
      View msg
   -> Either ViewError ((h : HExpr ** IsValidHtml h), List (String, Event -> IO msg))
-viewSafe (MkView t hs) = case decideHtml t of
-  Yes p => Right ((t ** p), hs)
-  No  _ => Left  InvalidHtml
+viewSafe (MkView t hs) = case decideHtmlLocated t of
+  Right p => Right ((t ** p), hs)
+  Left lr => Left  (InvalidHtml lr)
