@@ -85,7 +85,7 @@ ext_button_with_onclick_registers_handler = withTests 1 . property $ do
       cb === "inc-btn"
       -- The closure produces the registered msg regardless of event.
       let dummyEvent = believe_me {b = Event} ()
-      fn dummyEvent === MIncrement
+      unsafePerformIO (fn dummyEvent) === MIncrement
     _ => failWith Nothing "expected exactly one handler"
 
 export

@@ -78,6 +78,25 @@ prim__getElementById : String -> PrimIO DomNode
 %foreign "browser:lambda:(parent)=>{ while(parent.firstChild){ parent.removeChild(parent.firstChild) } }"
 prim__clearChildren : DomNode -> PrimIO ()
 
+||| Read `window.__cribrumValue`, which the TEAWeb runtime populates
+||| just before invoking the Idris callback for an input/change event.
+||| Lives in `Cribrum.Render.Dom` because the chez backend rejects
+||| `browser:lambda:` primitives that originate in TEAWeb modules even
+||| though identical primitives in Cribrum modules link cleanly — the
+||| primer-chain difference is a chez quirk we work around here.
+||| `TEAWeb.Html.eventTargetValue` re-exports this.
+%foreign "scheme:(lambda (_) \"\")"
+         "browser:lambda:(_)=>String(window.__cribrumValue || \"\")"
+prim__currentEventValue : String -> PrimIO String
+
+||| String content of the most recent event's `target.value`, as
+||| stashed by `TEAWeb.Runtime.installDispatch`. Returns the empty
+||| string when no value has been recorded yet (pre-mount, non-input
+||| events).
+export
+currentEventValue : IO String
+currentEventValue = fromPrim (prim__currentEventValue "")
+
 --------------------------------------------------------------------------------
 -- IO wrappers (the layer above the FFI; this is what renderDom uses).
 --------------------------------------------------------------------------------

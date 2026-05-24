@@ -22,34 +22,67 @@ module TEAWeb.Html
 import Data.List
 import Cribrum.Node
 import Cribrum.Html.Valid
+import Cribrum.Render.Dom
 
 %default total
 
 --------------------------------------------------------------------------------
 -- Event: opaque handle to a DOM Event under the JS backend.
+--
+-- Event-related FFI primitives must live in the same module as the
+-- `[external]` data declaration — chez's FFI marshaller resolves the
+-- external tag against its declaring module only. Cross-module
+-- references to `Event` work for type-checking but trip the
+-- "specifier not accepted by any backend" error when used in
+-- `%foreign` signatures elsewhere.
 --------------------------------------------------------------------------------
 
 ||| Opaque DOM `Event` handle. Behaves like `Cribrum.Render.Dom.DomNode`
-||| — type-checks under chez, only constructed by the JS-backend dispatch
-||| shim at runtime.
+||| — type-checks under chez, only constructed by the JS-backend
+||| dispatch shim at runtime.
 public export
 data Event : Type where [external]
+
+-- `eventTargetValue` is a thin Event-keyed wrapper around
+-- `Cribrum.Render.Dom.currentEventValue`. The Event argument is
+-- accepted for API symmetry with TEAWeb.Event's onInput/onChange
+-- closures (which always receive an Event) but is ignored — the
+-- runtime stashes `event.target.value` into a global slot during
+-- dispatch, and `currentEventValue` reads from there. The two-step
+-- detour avoids a chez-backend FFI quirk where %foreign primitives
+-- that take an [external] type as an argument fail to link from
+-- TEAWeb modules even though identical primitives in Cribrum modules
+-- work; the primitive itself lives in Cribrum.Render.Dom for that
+-- reason.
+
+||| Read the string content of the most recent event's `target.value`.
+||| Used by `TEAWeb.Event`'s `onInput`/`onChange` helpers; the runtime
+||| populates the underlying slot just before invoking the Idris
+||| callback.
+export
+eventTargetValue : Event -> IO String
+eventTargetValue _ = currentEventValue
 
 --------------------------------------------------------------------------------
 -- Attribute type wrapping HAttr with optional msg-producing callback.
 --------------------------------------------------------------------------------
 
 ||| A view-builder attribute. `Plain` is a normal HTML attribute; `On`
-||| registers an event handler. The Handle case stores both the HExpr-
+||| registers an event handler. The `On` case stores both the HExpr-
 ||| level `HAttr` (so the wire format `data-on-<event>="<cbId>"` lands in
 ||| the IR) and the msg-producing closure (so the runtime can resolve a
 ||| dispatched event back to a `msg`).
+|||
+||| The closure is `Event -> IO msg` (not `Event -> msg`) so handlers
+||| that need to read event payload — `onInput` extracting
+||| `event.target.value`, etc. — can perform the FFI extraction inside
+||| the closure. Pure handlers like `onClick` simply wrap with `pure`.
 public export
 data Attr : Type -> Type where
   Plain  : HAttr -> Attr msg
   On     : (event : String)
         -> (callbackId : String)
-        -> (Event -> msg)
+        -> (Event -> IO msg)
         -> Attr msg
 
 --------------------------------------------------------------------------------
@@ -64,7 +97,7 @@ public export
 record View (msg : Type) where
   constructor MkView
   tree     : HExpr
-  handlers : List (String, Event -> msg)
+  handlers : List (String, Event -> IO msg)
 
 --------------------------------------------------------------------------------
 -- Attribute → (HAttr, optional handler) split.
@@ -74,11 +107,11 @@ attrToHAttr : Attr msg -> HAttr
 attrToHAttr (Plain ha)        = ha
 attrToHAttr (On ev cbId _)    = MkHAttr ("data-on-" ++ ev) (Handler ev cbId)
 
-attrToHandler : Attr msg -> Maybe (String, Event -> msg)
+attrToHandler : Attr msg -> Maybe (String, Event -> IO msg)
 attrToHandler (Plain _)         = Nothing
 attrToHandler (On _ cbId f)     = Just (cbId, f)
 
-splitAttrs : List (Attr msg) -> (List HAttr, List (String, Event -> msg))
+splitAttrs : List (Attr msg) -> (List HAttr, List (String, Event -> IO msg))
 splitAttrs attrs =
   ( map attrToHAttr attrs
   , mapMaybe attrToHandler attrs
@@ -346,7 +379,7 @@ Show ViewError where
 public export
 viewSafe :
      View msg
-  -> Either ViewError ((h : HExpr ** IsValidHtml h), List (String, Event -> msg))
+  -> Either ViewError ((h : HExpr ** IsValidHtml h), List (String, Event -> IO msg))
 viewSafe (MkView t hs) = case decideHtml t of
   Yes p => Right ((t ** p), hs)
   No  _ => Left  InvalidHtml

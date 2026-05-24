@@ -52,9 +52,17 @@ via `element.focus()` at the FFI boundary.
   spike returns `View msg`; after Phase 2 lands, smart constructors
   will refuse illegal children at compile time and `view_` will return
   `(h : HExpr ** IsValidHtml h × StructuralAA h)`.
-- `onInput` value extraction — the runtime helper to read
-  `event.target.value` for `onInput` / `onChange` lands with the T6
-  docs nav demo (which actually uses it).
-- Keyed-children diff — `reconcile` is Day-1 blow-and-rebuild. For a
-  counter app this is irrelevant; for the T6 demo it becomes a perf
-  question.
+- Keyed-children diff — `reconcile` is Day-1 blow-and-rebuild. The
+  input field is *controlled* (model holds the name, view sets `value=`)
+  so blow-and-rebuild restores it correctly after each render; this is
+  the Elm/React-style escape hatch that makes Day-1 ergonomic. The T6
+  docs nav demo will force the Day-2 keyed diff for perf.
+
+## How the demo proves Day-1 end-to-end
+
+| Click / type     | What you should see                                          |
+|------------------|--------------------------------------------------------------|
+| `+` button       | Count increments. Name field still holds whatever you typed. |
+| `-` button       | Count decrements. Name field still holds it.                 |
+| Type in input    | Greeting line echoes the name live (onInput → UpdateName).   |
+| `Focus the input`| Cursor jumps to the input field. Typed text is preserved.    |

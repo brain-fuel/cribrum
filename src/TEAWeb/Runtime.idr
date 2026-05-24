@@ -39,7 +39,7 @@ import TEAWeb.Program
 -- FFI: install the global dispatcher; element focus / blur.
 --------------------------------------------------------------------------------
 
-%foreign "browser:lambda:(cb,w)=>{ window.__cribrumDispatch = (cbId, ev) => cb(cbId)(ev)(w); }"
+%foreign "browser:lambda:(cb,w)=>{ window.__cribrumDispatch = (cbId, ev) => { window.__cribrumValue = (ev && ev.target && typeof ev.target.value === 'string') ? ev.target.value : ''; cb(cbId)(ev)(w); }; }"
 prim__installDispatch : (String -> Event -> IO ()) -> PrimIO ()
 
 ||| Install `window.__cribrumDispatch`. Called once by `mount`; future
@@ -69,7 +69,7 @@ record RuntimeState (m : Type) (ms : Type) where
   constructor MkRuntimeState
   current  : m
   tree     : HExpr
-  handlers : List (String, Event -> ms)
+  handlers : List (String, Event -> IO ms)
   host     : DomNode
 
 --------------------------------------------------------------------------------
@@ -95,8 +95,8 @@ runCmd (Blur  id)   = blurElement id
 ||| from crashing the loop).
 lookupHandler :
      String
-  -> List (String, Event -> msg)
-  -> Maybe (Event -> msg)
+  -> List (String, Event -> IO msg)
+  -> Maybe (Event -> IO msg)
 lookupHandler _   []                = Nothing
 lookupHandler key ((k, fn) :: rest) =
   if k == key then Just fn else lookupHandler key rest
@@ -129,7 +129,7 @@ mount prog hostId = do
     case lookupHandler cbId (handlers state) of
       Nothing => pure ()
       Just fn => do
-        let msg                = fn event
+        msg <- fn event
         let (newModel, newCmd) = prog.update msg state.current
         let nextView           = prog.view newModel
         let nextTree           = tree nextView

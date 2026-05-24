@@ -92,8 +92,8 @@ pbt_onClick_closure_emits_msg = property $ do
   let v : View Msg
       v = button_ [onClick cb MA] []
   case handlers v of
-    [(_, fn)] => fn dummyEvent === MA
-    _         => failWith Nothing "expected one handler"
+    [(_, fn)] => unsafePerformIO (fn dummyEvent) === MA
+    _ => failWith Nothing "expected one handler"
 
 export
 group : Group

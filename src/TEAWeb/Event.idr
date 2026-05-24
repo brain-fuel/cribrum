@@ -19,21 +19,25 @@ import TEAWeb.Html
 
 %default total
 
+-- `eventTargetValue` is re-exported from `TEAWeb.Html` (where Event
+-- itself lives — see the note in TEAWeb.Html on the chez cross-module
+-- FFI restriction).
+
 --------------------------------------------------------------------------------
 -- Core event helpers. Each takes an app-supplied callback id + a
 -- function `Event -> msg`; specialised wrappers below cover the common
 -- shapes.
 --------------------------------------------------------------------------------
 
-||| Most general form: pick an event name + callback id + msg-producing
-||| function. Most code should use the specialised helpers
-||| (`onClick`, etc) rather than this directly.
+||| Most general form: pick an event name + callback id + IO-producing
+||| function returning `msg`. Most code should use the specialised
+||| helpers (`onClick`, etc) rather than this directly.
 public export
-on : (event : String) -> (callbackId : String) -> (Event -> msg) -> Attr msg
+on : (event : String) -> (callbackId : String) -> (Event -> IO msg) -> Attr msg
 on = On
 
 --------------------------------------------------------------------------------
--- click / submit (single-msg form — event ignored).
+-- click / submit / focus / blur / mouse — pure-msg form (event ignored).
 --------------------------------------------------------------------------------
 
 ||| `onClick id msg` registers a click handler that emits `msg`. The id
@@ -41,65 +45,52 @@ on = On
 ||| handler when the click fires.
 public export
 onClick : (callbackId : String) -> msg -> Attr msg
-onClick cb m = On "click" cb (\_ => m)
+onClick cb m = On "click" cb (\_ => pure m)
 
 ||| `onSubmit id msg` registers a submit handler that emits `msg`.
 public export
 onSubmit : (callbackId : String) -> msg -> Attr msg
-onSubmit cb m = On "submit" cb (\_ => m)
+onSubmit cb m = On "submit" cb (\_ => pure m)
 
 ||| `onDoubleClick id msg` — emit `msg` on `dblclick`.
 public export
 onDoubleClick : (callbackId : String) -> msg -> Attr msg
-onDoubleClick cb m = On "dblclick" cb (\_ => m)
+onDoubleClick cb m = On "dblclick" cb (\_ => pure m)
 
 ||| `onFocus id msg` — emit `msg` on `focus`.
 public export
 onFocus : (callbackId : String) -> msg -> Attr msg
-onFocus cb m = On "focus" cb (\_ => m)
+onFocus cb m = On "focus" cb (\_ => pure m)
 
 ||| `onBlur id msg` — emit `msg` on `blur`.
 public export
 onBlur : (callbackId : String) -> msg -> Attr msg
-onBlur cb m = On "blur" cb (\_ => m)
+onBlur cb m = On "blur" cb (\_ => pure m)
 
 ||| `onMouseEnter id msg`.
 public export
 onMouseEnter : (callbackId : String) -> msg -> Attr msg
-onMouseEnter cb m = On "mouseenter" cb (\_ => m)
+onMouseEnter cb m = On "mouseenter" cb (\_ => pure m)
 
 ||| `onMouseLeave id msg`.
 public export
 onMouseLeave : (callbackId : String) -> msg -> Attr msg
-onMouseLeave cb m = On "mouseleave" cb (\_ => m)
+onMouseLeave cb m = On "mouseleave" cb (\_ => pure m)
 
 --------------------------------------------------------------------------------
--- input / change (Event-payload form — value extracted from the event
--- via TEAWeb.Runtime).
---
--- The closure stores `(Event -> msg)`; for inputs we want
--- `(String -> msg)` after extracting `event.target.value`. The
--- extraction happens at the FFI boundary in `TEAWeb.Runtime`, which
--- supplies the closure here with the already-extracted string wrapped
--- back into an opaque Event payload via a runtime convention. Until
--- Runtime lands, these helpers are declared by signature only and the
--- closure unused-warning is suppressed by explicitly ignoring the Event.
---
--- This is the *only* place in TEAWeb where the convention deviates
--- from a literal closure on Event — and it disappears once Runtime
--- ships, with no callsite churn.
+-- input / change — value-extracting form. The closure reads
+-- `event.target.value` via `eventTargetValue` (FFI) and then applies
+-- the supplied `String -> msg`.
 --------------------------------------------------------------------------------
 
 ||| `onInput id f` — emit `f value` when the input element's value
-||| changes. `value` is the string content of the input field.
-|||
-||| NOTE — spike: the closure currently always receives an unused Event
-||| placeholder. TEAWeb.Runtime will swap to extracted-string dispatch.
+||| changes (`input` event). `value` is the string content of
+||| `event.target.value`.
 public export
 onInput : (callbackId : String) -> (String -> msg) -> Attr msg
-onInput cb f = On "input" cb (\_ => f "")
+onInput cb f = On "input" cb (\e => do v <- eventTargetValue e; pure (f v))
 
 ||| `onChange id f` — emit `f value` on `change`.
 public export
 onChange : (callbackId : String) -> (String -> msg) -> Attr msg
-onChange cb f = On "change" cb (\_ => f "")
+onChange cb f = On "change" cb (\e => do v <- eventTargetValue e; pure (f v))

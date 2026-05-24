@@ -28,23 +28,25 @@ import TEAWeb.Runtime
 -- Msg + Model.
 --------------------------------------------------------------------------------
 
-data Msg = Increment | Decrement | FocusInput
+data Msg = Increment | Decrement | FocusInput | UpdateName String
 
 record Model where
   constructor MkModel
   count : Int
+  name  : String
 
 --------------------------------------------------------------------------------
 -- TEA functions.
 --------------------------------------------------------------------------------
 
 init_ : (Model, Cmd Msg)
-init_ = (MkModel 0, None)
+init_ = (MkModel 0 "", None)
 
 update_ : Msg -> Model -> (Model, Cmd Msg)
-update_ Increment  m = ({ count := m.count + 1 } m, None)
-update_ Decrement  m = ({ count := m.count - 1 } m, None)
-update_ FocusInput m = (m, Focus "name-input")
+update_ Increment       m = ({ count := m.count + 1 } m, None)
+update_ Decrement       m = ({ count := m.count - 1 } m, None)
+update_ FocusInput      m = (m, Focus "name-input")
+update_ (UpdateName n)  m = ({ name  := n } m, None)
 
 view_ : Model -> View Msg
 view_ m =
@@ -60,11 +62,18 @@ view_ m =
     , input_
         [ id_ "name-input"
         , type_ "text"
-        , placeholder_ "type something here"
+        , placeholder_ "type your name"
+        , value_ m.name
+        , onInput "name-input" UpdateName
         ]
         []
     , button_ [ id_ "focus-btn", onClick "focus" FocusInput ]
         [ text_ "Focus the input" ]
+    , p_ [class_ "greeting"]
+        [ text_ (if m.name == ""
+                   then "(type a name to see it echo here)"
+                   else "Hello, " ++ m.name ++ "!")
+        ]
     ]
 
 subs_ : Model -> Sub Msg
