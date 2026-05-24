@@ -123,7 +123,98 @@ ruleHeadingNoSkip = MkRule
   , severity   = Error
   }
 
-||| All rules in the spike catalog.
+public export
+ruleDocumentLang : Rule
+ruleDocumentLang = MkRule
+  { id         = "document-lang"
+  , wcag       = "3.1.1"
+  , level      = "A"
+  , title      = "The `<html>` root must carry a non-empty `lang` attribute"
+  , confidence = Structural
+  , severity   = Error
+  }
+
+public export
+ruleIframeTitle : Rule
+ruleIframeTitle = MkRule
+  { id         = "iframe-title"
+  , wcag       = "4.1.2"
+  , level      = "A"
+  , title      = "Each `<iframe>` must have a non-empty `title` attribute"
+  , confidence = Structural
+  , severity   = Error
+  }
+
+public export
+ruleLabelFor : Rule
+ruleLabelFor = MkRule
+  { id         = "label-for-control"
+  , wcag       = "1.3.1"
+  , level      = "A"
+  , title      = "Each `<label>` must have a `for` attribute or contain its control"
+  , confidence = Structural
+  , severity   = Error
+  }
+
+public export
+ruleFieldsetLegend : Rule
+ruleFieldsetLegend = MkRule
+  { id         = "fieldset-legend"
+  , wcag       = "1.3.1"
+  , level      = "A"
+  , title      = "Each `<fieldset>` should contain a `<legend>` as its accessible name"
+  , confidence = Structural
+  , severity   = Warning
+  }
+
+public export
+ruleLinkName : Rule
+ruleLinkName = MkRule
+  { id         = "link-name"
+  , wcag       = "2.4.4"
+  , level      = "A"
+  , title      = "Each `<a>` with `href` must have accessible text (text content or `aria-label`)"
+  , confidence = Structural
+  , severity   = Error
+  }
+
+public export
+ruleButtonName : Rule
+ruleButtonName = MkRule
+  { id         = "button-name"
+  , wcag       = "4.1.2"
+  , level      = "A"
+  , title      = "Each `<button>` must have an accessible name (text content or `aria-label`)"
+  , confidence = Structural
+  , severity   = Error
+  }
+
+public export
+ruleDuplicateId : Rule
+ruleDuplicateId = MkRule
+  { id         = "duplicate-id"
+  , wcag       = "4.1.1"
+  , level      = "A"
+  , title      = "No two elements may share the same `id`"
+  , confidence = Structural
+  , severity   = Error
+  }
+
+||| All rules in the catalog. The Phase-3 ingestion (per plan.dj §P3.1)
+||| will replace this with a generated list emitted from the W3C ACT
+||| rules repository; the data shape stays.
 public export
 allRules : List Rule
-allRules = [ruleImgAlt, ruleAnchorHref, ruleAltMeaningful, ruleHeadingNoSkip]
+allRules =
+  [ ruleImgAlt
+  , ruleAnchorHref
+  , ruleAltMeaningful
+  , ruleHeadingNoSkip
+  , ruleDocumentLang
+  , ruleIframeTitle
+  , ruleLabelFor
+  , ruleFieldsetLegend
+  , ruleLinkName
+  , ruleButtonName
+  , ruleDuplicateId
+  ]

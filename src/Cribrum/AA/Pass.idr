@@ -56,10 +56,36 @@ AAReport = List Finding
 hasAttr : String -> List HAttr -> Bool
 hasAttr name = any (\a => name == a.name)
 
+attrValue : String -> List HAttr -> Maybe String
+attrValue _    []                          = Nothing
+attrValue name (MkHAttr n (Str s) :: rest) =
+  if n == name then Just s else attrValue name rest
+attrValue name (_ :: rest)                 = attrValue name rest
+
 altValue : List HAttr -> Maybe String
-altValue [] = Nothing
-altValue (MkHAttr "alt" (Str s) :: _) = Just s
-altValue (_ :: rest)                  = altValue rest
+altValue = attrValue "alt"
+
+||| `True` iff the (trimmed) attribute value exists and is non-empty.
+hasNonEmptyAttr : String -> List HAttr -> Bool
+hasNonEmptyAttr name attrs = case attrValue name attrs of
+  Just v  => trim v /= ""
+  Nothing => False
+
+||| Walk a subtree and concatenate every text node's content. Used by
+||| accessible-name checks (link-name, button-name).
+collectText : HExpr -> String
+collectText (Text s)         = s
+collectText (Comment _)      = ""
+collectText (Element _ _ cs) =
+  concatMap (assert_total collectText) cs
+
+||| `True` iff the subtree has any non-whitespace text or an
+||| `aria-label` / `title` attribute on the root.
+hasAccessibleName : List HAttr -> List HExpr -> Bool
+hasAccessibleName attrs cs =
+     hasNonEmptyAttr "aria-label" attrs
+  || hasNonEmptyAttr "title"      attrs
+  || trim (concatMap collectText cs) /= ""
 
 isHeadingTag : String -> Maybe Nat
 isHeadingTag "h1" = Just 1
@@ -109,6 +135,79 @@ checkAltMeaningful p "img" attrs = case altValue attrs of
               [".jpg", ".jpeg", ".png", ".gif", ".webp", ".svg"]
 checkAltMeaningful _ _ _ = []
 
+||| `<html>` root must have a non-empty `lang`. STRUCTURAL.
+||| Only fires at the root of the tree; the walker passes `True` for
+||| the root call and `False` for descendants.
+checkDocumentLang : Path -> Bool -> String -> List HAttr -> List Finding
+checkDocumentLang p True "html" attrs =
+  if hasNonEmptyAttr "lang" attrs
+    then []
+    else [MkFinding ruleDocumentLang p
+            "<html> root missing non-empty lang attribute"]
+checkDocumentLang _ _    _      _     = []
+
+||| `<iframe>` must have a non-empty `title`. STRUCTURAL.
+checkIframeTitle : Path -> String -> List HAttr -> List Finding
+checkIframeTitle p "iframe" attrs =
+  if hasNonEmptyAttr "title" attrs
+    then []
+    else [MkFinding ruleIframeTitle p
+            "<iframe> missing non-empty title attribute"]
+checkIframeTitle _ _ _ = []
+
+||| `<label>` must have a `for` attribute OR contain at least one form
+||| control (input / select / textarea / button) — the implicit-label
+||| pattern. STRUCTURAL.
+labelContainsControl : List HExpr -> Bool
+labelContainsControl []        = False
+labelContainsControl (c :: cs) = case c of
+  Element t _ _ =>
+    elem t ["input", "select", "textarea", "button", "output", "meter", "progress"]
+      || labelContainsControl cs
+  _             => labelContainsControl cs
+
+checkLabelFor : Path -> String -> List HAttr -> List HExpr -> List Finding
+checkLabelFor p "label" attrs cs =
+  if hasNonEmptyAttr "for" attrs || labelContainsControl cs
+    then []
+    else [MkFinding ruleLabelFor p
+            "<label> missing for attribute and contains no control"]
+checkLabelFor _ _ _ _ = []
+
+||| `<fieldset>` should contain a `<legend>` as its first applicable
+||| descendant. STRUCTURAL (warning — accessible-name fallback exists).
+fieldsetHasLegend : List HExpr -> Bool
+fieldsetHasLegend []        = False
+fieldsetHasLegend (c :: cs) = case c of
+  Element "legend" _ _ => True
+  _                    => fieldsetHasLegend cs
+
+checkFieldsetLegend : Path -> String -> List HExpr -> List Finding
+checkFieldsetLegend p "fieldset" cs =
+  if fieldsetHasLegend cs
+    then []
+    else [MkFinding ruleFieldsetLegend p
+            "<fieldset> missing <legend>"]
+checkFieldsetLegend _ _ _ = []
+
+||| `<a>` with an `href` must have an accessible name. STRUCTURAL.
+checkLinkName : Path -> String -> List HAttr -> List HExpr -> List Finding
+checkLinkName p "a" attrs cs =
+  if hasAttr "href" attrs && not (hasAccessibleName attrs cs)
+    then [MkFinding ruleLinkName p
+            "<a href> has no accessible name (empty text + no aria-label/title)"]
+    else []
+checkLinkName _ _ _ _ = []
+
+||| `<button>` must have an accessible name. STRUCTURAL.
+checkButtonName : Path -> String -> List HAttr -> List HExpr -> List Finding
+checkButtonName p "button" attrs cs =
+  if hasAccessibleName attrs cs
+    then []
+    else [MkFinding ruleButtonName p
+            "<button> has no accessible name (empty text + no aria-label/title)"]
+checkButtonName _ _ _ _ = []
+
 --------------------------------------------------------------------------------
 -- Heading-skip check (whole-tree, not per-node).
 --------------------------------------------------------------------------------
@@ -144,34 +243,78 @@ checkHeadingNoSkip h =
         else walk (Just l) rest
 
 --------------------------------------------------------------------------------
+-- Duplicate-id (whole-tree).
+--------------------------------------------------------------------------------
+
+||| Collect (path, id-value) for every element in the tree carrying an
+||| `id`. Pre-order.
+collectIds : Path -> HExpr -> List (Path, String)
+collectIds p (Element _ attrs cs) = case attrValue "id" attrs of
+  Just v  =>
+    let here = (p, v)
+     in here :: childrenIds 0 cs
+  Nothing => childrenIds 0 cs
+  where
+    childrenIds : Nat -> List HExpr -> List (Path, String)
+    childrenIds _ [] = []
+    childrenIds i (c :: rest) =
+      assert_total (collectIds (p ++ [i]) c) ++ childrenIds (S i) rest
+collectIds _ _ = []
+
+||| Emit one finding per duplicate id occurrence (every occurrence after
+||| the first emits, so callers see N-1 findings for N copies).
+checkDuplicateIds : HExpr -> List Finding
+checkDuplicateIds h = go [] (collectIds [] h)
+  where
+    go : List String -> List (Path, String) -> List Finding
+    go _    []                = []
+    go seen ((p, v) :: rest)  =
+      if elem v seen
+        then MkFinding ruleDuplicateId p ("duplicate id: " ++ v)
+               :: go seen rest
+        else go (v :: seen) rest
+
+--------------------------------------------------------------------------------
 -- Top-level traversal.
 --------------------------------------------------------------------------------
 
-||| Per-node checks (everything except heading-skip, which is whole-tree).
-nodeChecks : Path -> HExpr -> List Finding
-nodeChecks p (Element t attrs _) =
-  checkImgAlt        p t attrs
-    ++ checkAnchorHref   p t attrs
-    ++ checkAltMeaningful p t attrs
-nodeChecks _ _ = []
+||| Per-node checks (everything except heading-skip + duplicate-id, both
+||| whole-tree). `atRoot` tags the root-call so `document-lang` only
+||| fires on the document root.
+nodeChecks : Path -> Bool -> HExpr -> List Finding
+nodeChecks p atRoot (Element t attrs cs) =
+  checkImgAlt          p t attrs
+    ++ checkAnchorHref     p t attrs
+    ++ checkAltMeaningful  p t attrs
+    ++ checkDocumentLang   p atRoot t attrs
+    ++ checkIframeTitle    p t attrs
+    ++ checkLabelFor       p t attrs cs
+    ++ checkFieldsetLegend p t cs
+    ++ checkLinkName       p t attrs cs
+    ++ checkButtonName     p t attrs cs
+nodeChecks _ _ _ = []
 
-||| Walk emitting per-node findings.
-walkNodes : Path -> HExpr -> List Finding
-walkNodes p h@(Element _ _ cs) =
-  nodeChecks p h ++ childWalk 0 cs
+||| Walk emitting per-node findings. Only the root call passes
+||| `atRoot=True`; subtree walks pass `False`.
+walkNodes : Path -> Bool -> HExpr -> List Finding
+walkNodes p atRoot h@(Element _ _ cs) =
+  nodeChecks p atRoot h ++ childWalk 0 cs
   where
     childWalk : Nat -> List HExpr -> List Finding
     childWalk _ [] = []
     childWalk i (c :: rest) =
-      assert_total (walkNodes (p ++ [i]) c) ++ childWalk (S i) rest
-walkNodes _ _ = []
+      assert_total (walkNodes (p ++ [i]) False c) ++ childWalk (S i) rest
+walkNodes _ _ _ = []
 
 ||| Full pass. Per plan.dj the function takes the `IsValidHtml` proof as a
 ||| precondition; we do not extract from it (the proof exists so the type
 ||| signature reflects the soundness story).
 public export
 checkAA : (h : HExpr) -> IsValidHtml h -> AAReport
-checkAA h _ = walkNodes [] h ++ checkHeadingNoSkip h
+checkAA h _ =
+  walkNodes [] True h
+    ++ checkHeadingNoSkip h
+    ++ checkDuplicateIds h
 
 ||| Convenience: just the structurally-tagged findings (the Phase-4-promotable
 ||| set). Heuristic/runtime are still in the full report but separated here.

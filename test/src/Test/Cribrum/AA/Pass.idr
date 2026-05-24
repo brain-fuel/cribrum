@@ -130,6 +130,185 @@ ext_finding_path_locates_node = oneShot $
     Left  e   => failWith Nothing e
 
 --------------------------------------------------------------------------------
+-- EXTs — new structural rules (document-lang, iframe-title, label-for,
+-- fieldset-legend, link-name, button-name, duplicate-id).
+--------------------------------------------------------------------------------
+
+export
+ext_html_root_without_lang_fires : Property
+ext_html_root_without_lang_fires = oneShot $
+  case checked (Element "html" [] [Element "body" [] [Text "."]]) of
+    Right report => elem "document-lang" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_html_root_with_lang_ok : Property
+ext_html_root_with_lang_ok = oneShot $
+  case checked (Element "html" [MkHAttr "lang" (Str "en")]
+                  [Element "body" [] [Text "."]]) of
+    Right report => elem "document-lang" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_html_root_empty_lang_fires : Property
+ext_html_root_empty_lang_fires = oneShot $
+  case checked (Element "html" [MkHAttr "lang" (Str "")]
+                  [Element "body" [] [Text "."]]) of
+    Right report => elem "document-lang" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+||| `document-lang` is a root-only check; an inner `<html>` (impossible
+||| in valid HTML, but covers the walker logic) doesn't fire when the
+||| tree's root isn't html.
+export
+ext_document_lang_only_at_root : Property
+ext_document_lang_only_at_root = oneShot $
+  case checked (Element "div" [] [Element "p" [] [Text "."]]) of
+    Right report => elem "document-lang" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_iframe_without_title_fires : Property
+ext_iframe_without_title_fires = oneShot $
+  case checked (Element "section" []
+                  [Element "iframe" [MkHAttr "src" (Str "/x")] []]) of
+    Right report => elem "iframe-title" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_iframe_with_title_ok : Property
+ext_iframe_with_title_ok = oneShot $
+  case checked (Element "section" []
+                  [Element "iframe" [ MkHAttr "src"   (Str "/x")
+                                    , MkHAttr "title" (Str "embedded preview")
+                                    ] []]) of
+    Right report => elem "iframe-title" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_label_with_for_ok : Property
+ext_label_with_for_ok = oneShot $
+  case checked (Element "form" []
+                  [ Element "label" [MkHAttr "for" (Str "x")] [Text "name"]
+                  , Element "input" [MkHAttr "id"  (Str "x")] []
+                  ]) of
+    Right report => elem "label-for-control" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_label_with_implicit_control_ok : Property
+ext_label_with_implicit_control_ok = oneShot $
+  case checked (Element "label" []
+                  [ Text "name"
+                  , Element "input" [MkHAttr "type" (Str "text")] []
+                  ]) of
+    Right report => elem "label-for-control" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_label_without_for_or_control_fires : Property
+ext_label_without_for_or_control_fires = oneShot $
+  case checked (Element "label" [] [Text "orphan"]) of
+    Right report => elem "label-for-control" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_fieldset_without_legend_fires : Property
+ext_fieldset_without_legend_fires = oneShot $
+  case checked (Element "fieldset" []
+                  [Element "input" [MkHAttr "type" (Str "text")] []]) of
+    Right report => elem "fieldset-legend" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_fieldset_with_legend_ok : Property
+ext_fieldset_with_legend_ok = oneShot $
+  case checked (Element "fieldset" []
+                  [ Element "legend" [] [Text "group"]
+                  , Element "input"  [MkHAttr "type" (Str "text")] []
+                  ]) of
+    Right report => elem "fieldset-legend" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_link_without_text_fires : Property
+ext_link_without_text_fires = oneShot $
+  case checked (Element "a" [MkHAttr "href" (Str "/x")] []) of
+    Right report => elem "link-name" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_link_with_text_ok : Property
+ext_link_with_text_ok = oneShot $
+  case checked (Element "a" [MkHAttr "href" (Str "/x")] [Text "click"]) of
+    Right report => elem "link-name" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_link_with_aria_label_ok : Property
+ext_link_with_aria_label_ok = oneShot $
+  case checked (Element "a" [ MkHAttr "href"       (Str "/x")
+                            , MkHAttr "aria-label" (Str "go")
+                            ] []) of
+    Right report => elem "link-name" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+||| `<a>` without `href` (e.g. JS-only anchor or in-page anchor target)
+||| does not trigger link-name; it triggers `anchor-href` instead.
+export
+ext_anchor_without_href_skips_link_name : Property
+ext_anchor_without_href_skips_link_name = oneShot $
+  case checked (Element "a" [] []) of
+    Right report => elem "link-name" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_button_without_text_fires : Property
+ext_button_without_text_fires = oneShot $
+  case checked (Element "button" [] []) of
+    Right report => elem "button-name" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_button_with_text_ok : Property
+ext_button_with_text_ok = oneShot $
+  case checked (Element "button" [] [Text "Submit"]) of
+    Right report => elem "button-name" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_duplicate_id_fires : Property
+ext_duplicate_id_fires = oneShot $
+  case checked (Element "section" []
+                  [ Element "div" [MkHAttr "id" (Str "x")] []
+                  , Element "p"   [MkHAttr "id" (Str "x")] [Text "."]
+                  ]) of
+    Right report => elem "duplicate-id" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_unique_ids_ok : Property
+ext_unique_ids_ok = oneShot $
+  case checked (Element "section" []
+                  [ Element "div" [MkHAttr "id" (Str "a")] []
+                  , Element "p"   [MkHAttr "id" (Str "b")] [Text "."]
+                  ]) of
+    Right report => elem "duplicate-id" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_triplicate_id_fires_twice : Property
+ext_triplicate_id_fires_twice = oneShot $
+  case checked (Element "section" []
+                  [ Element "div" [MkHAttr "id" (Str "x")] []
+                  , Element "p"   [MkHAttr "id" (Str "x")] [Text "."]
+                  , Element "span" [MkHAttr "id" (Str "x")] [Text "."]
+                  ]) of
+    Right report =>
+      length (filter (\f => Rule.id (rule f) == "duplicate-id") report) === 2
+    Left e       => failWith Nothing e
+
+--------------------------------------------------------------------------------
 -- PDDTs.
 --------------------------------------------------------------------------------
 
@@ -209,13 +388,14 @@ pbt_text_only_tree_no_findings = property $ do
     Left e  => failWith Nothing e
 
 ||| `checkAA` is total: it always returns a list (possibly empty), never
-||| diverges. Observed by running on arbitrary valid trees.
+||| diverges. Observed by running on arbitrary valid trees built from
+||| tags whose content policy admits text/phrasing children directly so
+||| `decideHtml` produces a Yes (Phase 2's content-model check applies).
 export
 pbt_checkAA_total : Property
 pbt_checkAA_total = property $ do
-  -- generate a tree of safe known-tag elements so IsValidHtml succeeds
   let knownGen = element $ the (Vect _ String)
-        ["p", "div", "span", "section", "ul", "li", "h1", "h2"]
+        ["p", "div", "span", "section", "h1", "h2"]
   tag <- forAll knownGen
   cs  <- forAll (list (linear 0 4)
                    ((\s => Text s) <$> string (linear 0 8) ascii))
@@ -242,4 +422,24 @@ group = MkGroup "Cribrum.AA.Pass"
   , ("pbt_img_without_alt_always_reported",    pbt_img_without_alt_always_reported)
   , ("pbt_text_only_tree_no_findings",         pbt_text_only_tree_no_findings)
   , ("pbt_checkAA_total",                      pbt_checkAA_total)
+  , ("ext_html_root_without_lang_fires",       ext_html_root_without_lang_fires)
+  , ("ext_html_root_with_lang_ok",             ext_html_root_with_lang_ok)
+  , ("ext_html_root_empty_lang_fires",         ext_html_root_empty_lang_fires)
+  , ("ext_document_lang_only_at_root",         ext_document_lang_only_at_root)
+  , ("ext_iframe_without_title_fires",         ext_iframe_without_title_fires)
+  , ("ext_iframe_with_title_ok",               ext_iframe_with_title_ok)
+  , ("ext_label_with_for_ok",                  ext_label_with_for_ok)
+  , ("ext_label_with_implicit_control_ok",     ext_label_with_implicit_control_ok)
+  , ("ext_label_without_for_or_control_fires", ext_label_without_for_or_control_fires)
+  , ("ext_fieldset_without_legend_fires",      ext_fieldset_without_legend_fires)
+  , ("ext_fieldset_with_legend_ok",            ext_fieldset_with_legend_ok)
+  , ("ext_link_without_text_fires",            ext_link_without_text_fires)
+  , ("ext_link_with_text_ok",                  ext_link_with_text_ok)
+  , ("ext_link_with_aria_label_ok",            ext_link_with_aria_label_ok)
+  , ("ext_anchor_without_href_skips_link_name", ext_anchor_without_href_skips_link_name)
+  , ("ext_button_without_text_fires",          ext_button_without_text_fires)
+  , ("ext_button_with_text_ok",                ext_button_with_text_ok)
+  , ("ext_duplicate_id_fires",                 ext_duplicate_id_fires)
+  , ("ext_unique_ids_ok",                      ext_unique_ids_ok)
+  , ("ext_triplicate_id_fires_twice",          ext_triplicate_id_fires_twice)
   ]
