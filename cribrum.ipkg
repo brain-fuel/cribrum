@@ -10,6 +10,8 @@ depends   = base
 modules = Cribrum.Node
         , Cribrum.Djot.Surface
         , Cribrum.Djot.Parser
+        , Cribrum.Html.Category
+        , Cribrum.Html.Model
         , Cribrum.Html.Valid
         , Cribrum.Elaborate
         , Cribrum.Render.Html
