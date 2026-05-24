@@ -24,6 +24,17 @@ APPROVED="${APPROVED:-}"
 
 cd "$ROOT"
 
+# Trap signals + normal exit: any `.bak` left behind by a killed mutant
+# iteration gets restored. Without this, ^C / SIGTERM mid-iteration
+# leaves the source tree mutated and subsequent builds see corrupt code
+# until someone manually `mv`s the .bak back.
+cleanup_baks () {
+  find src -name '*.bak' 2>/dev/null | while IFS= read -r f; do
+    mv "$f" "${f%.bak}"
+  done
+}
+trap cleanup_baks EXIT INT TERM
+
 if [[ ! -r "$TSV" ]]; then
   echo "FATAL: cannot read $TSV" >&2
   exit 2
@@ -149,10 +160,9 @@ if [[ ${#fail_msgs[@]} -gt 0 ]]; then
   done
 fi
 
-# Restore final state in case a mutant left a backup behind on interruption.
-find src -name '*.bak' -print0 | while IFS= read -r -d '' f; do
-  mv "$f" "${f%.bak}"
-done
+# Final-state restoration is handled by the EXIT trap above; reinstall
+# the libs so the post-gate environment matches what `pack install
+# cribrum/teaweb` would produce.
 reinstall_cribrum
 
 [[ $survived -eq 0 ]] && [[ ${#fail_msgs[@]} -eq 0 || $survived -eq 0 ]] || exit 1

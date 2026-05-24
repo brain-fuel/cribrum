@@ -98,6 +98,43 @@ currentEventValue : IO String
 currentEventValue = fromPrim (prim__currentEventValue "")
 
 --------------------------------------------------------------------------------
+-- Focus preservation across blow-and-rebuild reconcile.
+--
+-- Day-1 reconcile destroys + recreates every DOM node. DOM-resident
+-- state (focus, selection range, scroll position) is lost. For
+-- controlled inputs this means every keystroke yanks the cursor out
+-- of the field. We side-step it by snapshotting `document.activeEl-
+-- ement.id` + selection range into a window-scoped slot before the
+-- blow, and re-applying them after the rebuild. Day-2 keyed-children
+-- diff makes this unnecessary; until then the workaround is a one-
+-- line bracket around the reconcile body.
+--------------------------------------------------------------------------------
+
+%foreign "scheme:(lambda (_) 0)"
+         "browser:lambda:(_)=>{ var a=document.activeElement; if(a&&a.id){ window.__cribrumFocusId=a.id; window.__cribrumSelStart=(typeof a.selectionStart==='number')?a.selectionStart:0; window.__cribrumSelEnd=(typeof a.selectionEnd==='number')?a.selectionEnd:0; } else { window.__cribrumFocusId=''; } return 0; }"
+prim__captureFocus : String -> PrimIO Int
+
+%foreign "scheme:(lambda (_) 0)"
+         "browser:lambda:(_)=>{ var id=window.__cribrumFocusId; if(id){ var el=document.getElementById(id); if(el){ if(typeof el.focus==='function') el.focus(); if(typeof el.setSelectionRange==='function'){ try { el.setSelectionRange(window.__cribrumSelStart, window.__cribrumSelEnd); } catch(e){} } } } return 0; }"
+prim__restoreFocus : String -> PrimIO Int
+
+||| Snapshot `document.activeElement.id` + selection range into a
+||| window slot so `restoreFocus` can put the cursor back after the
+||| host's children get re-rendered. No-op when no element is focused
+||| or the focused element has no `id`.
+export
+captureFocus : IO ()
+captureFocus = ignore (fromPrim (prim__captureFocus ""))
+
+||| Re-focus the element whose id was stashed by `captureFocus` and
+||| restore its selection range. No-op when the snapshot is empty or
+||| the element has gone away (the new render didn't recreate it
+||| under the same id).
+export
+restoreFocus : IO ()
+restoreFocus = ignore (fromPrim (prim__restoreFocus ""))
+
+--------------------------------------------------------------------------------
 -- IO wrappers (the layer above the FFI; this is what renderDom uses).
 --------------------------------------------------------------------------------
 
@@ -193,9 +230,11 @@ renderDom (Element tag attrs children) = do
 export
 reconcile : (host : DomNode) -> (previous : HExpr) -> (next : HExpr) -> IO ()
 reconcile host _ next = do
+  captureFocus
   clearChildren host
   fresh <- renderDom next
   appendChild host fresh
+  restoreFocus
 
 ||| Convenience for an initial mount with no previous tree.
 export

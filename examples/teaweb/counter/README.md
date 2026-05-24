@@ -1,13 +1,15 @@
 # TEAWeb Counter — MVP demo
 
-The architectural keystone for TEAWeb. ~80 LOC of app code proves the
-TEAWeb runtime end-to-end:
+The architectural keystone for TEAWeb. Proves the TEAWeb runtime end-
+to-end:
 
 - `HExpr` as the view return type (via `View msg`).
-- Typed `onClick` carrying `msg`.
+- Typed `onClick` / `onInput` carrying `msg`.
 - Dispatch through the handler table installed by `mount`.
 - `update` returning `(model, Cmd msg)`.
 - A `Cmd` leaf (`Focus`) firing into the DOM.
+- Day-1 blow-and-rebuild reconcile with focus + selection preserved.
+- Checkbox-driven view recomputation (transform pipeline).
 
 ## Build
 
@@ -34,17 +36,20 @@ Or any static-file server.
 
 `src/Main.idr` defines:
 
-- `data Msg = Increment | Decrement | FocusInput`
-- `record Model = MkModel { count : Int }`
+- `data Msg = Increment | Decrement | FocusInput | UpdateWord String | ClearWord | ToggleReverse | ToggleStripVowels | ToggleStripConsonants`
+- `record Model { count : Int, word : String, reverseOn : Bool, stripVowels : Bool, stripConsonants : Bool }`
 - `init_  : (Model, Cmd Msg)`
 - `update_ : Msg -> Model -> (Model, Cmd Msg)`
 - `view_   : Model -> View Msg`
 - `subs_   : Model -> Sub Msg`
 - `main : IO () = mount prog "app"`
 
-Increment/Decrement buttons mutate `count`; the "Focus the input"
-button emits a `Focus "name-input"` Cmd that the runtime interprets
-via `element.focus()` at the FFI boundary.
+Increment/Decrement buttons mutate `count`. The input is controlled —
+typing fires `onInput` → `UpdateWord` → model update → reconcile re-
+renders with the new `value=`. Three checkboxes drive the transform
+pipeline (`applyTransforms`): reverse, filter out vowels, filter out
+consonants. Clear button wipes the word and refocuses the input via
+the `Focus` Cmd.
 
 ## What this does NOT yet have
 
@@ -60,9 +65,13 @@ via `element.focus()` at the FFI boundary.
 
 ## How the demo proves Day-1 end-to-end
 
-| Click / type     | What you should see                                          |
-|------------------|--------------------------------------------------------------|
-| `+` button       | Count increments. Name field still holds whatever you typed. |
-| `-` button       | Count decrements. Name field still holds it.                 |
-| Type in input    | Greeting line echoes the name live (onInput → UpdateName).   |
-| `Focus the input`| Cursor jumps to the input field. Typed text is preserved.    |
+| Click / type           | What you should see                                                  |
+|------------------------|----------------------------------------------------------------------|
+| `+` / `-`              | Count changes. Word field + checkboxes keep their state.             |
+| Type in input          | Result line below echoes the (transformed) word live.                |
+| `Focus the input`      | Cursor jumps to the input field. Typed text + caret preserved.       |
+| `Clear`                | Word wipes, input refocuses, transforms still selected.              |
+| ☑ reverse              | Result reverses the input letter-for-letter.                         |
+| ☑ filter out vowels    | Vowels (a/e/i/o/u, any case) drop out of the result.                 |
+| ☑ filter out consonants| Consonants drop out of the result.                                   |
+| Mix checkboxes         | Composition: filter first, then reverse. All can be on at once.      |
