@@ -13,7 +13,7 @@
 | `Cribrum.Html.Category`   | 2     | Content-category enum (Metadata/Flow/Sectioning/Heading/Phrasing/Embedded/Interactive/Palpable/ScriptSupporting/FormAssociated). |
 | `Cribrum.Html.Model`      | 2     | Element catalog (~95 elements) with void / raw-text flags, category lists, `ChildPolicy` content-model entries (NoChildren / OnlyTags / OnlyCategories / TextOnly / AnyContent), and per-element local-attribute sets. Global-attribute set + `data-*` / `aria-*` / `on*` prefix recognition. Hand-curated seed; `ingest/html-model.ts` is the regeneration scaffold. |
 | `Cribrum.Html.Valid`      | 2     | `IsValidHtml = IsKnownTag × All AttrAllowedIn × All ChildAllowedIn × All IsValidHtml`. Total `decideHtml : (h : HExpr) -> Dec (IsValidHtml h)`. Located rejection (`decideHtmlLocated`) returns path-into-tree + `RejectionClass` (UnknownTag / DisallowedAttr / IllegalChild / BlockInPhrasing / MalformedTable / TextNotAllowedIn / CommentNotAllowedIn). |
-| `Cribrum.Elaborate`       | 1b    | Strict elaboration `Doc -> Either ElabError (h ** (IsValidHtml h, StructuralAA h))`. Phase-2 sharpened: failure path uses `LocatedHtmlError` carrying a `LocatedReject`. StructuralAA still unit in this spike (Phase 4 promotion outstanding). |
+| `Cribrum.Elaborate`       | 1b    | Strict elaboration `Doc -> Either ElabError (h ** (IsValidHtml h, StructuralAA h))`. Phase-2 sharpened: failure path uses `LocatedHtmlError` carrying a `LocatedReject`. **Phase-4 sharpened**: `StructuralAA h` is now the actual conjunct of all 10 Phase-4 propositions (img-alt, anchor-href, iframe-title, label-for-control, fieldset-legend, button-name, link-name, document-lang, heading-no-skip, duplicate-id) — `decStructuralAA` short-circuits to `StructuralAaFailure ruleId` on the first failing predicate. AA failure-path *locating* (path-into-tree) is the next sharpening — needs `Promote.decAllListOk` to surface the failing node index. |
 | `Cribrum.Render.Html`     | 5     | Total `HExpr -> String`. HTML 5 void-element handling, escaping, handler attrs render as `data-on-<event>`. |
 | `Cribrum.Render.Dom`      | 5     | **Spike**: tiny FFI surface (createElement/createTextNode/createComment/setAttribute/removeAttribute/addEventListener/appendChild/replaceChild/getElementById/clearChildren) + `currentEventValue` (input-value extraction) + `captureFocus`/`restoreFocus` (focus + selection-range preservation across reconcile). `renderDom : HExpr -> IO DomNode`, `reconcile` (Day-1 blow-and-rebuild, skip on unchanged tree, focus bracketed), `mountInto`. JS-backend only at runtime; chez type-checks via multi-spec %foreign with a scheme: fallback. Handler attrs dispatch via `window.__cribrumDispatch`; the dispatcher pre-extracts `event.target.value` into `window.__cribrumValue` for `onInput`/`onChange`. |
 | `Cribrum.AA.Catalog`      | 3+4   | Shared rule catalog (single source of truth across pass + future types). 11 rules: img-alt, anchor-href, alt-meaningful, heading-no-skip, document-lang, iframe-title, label-for-control, fieldset-legend, link-name, button-name, duplicate-id. |
@@ -118,12 +118,15 @@ through Cribrum's own pipeline (matching `README.dj`'s role).
   fieldset-legend, button-name, link-name, document-lang, heading-no-
   skip, duplicate-id) AND the `Cribrum.AA.Promote` factor (plan §P4.2)
   is in place, compressing each per-node rule's typed wrapper to ~5
-  lines. Still ahead: the sharpening of `Elaborate`'s `StructuralAA`
-  codomain from unit to the actual conjunct of these 10 propositions
-  (will need the strict-mode PBT generator in
-  `Test.Cribrum.Elaborate.genSimpleBlocks` to constrain heading-level
-  sequences to no-skip, so that strict elaboration is total on the
-  generator's image).
+  lines. **Plan §P4.3 (elaboration parity) landed**: `Cribrum.Elaborate`'s
+  `StructuralAA` codomain is now the real conjunct of all 10 propositions,
+  decided by `decStructuralAA`; strict `elaborate` fails hard with
+  `StructuralAaFailure ruleId` on the first failing predicate. The PBT
+  generator `Test.Cribrum.Elaborate.genSimpleBlocks` normalises heading-
+  level sequences so generated docs always satisfy heading-no-skip.
+  Still ahead: AA failure path *locating* — currently rule id only;
+  promoting to a full path-into-tree needs `Cribrum.AA.Promote.decAllListOk`
+  to surface the failing node index.
 - **Phase 5 DOM render execution**: FFI surface + `renderDom` +
   `reconcile` chez-type-checked AND JS-bundled via the
   `examples/teaweb/counter` MVP demo. Browser execution validated

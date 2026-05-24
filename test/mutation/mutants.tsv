@@ -115,3 +115,4 @@ src/Cribrum/AA/Typed.idr	duplicateIdOkBool h = allUnique (collectIdValues h)	dup
 src/Cribrum/AA/Typed.idr	fieldsetOkBool (Element "fieldset" _ cs) = fieldsetHasLegend cs	fieldsetOkBool (Element "fieldset" _ cs) = True	Typed: fieldset-legend always passes
 src/Cribrum/AA/Typed.idr	  Element "legend" _ _ => True	  Element "legend" _ _ => False	Typed: legend tag mismatch
 src/Cribrum/AA/Typed.idr	fieldsetHasLegend []        = False	fieldsetHasLegend []        = True	Typed: fieldset empty-children default flipped
+src/Cribrum/Elaborate.idr	                  No  _  => Left "heading-no-skip"	                  No  _  => Left "img-alt"	elaborate: heading-no-skip rule id mis-labelled

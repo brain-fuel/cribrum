@@ -8,40 +8,52 @@
 ||| so a document that cannot become valid, accessible HTML is a *hard error*
 ||| — inaccessible documents are unrepresentable.
 |||
-||| **Scope of this spike:** the slice currently shipped covers paragraph,
-||| heading (h1-h6), thematic break (`<hr>`), and inline text + soft/hard
-||| breaks (`<br>`). `StructuralAA` is the unit relation here — the
-||| structurally-decidable AA failures arrive once the relevant Djot
-||| constructs do (images need alt, controls need labels, headings shouldn't
-||| skip levels, document needs a `lang`).
+||| `StructuralAA` is the conjunct of every Phase-4 rule in
+||| `Cribrum.AA.Typed` — the 10 Structural rules from `Cribrum.AA.Catalog`
+||| (img-alt, anchor-href, iframe-title, label-for-control, fieldset-legend,
+||| button-name, link-name, document-lang, heading-no-skip, duplicate-id).
+||| Each per-rule conjunct is decided by its own `decXxx`; a single
+||| failure short-circuits to `StructuralAaFailure ruleId`.
 |||
-||| The strict-mode contract is preserved: the spike's StructuralAA proof
-||| obligation is trivially satisfiable, so any HExpr produced here is BOTH
-||| `IsValidHtml` and `StructuralAA`. As Phase 3/4 lands, this module is
-||| where the failure modes light up — the type stays the same.
+||| AA failure locating: the HTML failure path is path-into-tree via
+||| `LocatedHtmlError`; the AA failure path currently carries only the rule
+||| id. Promoting AA failure to a located path is tracked separately —
+||| `Cribrum.AA.Promote.decAllListOk` would need to surface the failing
+||| node index. Not blocking the codomain sharpening.
 module Cribrum.Elaborate
 
 import Data.List
+import public Data.List.Quantifiers
+import public Data.So
 import Cribrum.Node
 import Cribrum.Djot.Surface
 import Cribrum.Html.Valid
+import public Cribrum.AA.Typed
 
 %default total
 
 --------------------------------------------------------------------------------
--- StructuralAA placeholder.
+-- StructuralAA — Phase-4 conjunct.
 --------------------------------------------------------------------------------
 
-||| Structurally-decidable accessibility, per plan.dj §Phase 4. Phase 4 will
-||| land the actual rule set; the spike treats it as the universally true
-||| proposition so the elaboration codomain is the right *shape*.
+||| Structurally-decidable accessibility, per plan.dj §Phase 4: the conjunct
+||| of every Structural rule from `Cribrum.AA.Catalog`, promoted to a type
+||| via `Cribrum.AA.Typed`. A value of this type witnesses that the tree
+||| passes all 10 propositions.
 public export
 StructuralAA : HExpr -> Type
-StructuralAA _ = ()
-
-public export
-trivialAA : (h : HExpr) -> StructuralAA h
-trivialAA _ = ()
+StructuralAA h =
+  ( ImgsAllOk        h
+  , AnchorsAllOk     h
+  , IframesAllOk     h
+  , LabelsAllOk      h
+  , FieldsetsAllOk   h
+  , ButtonsAllOk     h
+  , LinksAllOk       h
+  , DocumentLangOk   h
+  , HeadingNoSkipOk  h
+  , DuplicateIdOk    h
+  )
 
 --------------------------------------------------------------------------------
 -- Elaboration errors.
@@ -57,8 +69,9 @@ data ElabError : Type where
   ||| any consumer that pattern-matched on the spike's `ElabError`.
   ||| New failures land in `LocatedHtmlError`.
   InvalidProducedHtml : (offendingTag : String) -> ElabError
-  ||| Reserved for future structural-AA failures (image without alt source,
-  ||| skipped heading level, etc).
+  ||| Structural-AA failure — the produced HExpr is valid HTML but fails
+  ||| one of the Phase-4 promoted rules. `rule` is the stable rule id
+  ||| from `Cribrum.AA.Catalog` (e.g. `"img-alt"`, `"heading-no-skip"`).
   StructuralAaFailure : (rule : String) -> ElabError
 
 public export
@@ -69,6 +82,37 @@ Show ElabError where
     "Elaboration produced HTML with unknown tag: " ++ t
   show (StructuralAaFailure r) =
     "Structural accessibility failure: " ++ r
+
+--------------------------------------------------------------------------------
+-- Deciding the StructuralAA conjunct.
+--------------------------------------------------------------------------------
+
+||| Decide the full StructuralAA conjunct. On failure, return the rule id
+||| of the first failing predicate (in catalog order); on success, return
+||| the conjunct witness.
+public export
+decStructuralAA : (h : HExpr) -> Either String (StructuralAA h)
+decStructuralAA h = case decImgsAllOk h of
+  No  _  => Left "img-alt"
+  Yes p1 => case decAnchorsAllOk h of
+    No  _  => Left "anchor-href"
+    Yes p2 => case decIframesAllOk h of
+      No  _  => Left "iframe-title"
+      Yes p3 => case decLabelsAllOk h of
+        No  _  => Left "label-for-control"
+        Yes p4 => case decFieldsetsAllOk h of
+          No  _  => Left "fieldset-legend"
+          Yes p5 => case decButtonsAllOk h of
+            No  _  => Left "button-name"
+            Yes p6 => case decLinksAllOk h of
+              No  _  => Left "link-name"
+              Yes p7 => case decDocumentLangOk h of
+                No  _  => Left "document-lang"
+                Yes p8 => case decHeadingNoSkipOk h of
+                  No  _  => Left "heading-no-skip"
+                  Yes p9 => case decDuplicateIdOk h of
+                    No  _   => Left "duplicate-id"
+                    Yes p10 => Right (p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
 
 --------------------------------------------------------------------------------
 -- Inline elaboration.
@@ -182,10 +226,16 @@ elaborateDoc (MkDoc bs) = Element "main" [] (map elaborateBlock bs)
 ||| that demand `(h : HExpr ** IsValidHtml h × StructuralAA h)` are unable
 ||| to receive a malformed tree — the decision procedure manufactures the
 ||| witness or we return a located rejection.
+|||
+||| Failure ordering: HTML well-formedness checked first (located rejection),
+||| then `StructuralAA` (rule id of first failing predicate). Both are hard
+||| errors in strict mode.
 public export
 elaborate : Doc -> Either ElabError (h : HExpr ** (IsValidHtml h, StructuralAA h))
 elaborate doc =
   let h = elaborateDoc doc
    in case decideHtmlLocated h of
-        Right p => Right (h ** (p, trivialAA h))
-        Left lr => Left (LocatedHtmlError lr)
+        Left  lr => Left (LocatedHtmlError lr)
+        Right p  => case decStructuralAA h of
+          Left rule  => Left (StructuralAaFailure rule)
+          Right aa   => Right (h ** (p, aa))

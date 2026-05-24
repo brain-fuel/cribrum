@@ -101,6 +101,20 @@ ext_round_trip_parse_then_elaborate = oneShot $
       Left  e => failWith Nothing ("elaborate failed: " ++ show e)
     Left e  => failWith Nothing ("parse failed: " ++ show e)
 
+||| Strict elaboration of a skipped heading sequence (h1 -> h3) is rejected
+||| with the `heading-no-skip` rule id surfaced through `StructuralAaFailure`.
+||| Pins the Phase-4 codomain wiring: a structurally-AA failure short-circuits
+||| through `decStructuralAA` and is reported with its catalog id.
+export
+ext_strict_elaboration_rejects_skipped_headings : Property
+ext_strict_elaboration_rejects_skipped_headings = oneShot $
+  case elaborate (doc [heading 1 "A", heading 3 "C"]) of
+    Right _                            =>
+      failWith Nothing "expected StructuralAaFailure heading-no-skip"
+    Left (StructuralAaFailure "heading-no-skip") => success
+    Left e =>
+      failWith Nothing ("wrong error variant: " ++ show e)
+
 --------------------------------------------------------------------------------
 -- PDDTs.
 --------------------------------------------------------------------------------
@@ -159,13 +173,29 @@ genSimpleInlines = list (linear 0 4) $
     , (\s => InlStrong [InlText s]) <$> string (linear 0 4) ascii
     ]
 
+||| Clamp any heading sequence so it satisfies the Phase-4 heading-no-skip
+||| rule (first heading any level; each subsequent heading <= prev + 1). The
+||| free generator otherwise emits skips like `[h1, h3]` which strict
+||| elaboration now (rightly) rejects.
+normalizeHeadings : List Block -> List Block
+normalizeHeadings = go Nothing
+  where
+    go : Maybe Nat -> List Block -> List Block
+    go _    []        = []
+    go prev (Heading attrs lvl is :: rest) =
+      let lvl' = case prev of
+            Nothing => lvl
+            Just p  => if lvl > S p then S p else lvl
+       in Heading attrs lvl' is :: go (Just lvl') rest
+    go prev (b :: rest) = b :: go prev rest
+
 genSimpleBlocks : Gen (List Block)
-genSimpleBlocks = list (linear 0 4) $
+genSimpleBlocks = normalizeHeadings <$> (list (linear 0 4) $
   choice $ the (Vect _ (Gen Block))
     [ Paragraph emptyAttrs <$> genSimpleInlines
     , [| Heading (pure emptyAttrs) genHeadingLevel genSimpleInlines |]
     , pure (ThematicBreak emptyAttrs)
-    ]
+    ])
 
 genSimpleDoc : Gen Doc
 genSimpleDoc = MkDoc <$> genSimpleBlocks
@@ -230,6 +260,8 @@ group = MkGroup "Cribrum.Elaborate"
   , ("ext_strong_becomes_strong",              ext_strong_becomes_strong)
   , ("ext_strict_elaboration_carries_proof",   ext_strict_elaboration_carries_proof)
   , ("ext_round_trip_parse_then_elaborate",    ext_round_trip_parse_then_elaborate)
+  , ("ext_strict_elaboration_rejects_skipped_headings",
+        ext_strict_elaboration_rejects_skipped_headings)
   , ("pddt_heading_tags",                      pddt_heading_tags)
   , ("pddt_inline_mapping",                    pddt_inline_mapping)
   , ("pbt_strict_elaboration_total_on_simple_docs",
