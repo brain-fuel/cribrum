@@ -231,6 +231,109 @@ pbt_anchor_with_href_always_ok = property $ do
   anchorsAllOk
     (Element "a" [MkHAttr "href" (Str href)] [Text body]) === True
 
+--------------------------------------------------------------------------------
+-- iframe-title tests.
+--------------------------------------------------------------------------------
+
+export
+ext_iframe_with_title_typed_ok : Property
+ext_iframe_with_title_typed_ok = oneShot $
+  iframesAllOk
+    (Element "iframe" [ MkHAttr "src"   (Str "/x")
+                      , MkHAttr "title" (Str "preview") ] []) === True
+
+export
+ext_iframe_without_title_typed_fails : Property
+ext_iframe_without_title_typed_fails = oneShot $
+  iframesAllOk
+    (Element "iframe" [MkHAttr "src" (Str "/x")] []) === False
+
+export
+ext_iframe_with_empty_title_typed_fails : Property
+ext_iframe_with_empty_title_typed_fails = oneShot $
+  iframesAllOk
+    (Element "iframe" [MkHAttr "title" (Str "   ")] []) === False
+
+export
+ext_nested_iframe_without_title_typed_fails : Property
+ext_nested_iframe_without_title_typed_fails = oneShot $
+  iframesAllOk
+    (Element "section" []
+       [ Element "p" [] [Text "before"]
+       , Element "iframe" [MkHAttr "src" (Str "/x")] []
+       ]) === False
+
+export
+ext_no_iframe_tree_typed_ok : Property
+ext_no_iframe_tree_typed_ok = oneShot $
+  iframesAllOk
+    (Element "section" []
+       [ Element "p" [] [Text "ok"]
+       , Element "img" [MkHAttr "alt" (Str "x")] []
+       ]) === True
+
+--------------------------------------------------------------------------------
+-- label-for-control tests.
+--------------------------------------------------------------------------------
+
+export
+ext_label_with_for_typed_ok : Property
+ext_label_with_for_typed_ok = oneShot $
+  labelsAllOk
+    (Element "label" [MkHAttr "for" (Str "x")] [Text "name"]) === True
+
+export
+ext_label_with_implicit_input_typed_ok : Property
+ext_label_with_implicit_input_typed_ok = oneShot $
+  labelsAllOk
+    (Element "label" []
+       [ Text "name"
+       , Element "input" [MkHAttr "type" (Str "text")] []
+       ]) === True
+
+export
+ext_orphan_label_typed_fails : Property
+ext_orphan_label_typed_fails = oneShot $
+  labelsAllOk (Element "label" [] [Text "orphan"]) === False
+
+export
+ext_label_with_empty_for_typed_fails : Property
+ext_label_with_empty_for_typed_fails = oneShot $
+  labelsAllOk
+    (Element "label" [MkHAttr "for" (Str "")] [Text "x"]) === False
+
+--------------------------------------------------------------------------------
+-- button-name tests.
+--------------------------------------------------------------------------------
+
+export
+ext_button_with_text_typed_ok : Property
+ext_button_with_text_typed_ok = oneShot $
+  buttonsAllOk (Element "button" [] [Text "Submit"]) === True
+
+export
+ext_button_with_aria_label_typed_ok : Property
+ext_button_with_aria_label_typed_ok = oneShot $
+  buttonsAllOk
+    (Element "button" [MkHAttr "aria-label" (Str "go")] []) === True
+
+export
+ext_empty_button_typed_fails : Property
+ext_empty_button_typed_fails = oneShot $
+  buttonsAllOk (Element "button" [] []) === False
+
+export
+ext_whitespace_button_typed_fails : Property
+ext_whitespace_button_typed_fails = oneShot $
+  buttonsAllOk (Element "button" [] [Text "   "]) === False
+
+export
+pbt_button_with_aria_label_always_ok : Property
+pbt_button_with_aria_label_always_ok = property $ do
+  lbl <- forAll (string (linear 1 16) ascii)
+  buttonsAllOk
+    (Element "button" [MkHAttr "aria-label" (Str (lbl ++ "x"))] []) === True
+
 export
 group : Group
 group = MkGroup "Cribrum.AA.Typed"
@@ -254,4 +357,18 @@ group = MkGroup "Cribrum.AA.Typed"
   , ("ext_nested_anchor_without_href_fails",   ext_nested_anchor_without_href_fails)
   , ("pddt_anchorsAllOk_table",                pddt_anchorsAllOk_table)
   , ("pbt_anchor_with_href_always_ok",         pbt_anchor_with_href_always_ok)
+  , ("ext_iframe_with_title_typed_ok",         ext_iframe_with_title_typed_ok)
+  , ("ext_iframe_without_title_typed_fails",   ext_iframe_without_title_typed_fails)
+  , ("ext_iframe_with_empty_title_typed_fails",ext_iframe_with_empty_title_typed_fails)
+  , ("ext_nested_iframe_without_title_typed_fails", ext_nested_iframe_without_title_typed_fails)
+  , ("ext_no_iframe_tree_typed_ok",            ext_no_iframe_tree_typed_ok)
+  , ("ext_label_with_for_typed_ok",            ext_label_with_for_typed_ok)
+  , ("ext_label_with_implicit_input_typed_ok", ext_label_with_implicit_input_typed_ok)
+  , ("ext_orphan_label_typed_fails",           ext_orphan_label_typed_fails)
+  , ("ext_label_with_empty_for_typed_fails",   ext_label_with_empty_for_typed_fails)
+  , ("ext_button_with_text_typed_ok",          ext_button_with_text_typed_ok)
+  , ("ext_button_with_aria_label_typed_ok",    ext_button_with_aria_label_typed_ok)
+  , ("ext_empty_button_typed_fails",           ext_empty_button_typed_fails)
+  , ("ext_whitespace_button_typed_fails",      ext_whitespace_button_typed_fails)
+  , ("pbt_button_with_aria_label_always_ok",   pbt_button_with_aria_label_always_ok)
   ]
