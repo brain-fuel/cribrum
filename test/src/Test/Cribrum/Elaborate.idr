@@ -103,17 +103,35 @@ ext_round_trip_parse_then_elaborate = oneShot $
 
 ||| Strict elaboration of a skipped heading sequence (h1 -> h3) is rejected
 ||| with the `heading-no-skip` rule id surfaced through `StructuralAaFailure`.
-||| Pins the Phase-4 codomain wiring: a structurally-AA failure short-circuits
-||| through `decStructuralAA` and is reported with its catalog id.
+||| heading-no-skip is a whole-tree rule, so the path is `Nothing`. Pins the
+||| Phase-4 codomain wiring: a structurally-AA failure short-circuits through
+||| `decStructuralAA` and is reported with its catalog id.
 export
 ext_strict_elaboration_rejects_skipped_headings : Property
 ext_strict_elaboration_rejects_skipped_headings = oneShot $
   case elaborate (doc [heading 1 "A", heading 3 "C"]) of
     Right _                            =>
       failWith Nothing "expected StructuralAaFailure heading-no-skip"
-    Left (StructuralAaFailure "heading-no-skip") => success
+    Left (StructuralAaFailure "heading-no-skip" Nothing) => success
     Left e =>
       failWith Nothing ("wrong error variant: " ++ show e)
+
+||| Per-node-rule failure (`button-name`) surfaces with path-into-tree.
+||| Hand-builds an HExpr the parser slice can't yet emit: `<main>` containing
+||| a `<button>` with no accessible name. The button is at child index 0 of
+||| the `<main>` root, so the located path is `Just [0]`. Pins the Phase-4
+||| §P4.3 "each hard error is located" contract for per-node rules.
+export
+ext_per_node_rule_failure_is_located : Property
+ext_per_node_rule_failure_is_located = oneShot $
+  let bad : HExpr
+      bad = Element "main" [] [Element "button" [] []]
+   in case decStructuralAA bad of
+        Right _                                            =>
+          failWith Nothing "expected button-name rejection"
+        Left ("button-name", Just [0]) => success
+        Left other                                         =>
+          failWith Nothing ("wrong rule/path: " ++ show other)
 
 --------------------------------------------------------------------------------
 -- PDDTs.
@@ -262,6 +280,8 @@ group = MkGroup "Cribrum.Elaborate"
   , ("ext_round_trip_parse_then_elaborate",    ext_round_trip_parse_then_elaborate)
   , ("ext_strict_elaboration_rejects_skipped_headings",
         ext_strict_elaboration_rejects_skipped_headings)
+  , ("ext_per_node_rule_failure_is_located",
+        ext_per_node_rule_failure_is_located)
   , ("pddt_heading_tags",                      pddt_heading_tags)
   , ("pddt_inline_mapping",                    pddt_inline_mapping)
   , ("pbt_strict_elaboration_total_on_simple_docs",

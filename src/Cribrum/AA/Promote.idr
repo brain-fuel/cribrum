@@ -74,3 +74,25 @@ allNodesOk : (HExpr -> Bool) -> HExpr -> Bool
 allNodesOk pred h = case decAllNodesOk pred h of
   Yes _ => True
   No  _ => False
+
+||| Path-into-tree of the first node (pre-order) that fails `pred`. Empty
+||| list = root failed; `[i, j]` = the `j`-th child of the `i`-th child of
+||| the root. `Nothing` = every node passes. Matches the path convention
+||| used by `Cribrum.Html.Valid.LocatedReject`.
+public export
+pathOfFirstFailing : (HExpr -> Bool) -> HExpr -> Maybe (List Nat)
+pathOfFirstFailing pred h = goNode [] h
+  where
+    goNode     : List Nat -> HExpr -> Maybe (List Nat)
+    goChildren : List Nat -> Nat -> List HExpr -> Maybe (List Nat)
+
+    goNode path h = case pred h of
+      False => Just path
+      True  => case h of
+        Element _ _ cs => assert_total (goChildren path 0 cs)
+        _              => Nothing
+
+    goChildren _    _ []        = Nothing
+    goChildren path i (c :: cs) = case goNode (path ++ [i]) c of
+      Just p  => Just p
+      Nothing => goChildren path (S i) cs

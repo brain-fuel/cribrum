@@ -13,13 +13,13 @@
 ||| (img-alt, anchor-href, iframe-title, label-for-control, fieldset-legend,
 ||| button-name, link-name, document-lang, heading-no-skip, duplicate-id).
 ||| Each per-rule conjunct is decided by its own `decXxx`; a single
-||| failure short-circuits to `StructuralAaFailure ruleId`.
+||| failure short-circuits to `StructuralAaFailure ruleId path`.
 |||
-||| AA failure locating: the HTML failure path is path-into-tree via
-||| `LocatedHtmlError`; the AA failure path currently carries only the rule
-||| id. Promoting AA failure to a located path is tracked separately —
-||| `Cribrum.AA.Promote.decAllListOk` would need to surface the failing
-||| node index. Not blocking the codomain sharpening.
+||| AA failure locating (plan §P4.3 "each hard error is located"):
+||| per-node rules carry `Just path` via `Promote.pathOfFirstFailing`;
+||| the root-only `document-lang` carries `Just []`; whole-tree rules
+||| whose failure isn't localised to a single node (heading-no-skip,
+||| duplicate-id) carry `Nothing`.
 module Cribrum.Elaborate
 
 import Data.List
@@ -72,7 +72,12 @@ data ElabError : Type where
   ||| Structural-AA failure — the produced HExpr is valid HTML but fails
   ||| one of the Phase-4 promoted rules. `rule` is the stable rule id
   ||| from `Cribrum.AA.Catalog` (e.g. `"img-alt"`, `"heading-no-skip"`).
-  StructuralAaFailure : (rule : String) -> ElabError
+  ||| `path` locates the offending node for per-node rules (img-alt,
+  ||| anchor-href, iframe-title, label-for-control, fieldset-legend,
+  ||| button-name, link-name); `Just []` for the root-only document-lang;
+  ||| `Nothing` for whole-tree rules whose failure isn't localised to one
+  ||| node (heading-no-skip, duplicate-id).
+  StructuralAaFailure : (rule : String) -> (path : Maybe (List Nat)) -> ElabError
 
 public export
 Show ElabError where
@@ -80,38 +85,48 @@ Show ElabError where
     "Elaboration produced invalid HTML: " ++ show lr
   show (InvalidProducedHtml t) =
     "Elaboration produced HTML with unknown tag: " ++ t
-  show (StructuralAaFailure r) =
+  show (StructuralAaFailure r p) =
     "Structural accessibility failure: " ++ r
+      ++ case p of
+           Nothing   => " (whole-tree)"
+           Just path => " at " ++ show path
 
 --------------------------------------------------------------------------------
 -- Deciding the StructuralAA conjunct.
 --------------------------------------------------------------------------------
 
 ||| Decide the full StructuralAA conjunct. On failure, return the rule id
-||| of the first failing predicate (in catalog order); on success, return
-||| the conjunct witness.
+||| of the first failing predicate (in catalog order) together with the
+||| path-into-tree of the offending node (per-node rules), `Just []` for
+||| the root-only document-lang, or `Nothing` for whole-tree rules whose
+||| failure isn't localised. On success, return the conjunct witness.
 public export
-decStructuralAA : (h : HExpr) -> Either String (StructuralAA h)
+decStructuralAA :  (h : HExpr)
+                -> Either (String, Maybe (List Nat)) (StructuralAA h)
 decStructuralAA h = case decImgsAllOk h of
-  No  _  => Left "img-alt"
+  No  _  => Left ("img-alt",            pathOfFirstFailing imgOkBool      h)
   Yes p1 => case decAnchorsAllOk h of
-    No  _  => Left "anchor-href"
+    No  _  => Left ("anchor-href",      pathOfFirstFailing anchorOkBool   h)
     Yes p2 => case decIframesAllOk h of
-      No  _  => Left "iframe-title"
+      No  _  => Left ("iframe-title",   pathOfFirstFailing iframeOkBool   h)
       Yes p3 => case decLabelsAllOk h of
-        No  _  => Left "label-for-control"
+        No  _  => Left ("label-for-control",
+                                        pathOfFirstFailing labelOkBool    h)
         Yes p4 => case decFieldsetsAllOk h of
-          No  _  => Left "fieldset-legend"
+          No  _  => Left ("fieldset-legend",
+                                        pathOfFirstFailing fieldsetOkBool h)
           Yes p5 => case decButtonsAllOk h of
-            No  _  => Left "button-name"
+            No  _  => Left ("button-name",
+                                        pathOfFirstFailing buttonOkBool   h)
             Yes p6 => case decLinksAllOk h of
-              No  _  => Left "link-name"
+              No  _  => Left ("link-name",
+                                        pathOfFirstFailing linkOkBool     h)
               Yes p7 => case decDocumentLangOk h of
-                No  _  => Left "document-lang"
+                No  _  => Left ("document-lang", Just [])
                 Yes p8 => case decHeadingNoSkipOk h of
-                  No  _  => Left "heading-no-skip"
+                  No  _  => Left ("heading-no-skip",  Nothing)
                   Yes p9 => case decDuplicateIdOk h of
-                    No  _   => Left "duplicate-id"
+                    No  _   => Left ("duplicate-id",  Nothing)
                     Yes p10 => Right (p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
 
 --------------------------------------------------------------------------------
@@ -237,5 +252,5 @@ elaborate doc =
    in case decideHtmlLocated h of
         Left  lr => Left (LocatedHtmlError lr)
         Right p  => case decStructuralAA h of
-          Left rule  => Left (StructuralAaFailure rule)
-          Right aa   => Right (h ** (p, aa))
+          Left (rule, path) => Left (StructuralAaFailure rule path)
+          Right aa          => Right (h ** (p, aa))
