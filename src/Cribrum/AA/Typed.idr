@@ -1,16 +1,23 @@
-||| Phase 4 spike — type-level promotion of one structural AA rule.
+||| Phase 4 — type-level promotion of the structural AA rules.
 |||
 ||| Per plan.dj §Phase 4: "the essence of Phase 2 applied to Phase 3." Reuse
 ||| the indexed-proposition + `Dec` machinery from Phase 2 on the
 ||| `Structural` rules from Phase 3. A rule **graduates** from finding to
 ||| proposition; it is never defined twice.
 |||
-||| Promotions wired so far: img-alt, anchor-href, iframe-title,
-||| label-for-control, button-name. Each follows the same shape
-||| (bool predicate + So + All over walkNodes); the data-interpreter
-||| factor (plan §P4.2 "generalise the So-trick") lands in
-||| `Cribrum.AA.Promote` once the catalog passes ~12 rules and the
-||| ~10-line boilerplate becomes annoying.
+||| Promotions wired (9 of 9 Structural rules in the catalog):
+|||   per-node, So + All over walkNodes:
+|||     img-alt, anchor-href, iframe-title, label-for-control,
+|||     button-name, link-name
+|||   root-only, So:
+|||     document-lang
+|||   whole-tree bool + So:
+|||     heading-no-skip, duplicate-id
+|||
+||| Every Structural rule from `Cribrum.AA.Catalog` is now promoted; the
+||| data-interpreter factor (plan §P4.2 "generalise the So-trick") lands
+||| in `Cribrum.AA.Promote` if/when the boilerplate becomes annoying
+||| enough to compress.
 |||
 ||| Convention: predicates are **functions returning `Type`** rather than
 ||| dedicated `data` declarations. This avoids the boilerplate of one
@@ -292,5 +299,171 @@ decButtonsAllOk h = decAllButton (walkNodes h)
 public export
 buttonsAllOk : HExpr -> Bool
 buttonsAllOk h = case decButtonsAllOk h of
+  Yes _ => True
+  No  _ => False
+
+--------------------------------------------------------------------------------
+-- link-name: a `<a href>` is OK iff it has an accessible name (text content,
+-- aria-label, or title). Mirrors button-name.
+--------------------------------------------------------------------------------
+
+collectLinkText : HExpr -> String
+collectLinkText (Text s)         = s
+collectLinkText (Comment _)      = ""
+collectLinkText (Element _ _ cs) = concatMap (assert_total collectLinkText) cs
+
+hasLinkAccessibleName : List HAttr -> List HExpr -> Bool
+hasLinkAccessibleName attrs cs =
+     hasNonEmptyAttr "aria-label" attrs
+  || hasNonEmptyAttr "title"      attrs
+  || (let txt = concatMap collectLinkText cs
+       in case unpack txt of
+            []   => False
+            xs   => not (all (== ' ') xs))
+
+||| Anchors without `href` are skipped (the structural anchor-href rule
+||| handles them); only `<a href>` requires an accessible name here.
+public export
+linkOkBool : HExpr -> Bool
+linkOkBool (Element "a" attrs cs) =
+  if hasHrefAttr attrs
+    then hasLinkAccessibleName attrs cs
+    else True
+linkOkBool _                       = True
+
+public export
+LinkHereOk : HExpr -> Type
+LinkHereOk h = So (linkOkBool h)
+
+public export
+decLinkHereOk : (h : HExpr) -> Dec (LinkHereOk h)
+decLinkHereOk h = decSo (linkOkBool h)
+
+public export
+LinksAllOk : HExpr -> Type
+LinksAllOk h = All LinkHereOk (walkNodes h)
+
+decAllLink : (xs : List HExpr) -> Dec (All LinkHereOk xs)
+decAllLink []        = Yes []
+decAllLink (x :: xs) = case decLinkHereOk x of
+  No  contraHead => No (\(headOk :: _) => contraHead headOk)
+  Yes headOk     => case decAllLink xs of
+    No  contraTail => No (\(_ :: tailOk) => contraTail tailOk)
+    Yes tailOk     => Yes (headOk :: tailOk)
+
+public export
+decLinksAllOk : (h : HExpr) -> Dec (LinksAllOk h)
+decLinksAllOk h = decAllLink (walkNodes h)
+
+public export
+linksAllOk : HExpr -> Bool
+linksAllOk h = case decLinksAllOk h of
+  Yes _ => True
+  No  _ => False
+
+--------------------------------------------------------------------------------
+-- document-lang: ROOT-only rule. The proposition fires only when the
+-- top-level node is `<html>`; descendant `<html>` nodes (illegal anyway
+-- under Phase-2 validity) are ignored here.
+--------------------------------------------------------------------------------
+
+public export
+documentLangOkBool : HExpr -> Bool
+documentLangOkBool (Element "html" attrs _) = hasNonEmptyAttr "lang" attrs
+documentLangOkBool _                        = True
+
+public export
+DocumentLangOk : HExpr -> Type
+DocumentLangOk h = So (documentLangOkBool h)
+
+public export
+decDocumentLangOk : (h : HExpr) -> Dec (DocumentLangOk h)
+decDocumentLangOk h = decSo (documentLangOkBool h)
+
+public export
+documentLangOk : HExpr -> Bool
+documentLangOk h = case decDocumentLangOk h of
+  Yes _ => True
+  No  _ => False
+
+--------------------------------------------------------------------------------
+-- heading-no-skip: WHOLE-TREE rule. The list of heading levels (pre-order)
+-- must not skip — e.g. h1 -> h3 is rejected; h1 -> h2 -> h2 is fine.
+--------------------------------------------------------------------------------
+
+isHeadingTag : String -> Maybe Nat
+isHeadingTag "h1" = Just 1
+isHeadingTag "h2" = Just 2
+isHeadingTag "h3" = Just 3
+isHeadingTag "h4" = Just 4
+isHeadingTag "h5" = Just 5
+isHeadingTag "h6" = Just 6
+isHeadingTag _    = Nothing
+
+collectHeadingLevels : HExpr -> List Nat
+collectHeadingLevels (Element t _ cs) = case isHeadingTag t of
+  Just lvl => lvl :: assert_total (concatMap collectHeadingLevels cs)
+  Nothing  => assert_total (concatMap collectHeadingLevels cs)
+collectHeadingLevels _ = []
+
+noSkip : Maybe Nat -> List Nat -> Bool
+noSkip _        []        = True
+noSkip Nothing  (l :: ls) = noSkip (Just l) ls
+noSkip (Just p) (l :: ls) =
+  if l > S p then False else noSkip (Just l) ls
+
+public export
+headingNoSkipOkBool : HExpr -> Bool
+headingNoSkipOkBool h = noSkip Nothing (collectHeadingLevels h)
+
+public export
+HeadingNoSkipOk : HExpr -> Type
+HeadingNoSkipOk h = So (headingNoSkipOkBool h)
+
+public export
+decHeadingNoSkipOk : (h : HExpr) -> Dec (HeadingNoSkipOk h)
+decHeadingNoSkipOk h = decSo (headingNoSkipOkBool h)
+
+public export
+headingNoSkipOk : HExpr -> Bool
+headingNoSkipOk h = case decHeadingNoSkipOk h of
+  Yes _ => True
+  No  _ => False
+
+--------------------------------------------------------------------------------
+-- duplicate-id: WHOLE-TREE rule. No two elements may share the same
+-- `id` attribute value.
+--------------------------------------------------------------------------------
+
+idValue : List HAttr -> Maybe String
+idValue []                              = Nothing
+idValue (MkHAttr "id" (Str s) :: _)     = Just s
+idValue (_ :: rest)                     = idValue rest
+
+collectIdValues : HExpr -> List String
+collectIdValues (Element _ attrs cs) = case idValue attrs of
+  Just v  => v :: assert_total (concatMap collectIdValues cs)
+  Nothing => assert_total (concatMap collectIdValues cs)
+collectIdValues _ = []
+
+allUnique : List String -> Bool
+allUnique []        = True
+allUnique (x :: xs) = if elem x xs then False else allUnique xs
+
+public export
+duplicateIdOkBool : HExpr -> Bool
+duplicateIdOkBool h = allUnique (collectIdValues h)
+
+public export
+DuplicateIdOk : HExpr -> Type
+DuplicateIdOk h = So (duplicateIdOkBool h)
+
+public export
+decDuplicateIdOk : (h : HExpr) -> Dec (DuplicateIdOk h)
+decDuplicateIdOk h = decSo (duplicateIdOkBool h)
+
+public export
+duplicateIdOk : HExpr -> Bool
+duplicateIdOk h = case decDuplicateIdOk h of
   Yes _ => True
   No  _ => False

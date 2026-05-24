@@ -18,7 +18,7 @@
 | `Cribrum.Render.Dom`      | 5     | **Spike**: tiny FFI surface (createElement/createTextNode/createComment/setAttribute/removeAttribute/addEventListener/appendChild/replaceChild/getElementById/clearChildren) + `currentEventValue` (input-value extraction) + `captureFocus`/`restoreFocus` (focus + selection-range preservation across reconcile). `renderDom : HExpr -> IO DomNode`, `reconcile` (Day-1 blow-and-rebuild, skip on unchanged tree, focus bracketed), `mountInto`. JS-backend only at runtime; chez type-checks via multi-spec %foreign with a scheme: fallback. Handler attrs dispatch via `window.__cribrumDispatch`; the dispatcher pre-extracts `event.target.value` into `window.__cribrumValue` for `onInput`/`onChange`. |
 | `Cribrum.AA.Catalog`      | 3+4   | Shared rule catalog (single source of truth across pass + future types). 11 rules: img-alt, anchor-href, alt-meaningful, heading-no-skip, document-lang, iframe-title, label-for-control, fieldset-legend, link-name, button-name, duplicate-id. |
 | `Cribrum.AA.Pass`         | 3     | Per-rule traversal: 4 spike rules + 7 added (document-lang root check, iframe-title, label-for-control with implicit-control support, fieldset-legend, link-name with `aria-label`/`title`/text fallbacks, button-name, duplicate-id whole-tree). Total. Confidence-partitioned (Structural / Heuristic). Data-interpreter refactor still ahead — current style is per-rule hand-written walkers. |
-| `Cribrum.AA.Typed`        | 4     | 5 structural rules promoted to type-level propositions via `So`: img-alt, anchor-href, iframe-title, label-for-control, button-name. Decision via `decSo` + `All` over walked nodes. Each rule wires in independently (~30 lines). Plan §P4.2 calls for factoring the boilerplate into `Cribrum.AA.Promote`; deferred until catalog passes ~12 promotions. |
+| `Cribrum.AA.Typed`        | 4     | **All 9 Structural rules** from the catalog promoted to type-level propositions via `So`: img-alt, anchor-href, iframe-title, label-for-control, button-name, link-name (per-node `All` over `walkNodes`); document-lang (root-only); heading-no-skip, duplicate-id (whole-tree bool + `So`). Decision via `decSo` (and `All` for per-node rules). Plan §P4.2 calls for factoring boilerplate into `Cribrum.AA.Promote`; deferred — current 9 promotions still read cleanly. |
 | `TEAWeb.Html`             | T1    | **Spike**: view-builder smart constructors for 34 elements; `Attr msg` data type (`Plain` / `On`); `View msg` record = (HExpr, HandlerTable with `Event -> IO msg` closures); leaf nodes (`text_`, `comment_`); void elements (`br_`, `hr_`); plain attribute helpers (`class_`, `id_`, `href_`, ...). `viewSafe` routes through Phase-2's `decideHtmlLocated`, returning `Either ViewError ((h ** IsValidHtml h), HandlerTable)` with `LocatedReject` on rejection — content-model + attribute-permission misuse is now caught dynamically with path-into-tree diagnostics. Statically-typed-by-construction constructors (e.g. `ul_ : List (h ** IsLiChild h) -> View msg`) are the planned post-Phase-2 follow-on; the dynamic gate covers the contract until that lands. `eventTargetValue` re-exports the value-extraction primitive from `Cribrum.Render.Dom`. |
 | `TEAWeb.Event`            | T2    | **Spike**: `onClick`/`onSubmit`/`onFocus`/`onBlur`/`onDoubleClick`/`onMouseEnter`/`onMouseLeave` (msg-form, IO-wrapped via `pure`); `onInput`/`onChange` (String-callback form; the closure runs `eventTargetValue` to read the pre-extracted `event.target.value`). Callback ids app-supplied for MVP; deterministic `hash(path, event)` when keyed diff lands. |
 | `TEAWeb.Program`          | T3    | **Spike**: `Program model msg` record (init/update/view/subscriptions). |
@@ -27,7 +27,7 @@
 | `TEAWeb.Runtime`          | T3+T4 | **Spike**: `mount` + tail-recursive interpreter loop in Idris; `installDispatch` installs single global `window.__cribrumDispatch`; `runCmd` interprets Focus/Blur via FFI; reconcile after each update keeps state ref + handler table in lockstep. JS-backend execution only. |
 | `TEAWeb.Ports`            | T5    | Not started. Typed JSON FFI boundary for app-specific JS. |
 
-## Tests (298 total, all green)
+## Tests (326 total, all green)
 
 ```
 $ make test-fast        # cribrum + teaweb suites
@@ -35,8 +35,8 @@ $ make test             # adds mutation gate
 ```
 
 Counts per group: 18 Node + 16 Surface + 57 Parser + 18 Model + 39 Valid
-+ 15 Elaborate + 17 Render.Html + 1 Render.Dom + 34 AA.Pass + 34 AA.Typed
-+ 4 Integration (README.dj + plan.dj) = 263 Cribrum. 10 TEAWeb.Html
++ 15 Elaborate + 17 Render.Html + 1 Render.Dom + 34 AA.Pass + 62 AA.Typed
++ 4 Integration (README.dj + plan.dj) = 291 Cribrum. 10 TEAWeb.Html
 + 10 TEAWeb.Event + 6 TEAWeb.Cmd + 9 TEAWeb.Program = 35 TEAWeb.
 
 Each module has:
@@ -46,7 +46,7 @@ Each module has:
 - **PBTs** (property-based tests via hedgehog) — invariants over generated
   inputs.
 
-## Mutation gate (98 mutants, 0 surviving)
+## Mutation gate (109 mutants, 0 surviving)
 
 ```
 $ test/mutation/run.sh                # changed-file scope (default)
@@ -112,13 +112,13 @@ through Cribrum's own pipeline (matching `README.dj`'s role).
   ingestion to drive the full catalog; `ingest/aa.ts` is the
   scaffold target. Pass implementation is still per-rule hand-
   written; data-interpreter refactor (plan §P3.2) tracked separately.
-- **Phase 4**: 5 of the structural AA rules currently promoted to types
-  (img-alt, anchor-href, iframe-title, label-for-control, button-name).
-  Still ahead: heading-no-skip (whole-tree sequence), document-lang
-  (root-only), duplicate-id (whole-tree dedup), link-name, plus the
-  `Cribrum.AA.Promote` factor that compresses the per-rule boilerplate
-  (plan §P4.2) and the sharpening of `Elaborate`'s `StructuralAA`
-  codomain from unit to the actual conjunct.
+- **Phase 4**: all 9 Structural AA rules in the catalog are now promoted
+  to types (img-alt, anchor-href, iframe-title, label-for-control,
+  button-name, link-name, document-lang, heading-no-skip, duplicate-id).
+  Still ahead: the `Cribrum.AA.Promote` factor that compresses the
+  per-rule boilerplate (plan §P4.2), and the sharpening of `Elaborate`'s
+  `StructuralAA` codomain from unit to the actual conjunct of these 9
+  propositions.
 - **Phase 5 DOM render execution**: FFI surface + `renderDom` +
   `reconcile` chez-type-checked AND JS-bundled via the
   `examples/teaweb/counter` MVP demo. Browser execution validated

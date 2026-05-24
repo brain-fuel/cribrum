@@ -101,3 +101,14 @@ src/Cribrum/AA/Typed.idr	buttonOkBool (Element "button" attrs cs) = hasButtonAcc
 src/Cribrum/AA/Pass.idr	    ++ checkHeadingNoSkip h	    ++ []	AA: heading-skip term dropped from checkAA
 src/Cribrum/AA/Pass.idr	    ++ checkDuplicateIds h	    ++ []	AA: duplicate-id term dropped from checkAA
 src/Cribrum/AA/Pass.idr	  walkNodes [] True h	  []	AA: per-node walker dropped from checkAA
+src/Cribrum/AA/Typed.idr	    then hasLinkAccessibleName attrs cs	    then True	Typed: link-name body always passes
+src/Cribrum/AA/Typed.idr	  if hasHrefAttr attrs	  if not (hasHrefAttr attrs)	Typed: link-name href branch inverted
+src/Cribrum/AA/Typed.idr	documentLangOkBool (Element "html" attrs _) = hasNonEmptyAttr "lang" attrs	documentLangOkBool (Element "html" attrs _) = True	Typed: document-lang always passes
+src/Cribrum/AA/Typed.idr	documentLangOkBool _                        = True	documentLangOkBool _                        = False	Typed: document-lang non-html default flipped
+src/Cribrum/AA/Typed.idr	  if l > S p then False else noSkip (Just l) ls	  if l > p then False else noSkip (Just l) ls	Typed: heading-skip cap weakened (consecutive flagged)
+src/Cribrum/AA/Typed.idr	noSkip _        []        = True	noSkip _        []        = False	Typed: heading-skip empty-tail default flipped
+src/Cribrum/AA/Typed.idr	if elem x xs then False else allUnique xs	if elem x xs then True else allUnique xs	Typed: duplicate-id always reports unique
+src/Cribrum/AA/Typed.idr	allUnique []        = True	allUnique []        = False	Typed: duplicate-id empty-list default flipped
+src/Cribrum/AA/Typed.idr	idValue (MkHAttr "id" (Str s) :: _)     = Just s	idValue (MkHAttr "id" (Str s) :: _)     = Nothing	Typed: id lookup returns Nothing
+src/Cribrum/AA/Typed.idr	headingNoSkipOkBool h = noSkip Nothing (collectHeadingLevels h)	headingNoSkipOkBool h = True	Typed: heading-no-skip always passes
+src/Cribrum/AA/Typed.idr	duplicateIdOkBool h = allUnique (collectIdValues h)	duplicateIdOkBool h = True	Typed: duplicate-id always passes
