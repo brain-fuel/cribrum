@@ -335,6 +335,54 @@ pbt_button_with_aria_label_always_ok = property $ do
     (Element "button" [MkHAttr "aria-label" (Str (lbl ++ "x"))] []) === True
 
 --------------------------------------------------------------------------------
+-- fieldset-legend tests.
+--------------------------------------------------------------------------------
+
+export
+ext_fieldset_with_legend_typed_ok : Property
+ext_fieldset_with_legend_typed_ok = oneShot $
+  fieldsetsAllOk
+    (Element "fieldset" []
+       [ Element "legend" [] [Text "Choices"]
+       , Element "input"  [MkHAttr "type" (Str "checkbox")] []
+       ]) === True
+
+export
+ext_fieldset_without_legend_typed_fails : Property
+ext_fieldset_without_legend_typed_fails = oneShot $
+  fieldsetsAllOk
+    (Element "fieldset" []
+       [ Element "input" [MkHAttr "type" (Str "checkbox")] [] ]) === False
+
+export
+ext_empty_fieldset_typed_fails : Property
+ext_empty_fieldset_typed_fails = oneShot $
+  fieldsetsAllOk (Element "fieldset" [] []) === False
+
+export
+ext_nested_fieldset_without_legend_typed_fails : Property
+ext_nested_fieldset_without_legend_typed_fails = oneShot $
+  fieldsetsAllOk
+    (Element "form" []
+       [ Element "fieldset" [] [ Element "input" [] [] ] ]) === False
+
+||| Legend must be a direct child; `<legend>` nested deeper does not count.
+export
+ext_deeply_nested_legend_typed_fails : Property
+ext_deeply_nested_legend_typed_fails = oneShot $
+  fieldsetsAllOk
+    (Element "fieldset" []
+       [ Element "div" []
+           [ Element "legend" [] [Text "deep"] ] ]) === False
+
+export
+ext_no_fieldset_tree_typed_ok : Property
+ext_no_fieldset_tree_typed_ok = oneShot $
+  fieldsetsAllOk
+    (Element "section" []
+       [ Element "p" [] [Text "x"] ]) === True
+
+--------------------------------------------------------------------------------
 -- link-name tests.
 --------------------------------------------------------------------------------
 
@@ -617,6 +665,12 @@ group = MkGroup "Cribrum.AA.Typed"
   , ("ext_empty_button_typed_fails",           ext_empty_button_typed_fails)
   , ("ext_whitespace_button_typed_fails",      ext_whitespace_button_typed_fails)
   , ("pbt_button_with_aria_label_always_ok",   pbt_button_with_aria_label_always_ok)
+  , ("ext_fieldset_with_legend_typed_ok",      ext_fieldset_with_legend_typed_ok)
+  , ("ext_fieldset_without_legend_typed_fails", ext_fieldset_without_legend_typed_fails)
+  , ("ext_empty_fieldset_typed_fails",         ext_empty_fieldset_typed_fails)
+  , ("ext_nested_fieldset_without_legend_typed_fails", ext_nested_fieldset_without_legend_typed_fails)
+  , ("ext_deeply_nested_legend_typed_fails",   ext_deeply_nested_legend_typed_fails)
+  , ("ext_no_fieldset_tree_typed_ok",          ext_no_fieldset_tree_typed_ok)
   , ("ext_link_with_text_typed_ok",            ext_link_with_text_typed_ok)
   , ("ext_link_with_aria_label_typed_ok",      ext_link_with_aria_label_typed_ok)
   , ("ext_link_with_title_typed_ok",           ext_link_with_title_typed_ok)

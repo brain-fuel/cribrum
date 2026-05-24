@@ -112,3 +112,6 @@ src/Cribrum/AA/Typed.idr	allUnique []        = True	allUnique []        = False	
 src/Cribrum/AA/Typed.idr	idValue (MkHAttr "id" (Str s) :: _)     = Just s	idValue (MkHAttr "id" (Str s) :: _)     = Nothing	Typed: id lookup returns Nothing
 src/Cribrum/AA/Typed.idr	headingNoSkipOkBool h = noSkip Nothing (collectHeadingLevels h)	headingNoSkipOkBool h = True	Typed: heading-no-skip always passes
 src/Cribrum/AA/Typed.idr	duplicateIdOkBool h = allUnique (collectIdValues h)	duplicateIdOkBool h = True	Typed: duplicate-id always passes
+src/Cribrum/AA/Typed.idr	fieldsetOkBool (Element "fieldset" _ cs) = fieldsetHasLegend cs	fieldsetOkBool (Element "fieldset" _ cs) = True	Typed: fieldset-legend always passes
+src/Cribrum/AA/Typed.idr	  Element "legend" _ _ => True	  Element "legend" _ _ => False	Typed: legend tag mismatch
+src/Cribrum/AA/Typed.idr	fieldsetHasLegend []        = False	fieldsetHasLegend []        = True	Typed: fieldset empty-children default flipped

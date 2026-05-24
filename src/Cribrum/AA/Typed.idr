@@ -5,10 +5,10 @@
 ||| `Structural` rules from Phase 3. A rule **graduates** from finding to
 ||| proposition; it is never defined twice.
 |||
-||| Promotions wired (9 of 9 Structural rules in the catalog):
+||| Promotions wired (10 of 10 Structural rules in the catalog):
 |||   per-node, So + All over walkNodes:
 |||     img-alt, anchor-href, iframe-title, label-for-control,
-|||     button-name, link-name
+|||     fieldset-legend, button-name, link-name
 |||   root-only, So:
 |||     document-lang
 |||   whole-tree bool + So:
@@ -299,6 +299,52 @@ decButtonsAllOk h = decAllButton (walkNodes h)
 public export
 buttonsAllOk : HExpr -> Bool
 buttonsAllOk h = case decButtonsAllOk h of
+  Yes _ => True
+  No  _ => False
+
+--------------------------------------------------------------------------------
+-- fieldset-legend: a `<fieldset>` is OK iff it contains a `<legend>`
+-- child (its accessible name). Mirrors label-for-control.
+--------------------------------------------------------------------------------
+
+fieldsetHasLegend : List HExpr -> Bool
+fieldsetHasLegend []        = False
+fieldsetHasLegend (c :: cs) = case c of
+  Element "legend" _ _ => True
+  _                    => fieldsetHasLegend cs
+
+public export
+fieldsetOkBool : HExpr -> Bool
+fieldsetOkBool (Element "fieldset" _ cs) = fieldsetHasLegend cs
+fieldsetOkBool _                          = True
+
+public export
+FieldsetHereOk : HExpr -> Type
+FieldsetHereOk h = So (fieldsetOkBool h)
+
+public export
+decFieldsetHereOk : (h : HExpr) -> Dec (FieldsetHereOk h)
+decFieldsetHereOk h = decSo (fieldsetOkBool h)
+
+public export
+FieldsetsAllOk : HExpr -> Type
+FieldsetsAllOk h = All FieldsetHereOk (walkNodes h)
+
+decAllFieldset : (xs : List HExpr) -> Dec (All FieldsetHereOk xs)
+decAllFieldset []        = Yes []
+decAllFieldset (x :: xs) = case decFieldsetHereOk x of
+  No  contraHead => No (\(headOk :: _) => contraHead headOk)
+  Yes headOk     => case decAllFieldset xs of
+    No  contraTail => No (\(_ :: tailOk) => contraTail tailOk)
+    Yes tailOk     => Yes (headOk :: tailOk)
+
+public export
+decFieldsetsAllOk : (h : HExpr) -> Dec (FieldsetsAllOk h)
+decFieldsetsAllOk h = decAllFieldset (walkNodes h)
+
+public export
+fieldsetsAllOk : HExpr -> Bool
+fieldsetsAllOk h = case decFieldsetsAllOk h of
   Yes _ => True
   No  _ => False
 

@@ -122,16 +122,27 @@ convention annotation.
 > failures can be elaboration errors. The undecidable ones live in the
 > Phase 3 pass.
 
-### Enforced at elaboration (hard error in strict mode) — the Phase 4 set
+### Phase 4 Structural set — type-level propositions
 
-| Rule id           | What                                              | Status |
-|-------------------|---------------------------------------------------|--------|
-| `img-alt`         | Image must have an alt source.                    | spike: Phase 3 pass only; elaboration enforcement deferred to the convention catalog row that supplies `alt`. |
-| `anchor-href`     | Anchor must have an href.                         | spike: Phase 3 only. |
-| `heading-no-skip` | Heading levels must not skip (h1 → h3 disallowed).| spike: Phase 3 only. |
-| `label-for`       | Form control must have an associated label.       | deferred. |
-| `aria-role`       | ARIA role only on permitted elements.             | deferred. |
-| `document-lang`   | Document must declare a language.                 | deferred. |
+All 10 rules below ship as `IsAA_<rule>` propositions in `Cribrum.AA.Typed`
+with `Dec` decision procedures. Strict-mode elaboration is intended to
+make these hard errors at the elaborate boundary (sharpened `StructuralAA`
+codomain) — currently the elaborator still uses the unit placeholder; the
+sharpening is the next plan §P4.1 task. Until then, each rule is also
+emitted by `Cribrum.AA.Pass`.
+
+| Rule id            | What                                              | Phase 3 (Pass) | Phase 4 (Typed) |
+|--------------------|---------------------------------------------------|----------------|-----------------|
+| `img-alt`          | Image must have an alt source.                    | ✅              | ✅               |
+| `anchor-href`      | Anchor must have an href.                         | ✅              | ✅               |
+| `heading-no-skip`  | Heading levels must not skip (h1 → h3 disallowed).| ✅              | ✅               |
+| `label-for-control`| Form control must have an associated label.      | ✅              | ✅               |
+| `document-lang`    | Document root must declare a language.            | ✅              | ✅               |
+| `iframe-title`     | Each `<iframe>` must have a non-empty title.      | ✅              | ✅               |
+| `fieldset-legend`  | Each `<fieldset>` must contain a `<legend>`.      | ✅              | ✅               |
+| `button-name`      | Each `<button>` must have an accessible name.     | ✅              | ✅               |
+| `link-name`        | Each `<a href>` must have an accessible name.     | ✅              | ✅               |
+| `duplicate-id`     | No two elements may share the same `id`.          | ✅              | ✅               |
 
 ### Phase 3 pass only (never claimed as proof)
 
