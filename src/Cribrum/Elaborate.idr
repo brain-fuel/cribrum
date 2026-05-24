@@ -49,9 +49,13 @@ trivialAA _ = ()
 
 public export
 data ElabError : Type where
-  ||| Produced HExpr fails HTML well-formedness. Concretely cannot happen on
-  ||| the current slice (every emitted tag is in `knownTags`); the constructor
-  ||| exists so the contract holds as the model grows.
+  ||| Produced HExpr fails HTML well-formedness — Phase 2's content-model
+  ||| check. Carries the located rejection (path-into-tree + reason class)
+  ||| so consumers can pinpoint the offending node.
+  LocatedHtmlError    : LocatedReject -> ElabError
+  ||| Legacy spike constructor. Kept for backward compatibility with
+  ||| any consumer that pattern-matched on the spike's `ElabError`.
+  ||| New failures land in `LocatedHtmlError`.
   InvalidProducedHtml : (offendingTag : String) -> ElabError
   ||| Reserved for future structural-AA failures (image without alt source,
   ||| skipped heading level, etc).
@@ -59,6 +63,8 @@ data ElabError : Type where
 
 public export
 Show ElabError where
+  show (LocatedHtmlError lr) =
+    "Elaboration produced invalid HTML: " ++ show lr
   show (InvalidProducedHtml t) =
     "Elaboration produced HTML with unknown tag: " ++ t
   show (StructuralAaFailure r) =
@@ -180,6 +186,6 @@ public export
 elaborate : Doc -> Either ElabError (h : HExpr ** (IsValidHtml h, StructuralAA h))
 elaborate doc =
   let h = elaborateDoc doc
-   in case decideHtml h of
-        Yes p => Right (h ** (p, trivialAA h))
-        No _  => Left (InvalidProducedHtml "elaboration produced unknown tag")
+   in case decideHtmlLocated h of
+        Right p => Right (h ** (p, trivialAA h))
+        Left lr => Left (LocatedHtmlError lr)
