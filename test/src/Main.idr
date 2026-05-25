@@ -12,6 +12,7 @@ import Test.Cribrum.Render.Dom
 import Test.Cribrum.AA.Pass
 import Test.Cribrum.AA.Typed
 import Test.Cribrum.AA.Partition
+import Test.Cribrum.Pipeline.Anchor
 import Test.Cribrum.Integration
 
 main : IO ()
@@ -27,5 +28,6 @@ main = test
   , Test.Cribrum.AA.Pass.group
   , Test.Cribrum.AA.Typed.group
   , Test.Cribrum.AA.Partition.group
+  , Test.Cribrum.Pipeline.Anchor.group
   , Test.Cribrum.Integration.group
   ]
