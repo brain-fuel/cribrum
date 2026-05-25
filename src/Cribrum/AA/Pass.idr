@@ -10,9 +10,17 @@
 ||| the same shape, and the structural rules here are the ones that will
 ||| graduate to propositions there.
 |||
-||| Spike scope: 4 rules out of the full WCAG AA catalog. The architecture
-||| stays put as the catalog grows (rules are data; the traversal is data-
-||| driven; new rules add new emit functions, not new types).
+||| Per plan.dj §P3.2 the traversal engine is now a *data interpreter*: the
+||| per-node pass walks a registry of `(Rule, NodeRuleCheck)` rows
+||| (`nodeRuleImpls`) rather than calling each rule by name. The whole-tree
+||| rules (heading-no-skip, duplicate-id, unique-main) stay as explicit
+||| `++` terms in `checkAA` because their predicate operates on the entire
+||| document, not on each visited node — three rows is small enough that
+||| an explicit form is clearer than a registry of two competing scopes.
+||| Adding a per-node rule is now one row in `nodeRuleImpls` paired with
+||| its `Cribrum.AA.Catalog` `Rule` constant; partitioning audits
+||| (plan §P3.3) become a simple set comparison over `map fst nodeRuleImpls`
+||| plus the named whole-tree rules.
 module Cribrum.AA.Pass
 
 import Data.List
@@ -208,6 +216,107 @@ checkButtonName p "button" attrs cs =
             "<button> has no accessible name (empty text + no aria-label/title)"]
 checkButtonName _ _ _ _ = []
 
+||| `<area>` with `href` must have an `alt` attribute (treated as a link
+||| under WCAG 1.1.1). STRUCTURAL.
+checkAreaAlt : Path -> String -> List HAttr -> List Finding
+checkAreaAlt p "area" attrs =
+  if hasAttr "href" attrs && not (hasAttr "alt" attrs)
+    then [MkFinding ruleAreaAlt p "<area href> missing alt attribute"]
+    else []
+checkAreaAlt _ _    _     = []
+
+||| `<a href="">` is ineffective per WCAG 2.4.4. STRUCTURAL warning.
+checkLinkEmptyHref : Path -> String -> List HAttr -> List Finding
+checkLinkEmptyHref p "a" attrs = case attrValue "href" attrs of
+  Just ""  => [MkFinding ruleLinkEmptyHref p
+                 "<a href=\"\"> is ineffective"]
+  _        => []
+checkLinkEmptyHref _ _ _ = []
+
+||| `<meta http-equiv="refresh">` triggers an unsolicited timeout per
+||| WCAG 2.2.1. STRUCTURAL warning.
+checkMetaNoRefresh : Path -> String -> List HAttr -> List Finding
+checkMetaNoRefresh p "meta" attrs = case attrValue "http-equiv" attrs of
+  Just v  => if toLower v == "refresh"
+               then [MkFinding ruleMetaNoRefresh p
+                       "<meta http-equiv=\"refresh\"> auto-refreshes"]
+               else []
+  Nothing => []
+checkMetaNoRefresh _ _ _ = []
+
+||| `<track>` must declare a `kind` attribute. STRUCTURAL.
+checkTrackKind : Path -> String -> List HAttr -> List Finding
+checkTrackKind p "track" attrs =
+  if hasAttr "kind" attrs
+    then []
+    else [MkFinding ruleTrackKind p "<track> missing kind attribute"]
+checkTrackKind _ _ _ = []
+
+||| `<details>` must contain a `<summary>` whose text is non-empty.
+||| STRUCTURAL warning (a fallback default summary text is supplied by
+||| the browser when missing, but it cannot describe the disclosure).
+summaryHasText : List HExpr -> Bool
+summaryHasText []        = False
+summaryHasText (c :: cs) = case c of
+  Element "summary" _ scs => trim (concatMap collectText scs) /= "" || summaryHasText cs
+  _                        => summaryHasText cs
+
+checkSummaryNotEmpty : Path -> String -> List HExpr -> List Finding
+checkSummaryNotEmpty p "details" cs =
+  if summaryHasText cs
+    then []
+    else [MkFinding ruleSummaryNotEmpty p
+            "<details> missing non-empty <summary>"]
+checkSummaryNotEmpty _ _ _ = []
+
+||| `aria-label` should not literally duplicate the element's trimmed
+||| visible text. HEURISTIC — the redundancy is a screen-reader smell,
+||| not a hard violation.
+checkAriaLabelRedundant : Path -> String -> List HAttr -> List HExpr -> List Finding
+checkAriaLabelRedundant p _ attrs cs = case attrValue "aria-label" attrs of
+  Just lbl =>
+    let labelTrim = trim lbl
+        textTrim  = trim (concatMap collectText cs)
+    in if labelTrim /= "" && labelTrim == textTrim
+         then [MkFinding ruleAriaLabelRedundant p
+                 ("aria-label=\"" ++ lbl ++ "\" duplicates visible text")]
+         else []
+  Nothing => []
+
+||| `tabindex` > 0 disrupts the natural focus order. HEURISTIC — a
+||| positive tabindex may be intentional but is almost always wrong.
+parseDigit : Char -> Maybe Nat
+parseDigit '0' = Just 0
+parseDigit '1' = Just 1
+parseDigit '2' = Just 2
+parseDigit '3' = Just 3
+parseDigit '4' = Just 4
+parseDigit '5' = Just 5
+parseDigit '6' = Just 6
+parseDigit '7' = Just 7
+parseDigit '8' = Just 8
+parseDigit '9' = Just 9
+parseDigit _   = Nothing
+
+parseNatString : String -> Maybe Nat
+parseNatString s = case unpack s of
+  []     => Nothing
+  (c :: rest) => do
+    d  <- parseDigit c
+    ds <- traverse parseDigit rest
+    pure (foldl (\acc, e => acc * 10 + e) d ds)
+
+checkPositiveTabindex : Path -> List HAttr -> List Finding
+checkPositiveTabindex p attrs = case attrValue "tabindex" attrs of
+  Just v  => case parseNatString (trim v) of
+    Just n  => if n > 0
+                 then [MkFinding rulePositiveTabindex p
+                         ("positive tabindex=" ++ show n
+                            ++ " disrupts natural focus order")]
+                 else []
+    Nothing => []                      -- non-numeric (e.g. tabindex="-1") ignored
+  Nothing => []
+
 --------------------------------------------------------------------------------
 -- Heading-skip check (whole-tree, not per-node).
 --------------------------------------------------------------------------------
@@ -292,23 +401,98 @@ checkUniqueMain h =
             ("document contains " ++ show (mainCount h) ++ " <main> elements (expected at most 1)")]
 
 --------------------------------------------------------------------------------
+-- Data interpreter — per-node rule registry (plan §P3.2).
+--------------------------------------------------------------------------------
+
+||| Per-node rule signature. The walker invokes one of these at every
+||| `Element` node, passing the path-into-tree, an `atRoot` flag (true only
+||| for the document root call — used by `document-lang`), and the node
+||| itself.
+public export
+NodeRuleCheck : Type
+NodeRuleCheck = Path -> Bool -> HExpr -> List Finding
+
+-- Adapters that lift the various existing per-rule signatures into
+-- `NodeRuleCheck`. Each adapter destructures the `HExpr` once and forwards
+-- the projection the rule cares about (attrs, attrs + children, children,
+-- or attrs + root-flag).
+
+pAttr : (Path -> String -> List HAttr -> List Finding) -> NodeRuleCheck
+pAttr f p _ (Element t attrs _) = f p t attrs
+pAttr _ _ _ _                   = []
+
+pNode : (Path -> String -> List HAttr -> List HExpr -> List Finding) -> NodeRuleCheck
+pNode f p _ (Element t attrs cs) = f p t attrs cs
+pNode _ _ _ _                    = []
+
+pCh : (Path -> String -> List HExpr -> List Finding) -> NodeRuleCheck
+pCh f p _ (Element t _ cs) = f p t cs
+pCh _ _ _ _                = []
+
+pAttrsOnly : (Path -> List HAttr -> List Finding) -> NodeRuleCheck
+pAttrsOnly f p _ (Element _ attrs _) = f p attrs
+pAttrsOnly _ _ _ _                   = []
+
+pRoot : (Path -> Bool -> String -> List HAttr -> List Finding) -> NodeRuleCheck
+pRoot f p atRoot (Element t attrs _) = f p atRoot t attrs
+pRoot _ _ _      _                   = []
+
+||| The data interpreter's per-node rule table. Each row pairs a catalog
+||| `Rule` (single source of truth) with its `NodeRuleCheck` impl. The
+||| traversal engine (`nodeChecks` -> `walkNodes`) folds over this list,
+||| so adding a per-node rule is one row.
+|||
+||| Order matches catalog order at the point of introduction; tests do not
+||| assume a particular finding order (sort-before-compare when needed).
+public export
+nodeRuleImpls : List (Rule, NodeRuleCheck)
+nodeRuleImpls =
+  [ (ruleImgAlt,             pAttr      checkImgAlt)
+  , (ruleAnchorHref,         pAttr      checkAnchorHref)
+  , (ruleAltMeaningful,      pAttr      checkAltMeaningful)
+  , (ruleDocumentLang,       pRoot      checkDocumentLang)
+  , (ruleIframeTitle,        pAttr      checkIframeTitle)
+  , (ruleLabelFor,           pNode      checkLabelFor)
+  , (ruleFieldsetLegend,     pCh        checkFieldsetLegend)
+  , (ruleLinkName,           pNode      checkLinkName)
+  , (ruleButtonName,         pNode      checkButtonName)
+  , (ruleAreaAlt,            pAttr      checkAreaAlt)
+  , (ruleLinkEmptyHref,      pAttr      checkLinkEmptyHref)
+  , (ruleMetaNoRefresh,      pAttr      checkMetaNoRefresh)
+  , (ruleTrackKind,          pAttr      checkTrackKind)
+  , (ruleSummaryNotEmpty,    pCh        checkSummaryNotEmpty)
+  , (ruleAriaLabelRedundant, pNode      checkAriaLabelRedundant)
+  , (rulePositiveTabindex,   pAttrsOnly checkPositiveTabindex)
+  ]
+
+||| Whole-tree rule signature. Invoked once on the document root by
+||| `checkAA`; the predicate is responsible for its own descent.
+public export
+TreeRuleCheck : Type
+TreeRuleCheck = HExpr -> List Finding
+
+||| Whole-tree rule table — heading-no-skip, duplicate-id, unique-main
+||| operate on the entire tree (the relation between nodes, not any single
+||| node), so they live here rather than in `nodeRuleImpls`.
+public export
+treeRuleImpls : List (Rule, TreeRuleCheck)
+treeRuleImpls =
+  [ (ruleHeadingNoSkip, checkHeadingNoSkip)
+  , (ruleDuplicateId,   checkDuplicateIds)
+  , (ruleUniqueMain,    checkUniqueMain)
+  ]
+
+--------------------------------------------------------------------------------
 -- Top-level traversal.
 --------------------------------------------------------------------------------
 
-||| Per-node checks (everything except heading-skip + duplicate-id, both
-||| whole-tree). `atRoot` tags the root-call so `document-lang` only
-||| fires on the document root.
+||| Per-node checks (everything except heading-skip + duplicate-id + unique-
+||| main, all three whole-tree). `atRoot` tags the root-call so `document-
+||| lang` only fires on the document root. The catalog of rule impls lives
+||| in `nodeRuleImpls`; this function is the data interpreter for it.
 nodeChecks : Path -> Bool -> HExpr -> List Finding
-nodeChecks p atRoot (Element t attrs cs) =
-  checkImgAlt          p t attrs
-    ++ checkAnchorHref     p t attrs
-    ++ checkAltMeaningful  p t attrs
-    ++ checkDocumentLang   p atRoot t attrs
-    ++ checkIframeTitle    p t attrs
-    ++ checkLabelFor       p t attrs cs
-    ++ checkFieldsetLegend p t cs
-    ++ checkLinkName       p t attrs cs
-    ++ checkButtonName     p t attrs cs
+nodeChecks p atRoot h@(Element _ _ _) =
+  concatMap (\(_, f) => f p atRoot h) nodeRuleImpls
 nodeChecks _ _ _ = []
 
 ||| Walk emitting per-node findings. Only the root call passes
@@ -333,6 +517,11 @@ checkAA h _ =
     ++ checkHeadingNoSkip h
     ++ checkDuplicateIds h
     ++ checkUniqueMain h
+  -- The whole-tree terms above mirror `treeRuleImpls`; they are kept in
+  -- explicit form so the call-site reads at a glance and the existing
+  -- mutation gate (which targets these literal `++ check...` terms)
+  -- stays valid. `treeRuleImpls` is the canonical data view of the same
+  -- three rules for partitioning audits.
 
 ||| Convenience: just the structurally-tagged findings (the Phase-4-promotable
 ||| set). Heuristic/runtime are still in the full report but separated here.
