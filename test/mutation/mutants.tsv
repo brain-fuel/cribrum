@@ -122,3 +122,6 @@ src/Cribrum/AA/Promote.idr	    goNode path h = case pred h of	    goNode path h 
 src/Cribrum/Html/Model/Invariants.idr	(decChildClosed (map name es)) es	(decChildClosed (map name [])) es	Invariants: catalog-wide closure check against empty names
 src/Cribrum/Html/Model/Invariants.idr	All.all (\t => isElem t names) ts	All.all (\t => isElem t []) ts	Invariants: per-tag isElem checked against empty list
 src/Cribrum/Html/Model/Invariants.idr	decAllChildTagsExist es = All.all (decChildClosed (map name es)) es	decAllChildTagsExist es = All.all (decChildClosed (map name es)) []	Invariants: catalog-wide check sees empty catalog (trivially Yes)
+src/Cribrum/AA/Catalog.idr	allRules = generatedRules	allRules = []	Catalog: re-export replaced with empty list
+src/Cribrum/AA/Typed.idr	isTypedPromoted "img-alt"           = True	isTypedPromoted "img-alt"           = False	Typed: img-alt drops out of promoted set
+src/Cribrum/AA/Typed.idr	isTypedPromoted _                   = False	isTypedPromoted _                   = True	Typed: every id claims a typed promotion

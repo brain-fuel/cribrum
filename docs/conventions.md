@@ -147,6 +147,12 @@ path.
 | `link-name`        | Each `<a href>` must have an accessible name.     | ✅              | ✅               |
 | `duplicate-id`     | No two elements may share the same `id`.          | ✅              | ✅               |
 
+Partitioning audit (plan §P3.3) is enforced by `Test.Cribrum.AA.Partition`:
+`Cribrum.AA.Typed.isTypedPromoted` is the witness, and the test suite asserts
+it agrees with `confidence == Structural` over every entry in `allRules`.
+Adding a Structural rule without a typed promotion (or vice versa) fails the
+audit.
+
 ### Phase 3 pass only (never claimed as proof)
 
 | Rule id          | What                                              | Confidence |
