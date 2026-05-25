@@ -80,9 +80,9 @@ src/Cribrum/Html/Model.idr	|| elem a (localAttrsOf tag)	|| False	attr permission
 src/Cribrum/Html/Model.idr	|| isDataAttr a	|| False	attr permission: data-* branch disabled
 src/Cribrum/Html/Model.idr	|| isAriaAttr a	|| False	attr permission: aria-* branch disabled
 src/Cribrum/Html/Valid.idr	knownTags = knownTagNames	knownTags = []	known-tag list emptied
-src/Cribrum/Html/Model.idr	specBr = MkElementSpec "br" True False [Flow, Phrasing] NoChildren []	specBr = MkElementSpec "br" False False [Flow, Phrasing] NoChildren []	br no longer flagged void
-src/Cribrum/Html/Model.idr	specImg = MkElementSpec "img" True False	specImg = MkElementSpec "img" False False	img no longer flagged void
-src/Cribrum/Html/Model.idr	"accesskey", "autocapitalize", "autofocus", "class"	"accesskey", "autocapitalize", "autofocus"	globalAttrs drops "class"
+src/Cribrum/Html/Model/Generated.idr	MkElementSpec "br" True False [Flow, Phrasing] NoChildren []	MkElementSpec "br" False False [Flow, Phrasing] NoChildren []	br no longer flagged void
+src/Cribrum/Html/Model/Generated.idr	MkElementSpec "img" True False	MkElementSpec "img" False False	img no longer flagged void
+src/Cribrum/Html/Model/Generated.idr	, "class"	, "REMOVED_CLASS"	globalAttrs drops "class"
 src/Cribrum/Html/Model.idr	|| isOnEventAttr a	|| False	attr permission: on* event branch disabled
 src/Cribrum/Html/Valid.idr	  decideHtml (Text _)               = Yes ValidText	  decideHtml (Text _)               = Yes ValidComment	Text classification routed to ValidComment witness
 src/Cribrum/AA/Pass.idr	if hasNonEmptyAttr "lang" attrs	if True	document-lang check disabled
@@ -119,3 +119,6 @@ src/Cribrum/Elaborate.idr	                  No  _  => Left ("heading-no-skip",  
 src/Cribrum/AA/Promote.idr	        Element _ _ cs => assert_total (goChildren path 0 cs)	        Element _ _ cs => assert_total (goChildren path 1 cs)	Promote: path child index off-by-one
 src/Cribrum/AA/Promote.idr	    goChildren path i (c :: cs) = case goNode (path ++ [i]) c of	    goChildren path i (c :: cs) = case goNode path c of	Promote: path-into-tree omits child index
 src/Cribrum/AA/Promote.idr	    goNode path h = case pred h of	    goNode path h = case True of	Promote: pathOfFirstFailing never fires
+src/Cribrum/Html/Model/Invariants.idr	(decChildClosed (map name es)) es	(decChildClosed (map name [])) es	Invariants: catalog-wide closure check against empty names
+src/Cribrum/Html/Model/Invariants.idr	All.all (\t => isElem t names) ts	All.all (\t => isElem t []) ts	Invariants: per-tag isElem checked against empty list
+src/Cribrum/Html/Model/Invariants.idr	decAllChildTagsExist es = All.all (decChildClosed (map name es)) es	decAllChildTagsExist es = All.all (decChildClosed (map name es)) []	Invariants: catalog-wide check sees empty catalog (trivially Yes)

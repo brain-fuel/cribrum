@@ -80,7 +80,8 @@ else
   done < <(
     {
       git diff --name-only "$MUTATION_BASE" -- 'src/' 2>/dev/null
-      git status --short -- 'src/' 2>/dev/null | awk '{print $NF}'
+      git diff --name-only -- 'src/' 2>/dev/null
+      git ls-files --others --exclude-standard -- 'src/' 2>/dev/null
     } | sort -u
   )
   echo "=== scope: src/ files changed vs $MUTATION_BASE ==="

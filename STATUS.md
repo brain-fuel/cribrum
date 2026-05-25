@@ -11,7 +11,7 @@
 | `Cribrum.Djot.Surface`    | 1a    | Faithful Djot AST — full construct inventory representable. |
 | `Cribrum.Djot.Parser`     | 1a    | **Slice**: paragraph, ATX heading (1-6), thematic break, block quote (recursive), fenced code block. Lists, inline emphasis parsing, tables → deferred. |
 | `Cribrum.Html.Category`   | 2     | Content-category enum (Metadata/Flow/Sectioning/Heading/Phrasing/Embedded/Interactive/Palpable/ScriptSupporting/FormAssociated). |
-| `Cribrum.Html.Model`      | 2     | Element catalog (~95 elements) with void / raw-text flags, category lists, `ChildPolicy` content-model entries (NoChildren / OnlyTags / OnlyCategories / TextOnly / AnyContent), and per-element local-attribute sets. Global-attribute set + `data-*` / `aria-*` / `on*` prefix recognition. Hand-curated seed; `ingest/html-model.ts` is the regeneration scaffold. |
+| `Cribrum.Html.Model`      | 2     | Public surface (types + lookups + attribute-name permission). Element catalog (114 elements) lives in `Cribrum.Html.Model.Generated`, ingested from `ingest/content-model.ts` by `ingest/html-model.ts` with `@webref/elements@2.6.0` cross-validation (invariant I8). `Cribrum.Html.Model.Types` carries `ElementSpec` / `ChildPolicy` (extracted to break the Model ↔ Generated cycle). `Cribrum.Html.Model.Invariants` lifts the TS-side tag-closure check (I2) to a decidable Idris proposition (`AllChildTagsExist` + `decAllChildTagsExist`); the test suite asserts the real catalog satisfies it. Drift gate `make ingest-check` fails on `@webref` bump, `content-model.ts` edit, or hand-edit to `Generated.idr` and pinpoints which input drifted. |
 | `Cribrum.Html.Valid`      | 2     | `IsValidHtml = IsKnownTag × All AttrAllowedIn × All ChildAllowedIn × All IsValidHtml`. Total `decideHtml : (h : HExpr) -> Dec (IsValidHtml h)`. Located rejection (`decideHtmlLocated`) returns path-into-tree + `RejectionClass` (UnknownTag / DisallowedAttr / IllegalChild / BlockInPhrasing / MalformedTable / TextNotAllowedIn / CommentNotAllowedIn). |
 | `Cribrum.Elaborate`       | 1b    | Strict elaboration `Doc -> Either ElabError (h ** (IsValidHtml h, StructuralAA h))`. Phase-2 sharpened: failure path uses `LocatedHtmlError` carrying a `LocatedReject`. **Phase-4 sharpened**: `StructuralAA h` is now the actual conjunct of all 10 Phase-4 propositions (img-alt, anchor-href, iframe-title, label-for-control, fieldset-legend, button-name, link-name, document-lang, heading-no-skip, duplicate-id) — `decStructuralAA` short-circuits to `StructuralAaFailure ruleId path` on the first failing predicate. AA failure-path **located**: per-node rules carry `Just path`; root-only `document-lang` carries `Just []`; whole-tree rules (heading-no-skip, duplicate-id) carry `Nothing`. |
 | `Cribrum.Render.Html`     | 5     | Total `HExpr -> String`. HTML 5 void-element handling, escaping, handler attrs render as `data-on-<event>`. |
@@ -28,16 +28,16 @@
 | `TEAWeb.Runtime`          | T3+T4 | **Spike**: `mount` + tail-recursive interpreter loop in Idris; `installDispatch` installs single global `window.__cribrumDispatch`; `runCmd` interprets Focus/Blur via FFI; reconcile after each update keeps state ref + handler table in lockstep. JS-backend execution only. |
 | `TEAWeb.Ports`            | T5    | Not started. Typed JSON FFI boundary for app-specific JS. |
 
-## Tests (332 total, all green)
+## Tests (326 total, all green)
 
 ```
 $ make test-fast        # cribrum + teaweb suites
-$ make test             # adds mutation gate
+$ make test             # adds ingest drift gate + mutation gate
 ```
 
-Counts per group: 18 Node + 16 Surface + 57 Parser + 18 Model + 39 Valid
-+ 15 Elaborate + 17 Render.Html + 1 Render.Dom + 34 AA.Pass + 68 AA.Typed
-+ 4 Integration (README.dj + plan.dj) = 297 Cribrum. 10 TEAWeb.Html
+Counts per group: 18 Node + 16 Surface + 57 Parser + 20 Model + 39 Valid
++ 17 Elaborate + 17 Render.Html + 1 Render.Dom + 34 AA.Pass + 68 AA.Typed
++ 4 Integration (README.dj + plan.dj) = 291 Cribrum. 10 TEAWeb.Html
 + 10 TEAWeb.Event + 6 TEAWeb.Cmd + 9 TEAWeb.Program = 35 TEAWeb.
 
 Each module has:
@@ -47,7 +47,7 @@ Each module has:
 - **PBTs** (property-based tests via hedgehog) — invariants over generated
   inputs.
 
-## Mutation gate (112 mutants, 0 surviving)
+## Mutation gate (124 mutants, 0 surviving)
 
 ```
 $ test/mutation/run.sh                # changed-file scope (default)
@@ -99,13 +99,20 @@ through Cribrum's own pipeline (matching `README.dj`'s role).
 - **Phase 2 ingestion + statically-typed view constructors**: the
   catalog + content-model + attribute-permission validator are in
   place (`Cribrum.Html.Model` + `Cribrum.Html.Valid`), with located
-  rejection. Still outstanding: `@webref/elements` round-trip
-  ingestion is scaffolded in `ingest/html-model.ts` but the script's
-  seed is hand-synced with the Idris catalog (drift gate enabled,
-  spec-derived emission deferred until `@webref` ships richer
-  machine-readable content-model data). Statically-typed TEAWeb
+  rejection. **`@webref/elements`-driven ingestion shipped**: the
+  catalog data lives in `ingest/content-model.ts`, compiled by
+  `ingest/html-model.ts` to `Cribrum.Html.Model.Generated`;
+  `@webref/elements@2.6.0` (pinned, lockfile committed) provides
+  name-closure cross-validation (invariant I8) and obsoleted-element
+  flagging. Pre-emit invariants I1/I2/I4/I5/I6/I8 enforced in TS;
+  I7 (deterministic byte-identical emission) covered by `make
+  ingest-check` (header carries `@webref` version +
+  `content-model.ts` sha + catalog hash, so drift messages name which
+  input changed). Tag-closure (I2) additionally lifted to a typed
+  proposition (`Cribrum.Html.Model.Invariants.decAllChildTagsExist`)
+  with module-load test on the real catalog. Statically-typed TEAWeb
   smart constructors (`ul_ : List (h ** IsLiChild h) -> View msg`)
-  are deferred — dynamic `viewSafe` covers the contract today.
+  remain deferred — dynamic `viewSafe` covers the contract today.
 - **Phase 3 catalog**: 11 of ~50 WCAG AA success criteria currently
   modelled (img-alt, anchor-href, alt-meaningful, heading-no-skip,
   document-lang, iframe-title, label-for-control, fieldset-legend,

@@ -10,4 +10,3 @@ depends/
 .claude/
 *.bak
 ingest/node_modules/
-ingest/package-lock.json

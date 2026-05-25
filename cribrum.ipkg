@@ -11,7 +11,10 @@ modules = Cribrum.Node
         , Cribrum.Djot.Surface
         , Cribrum.Djot.Parser
         , Cribrum.Html.Category
+        , Cribrum.Html.Model.Types
+        , Cribrum.Html.Model.Generated
         , Cribrum.Html.Model
+        , Cribrum.Html.Model.Invariants
         , Cribrum.Html.Valid
         , Cribrum.Elaborate
         , Cribrum.Render.Html

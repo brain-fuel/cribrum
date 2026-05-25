@@ -1,10 +1,12 @@
 module Test.Cribrum.Html.Model
 
 import Data.List
+import Data.List.Quantifiers
 import Data.Vect
 import Hedgehog
 import Cribrum.Html.Category
 import Cribrum.Html.Model
+import Cribrum.Html.Model.Invariants
 
 %default total
 
@@ -177,6 +179,31 @@ pbt_void_iff_no_children = withTests 1 . property $ do
     -- hold: e.g. `<title>` is non-void TextOnly.)
     when isVoidByFlag $ isVoidByPolicy === True
 
+||| Catalog tag-closure invariant (I2 lifted to a checked Idris proof).
+||| The ingestion script asserts this in TypeScript; this test asserts
+||| the same property at module-load time on `Cribrum.Html.Model.elements`
+||| itself, so any future drift between the TS check and the emitted
+||| catalog is caught here.
+export
+ext_catalog_child_tags_closed : Property
+ext_catalog_child_tags_closed = oneShot $
+  case decAllChildTagsExist elements of
+    Yes _   => success
+    No  _   => failWith Nothing "elements catalog contains an OnlyTags reference to a tag not in the catalog"
+
+||| Sanity check on the decision procedure itself: a catalog with an
+||| `OnlyTags` reference to a non-existent tag must be rejected. Guards
+||| against mutants that collapse `decAllChildTagsExist` to a trivial
+||| `Yes`.
+export
+ext_invariants_reject_bogus_tag : Property
+ext_invariants_reject_bogus_tag = oneShot $
+  let bogus : List ElementSpec
+      bogus = [MkElementSpec "x" False False [] (OnlyTags ["nope"] False) []]
+  in case decAllChildTagsExist bogus of
+       Yes _ => failWith Nothing "decAllChildTagsExist should reject OnlyTags pointing to an absent tag"
+       No  _ => success
+
 export
 group : Group
 group = MkGroup "Cribrum.Html.Model"
@@ -198,4 +225,6 @@ group = MkGroup "Cribrum.Html.Model"
   , ("pddt_attr_allowance_table",             pddt_attr_allowance_table)
   , ("pbt_lookup_round_trip",                 pbt_lookup_round_trip)
   , ("pbt_void_iff_no_children",              pbt_void_iff_no_children)
+  , ("ext_catalog_child_tags_closed",         ext_catalog_child_tags_closed)
+  , ("ext_invariants_reject_bogus_tag",       ext_invariants_reject_bogus_tag)
   ]
