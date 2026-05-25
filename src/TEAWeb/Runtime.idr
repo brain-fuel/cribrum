@@ -39,7 +39,7 @@ import TEAWeb.Program
 -- FFI: install the global dispatcher; element focus / blur.
 --------------------------------------------------------------------------------
 
-%foreign "browser:lambda:(cb,w)=>{ window.__cribrumDispatch = (cbId, ev) => { window.__cribrumValue = (ev && ev.target && typeof ev.target.value === 'string') ? ev.target.value : ''; cb(cbId)(ev)(w); }; }"
+%foreign "browser:lambda:(cb,w)=>{ window.__cribrumDispatch = (cbId, ev) => { window.__cribrumValue = (ev && ev.target && typeof ev.target.value === 'string') ? ev.target.value : ''; window.__cribrumKey = (ev && typeof ev.key === 'string') ? ev.key : ''; cb(cbId)(ev)(w); }; }"
 prim__installDispatch : (String -> Event -> IO ()) -> PrimIO ()
 
 ||| Install `window.__cribrumDispatch`. Called once by `mount`; future

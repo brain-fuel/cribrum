@@ -63,6 +63,13 @@ export
 eventTargetValue : Event -> IO String
 eventTargetValue _ = currentEventValue
 
+||| Read the string content of the most recent event's `event.key`.
+||| Used by `TEAWeb.Event`'s `onKeyDown`/`onKeyUp` helpers; the runtime
+||| stashes `event.key` into a window-scoped slot during dispatch.
+export
+eventKey : Event -> IO String
+eventKey _ = currentEventKey
+
 --------------------------------------------------------------------------------
 -- Attribute type wrapping HAttr with optional msg-producing callback.
 --------------------------------------------------------------------------------

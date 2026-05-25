@@ -94,3 +94,21 @@ onInput cb f = On "input" cb (\e => do v <- eventTargetValue e; pure (f v))
 public export
 onChange : (callbackId : String) -> (String -> msg) -> Attr msg
 onChange cb f = On "change" cb (\e => do v <- eventTargetValue e; pure (f v))
+
+--------------------------------------------------------------------------------
+-- keydown / keyup — key-extracting form. The closure reads
+-- `event.key` (already stashed by the runtime during dispatch) via
+-- `eventKey`.
+--------------------------------------------------------------------------------
+
+||| `onKeyDown id f` — emit `f key` when a key is pressed in the
+||| element. `key` is the string content of `event.key` (e.g.
+||| `"ArrowDown"`, `"Enter"`, `"a"`).
+public export
+onKeyDown : (callbackId : String) -> (String -> msg) -> Attr msg
+onKeyDown cb f = On "keydown" cb (\e => do k <- eventKey e; pure (f k))
+
+||| `onKeyUp id f` — emit `f key` on `keyup`.
+public export
+onKeyUp : (callbackId : String) -> (String -> msg) -> Attr msg
+onKeyUp cb f = On "keyup" cb (\e => do k <- eventKey e; pure (f k))

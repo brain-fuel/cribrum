@@ -13,6 +13,7 @@ main = Main
 executable = "teaweb-tests"
 
 modules = Test.TEAWeb.Html
+        , Test.TEAWeb.HtmlTyped
         , Test.TEAWeb.Event
         , Test.TEAWeb.Cmd
         , Test.TEAWeb.Program

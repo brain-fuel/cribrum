@@ -97,6 +97,18 @@ export
 currentEventValue : IO String
 currentEventValue = fromPrim (prim__currentEventValue "")
 
+%foreign "scheme:(lambda (_) \"\")"
+         "browser:lambda:(_)=>String(window.__cribrumKey || \"\")"
+prim__currentEventKey : String -> PrimIO String
+
+||| String content of the most recent event's `event.key`, as stashed
+||| by `TEAWeb.Runtime.installDispatch`. Used by keyboard-event helpers
+||| (`onKeyDown`, `onKeyUp`). Returns the empty string when no key has
+||| been recorded yet (pre-mount, non-keyboard events).
+export
+currentEventKey : IO String
+currentEventKey = fromPrim (prim__currentEventKey "")
+
 --------------------------------------------------------------------------------
 -- Focus preservation across blow-and-rebuild reconcile.
 --
@@ -133,6 +145,43 @@ captureFocus = ignore (fromPrim (prim__captureFocus ""))
 export
 restoreFocus : IO ()
 restoreFocus = ignore (fromPrim (prim__restoreFocus ""))
+
+--------------------------------------------------------------------------------
+-- Scroll-position preservation across blow-and-rebuild reconcile.
+--
+-- Same motivation as focus preservation: the Day-1 reconcile discards
+-- every DOM node, so any scrollable container's `scrollTop` /
+-- `scrollLeft` resets to 0 even if the new tree recreates the
+-- container under the same id. Snapshot every id'd element's scroll
+-- offsets into a window-scoped map before the blow, restore after.
+--
+-- Targets EVERY id'd element rather than only the obvious scroll
+-- containers because `overflow: auto` may be applied via CSS the
+-- renderer can't see; storing offsets unconditionally costs almost
+-- nothing and a non-scrollable element ignores the restored value.
+-- Day-2 keyed-children diff makes this unnecessary.
+--------------------------------------------------------------------------------
+
+%foreign "scheme:(lambda (_) 0)"
+         "browser:lambda:(_)=>{ var m={}; var all=document.querySelectorAll('[id]'); for(var i=0;i<all.length;i++){ var el=all[i]; m[el.id]={t:el.scrollTop||0,l:el.scrollLeft||0}; } window.__cribrumScrolls=m; return 0; }"
+prim__captureScrolls : String -> PrimIO Int
+
+%foreign "scheme:(lambda (_) 0)"
+         "browser:lambda:(_)=>{ var m=window.__cribrumScrolls||{}; for(var id in m){ if(!Object.prototype.hasOwnProperty.call(m,id)) continue; var el=document.getElementById(id); if(el){ try { el.scrollTop=m[id].t; el.scrollLeft=m[id].l; } catch(e){} } } return 0; }"
+prim__restoreScrolls : String -> PrimIO Int
+
+||| Snapshot every id'd element's `scrollTop`/`scrollLeft` into a
+||| window-scoped map keyed by id. Pairs with `restoreScrolls` around
+||| a reconcile.
+export
+captureScrolls : IO ()
+captureScrolls = ignore (fromPrim (prim__captureScrolls ""))
+
+||| Re-apply scroll offsets snapshotted by `captureScrolls`. Elements
+||| missing from the new render are silently skipped.
+export
+restoreScrolls : IO ()
+restoreScrolls = ignore (fromPrim (prim__restoreScrolls ""))
 
 --------------------------------------------------------------------------------
 -- IO wrappers (the layer above the FFI; this is what renderDom uses).
@@ -231,9 +280,11 @@ export
 reconcile : (host : DomNode) -> (previous : HExpr) -> (next : HExpr) -> IO ()
 reconcile host _ next = do
   captureFocus
+  captureScrolls
   clearChildren host
   fresh <- renderDom next
   appendChild host fresh
+  restoreScrolls
   restoreFocus
 
 ||| Convenience for an initial mount with no previous tree.
