@@ -255,13 +255,18 @@ pddt_thematic_breaks = withTests 1 . property $ do
   for_ thematicCases $ \s =>
     parseDoc s === ok (doc [ThematicBreak emptyAttrs])
 
-||| Variants that look thematic-ish but are NOT.
+||| Variants that look thematic-ish but are NOT. Each parses to a
+||| paragraph with a single `InlText` of the original line, since none
+||| of the inline markers (`*`/`_`/`\``/`[`) pair within the line.
+||| `- - -` was historically in this list as a "whitespace-separated
+||| thematic break (later slice)" placeholder, but the list parser now
+||| recognises `- ` as an unordered list-item marker — that case
+||| migrated to a dedicated list EXT below.
 nonThematicCases : List String
 nonThematicCases =
   [ "--"        -- only 2
   , "**"
-  , "- - -"     -- whitespace-separated form — later slice
-  , "-*-"       -- mixed
+  , "-*-"       -- mixed, no closing `*`
   , "-=-"       -- non-marker chars
   , "===---"    -- garbage prefix
   ]
@@ -364,12 +369,20 @@ ext_two_backticks_is_paragraph = oneShot $
 ||| Backticks INSIDE the opener's info string disqualify (Djot rule).
 ||| Under the rule: opener line is rejected; the line becomes paragraph
 ||| content; only the standalone ``` line at the end opens a real (empty)
-||| code block.
+||| code block. Note the inline parser now extracts the trailing
+||| `` ` ` `` as a verbatim span — Djot verbatim semantics apply even
+||| inside a rejected-fence paragraph.
 export
 ext_info_with_backticks_is_not_fence : Property
 ext_info_with_backticks_is_not_fence = oneShot $
   parseDoc "```` ` `\nbody\n```"
-    === ok (doc [ paraMulti [InlText "```` ` `", InlSoftBreak, InlText "body"]
+    === ok (doc [ paraMulti
+                    [ InlText "```"
+                    , InlVerbatim emptyAttrs " "
+                    , InlText " `"
+                    , InlSoftBreak
+                    , InlText "body"
+                    ]
                 , code "" ""
                 ])
 
@@ -529,6 +542,164 @@ pbt_block_count_eq_group_count = property $ do
         go [x]       = x
         go (x :: xs) = x ++ "\n\n" ++ go xs
 
+--------------------------------------------------------------------------------
+-- Inline emphasis / strong / verbatim / link (Step-8 parser remainder).
+--------------------------------------------------------------------------------
+
+export
+ext_inline_emphasis : Property
+ext_inline_emphasis = oneShot $
+  parseDoc "a _b_ c"
+    === ok (doc [paraMulti
+                   [ InlText "a "
+                   , InlEmph [InlText "b"]
+                   , InlText " c"
+                   ]])
+
+export
+ext_inline_strong : Property
+ext_inline_strong = oneShot $
+  parseDoc "a *b* c"
+    === ok (doc [paraMulti
+                   [ InlText "a "
+                   , InlStrong [InlText "b"]
+                   , InlText " c"
+                   ]])
+
+export
+ext_inline_verbatim : Property
+ext_inline_verbatim = oneShot $
+  parseDoc "see `code` for"
+    === ok (doc [paraMulti
+                   [ InlText "see "
+                   , InlVerbatim emptyAttrs "code"
+                   , InlText " for"
+                   ]])
+
+export
+ext_inline_link : Property
+ext_inline_link = oneShot $
+  parseDoc "see [Cribrum](/cribrum) repo"
+    === ok (doc [paraMulti
+                   [ InlText "see "
+                   , InlLink emptyAttrs
+                       (LinkInline "/cribrum" Nothing)
+                       [InlText "Cribrum"]
+                   , InlText " repo"
+                   ]])
+
+export
+ext_inline_link_with_emphasis_label : Property
+ext_inline_link_with_emphasis_label = oneShot $
+  parseDoc "[_em_](u)"
+    === ok (doc [paraMulti
+                   [ InlLink emptyAttrs (LinkInline "u" Nothing)
+                       [InlEmph [InlText "em"]]
+                   ]])
+
+export
+ext_inline_unpaired_marker_is_text : Property
+ext_inline_unpaired_marker_is_text = oneShot $
+  parseDoc "a*b" === ok (doc [para "a*b"])
+
+export
+ext_inline_empty_emphasis_is_text : Property
+ext_inline_empty_emphasis_is_text = oneShot $
+  -- Empty `__`/`**`/```` between two markers does NOT trigger emphasis.
+  parseDoc "__" === ok (doc [para "__"])
+
+export
+ext_inline_unpaired_link_is_text : Property
+ext_inline_unpaired_link_is_text = oneShot $
+  -- A `[` with no matching `]` falls back to plain text.
+  parseDoc "[orphan" === ok (doc [para "[orphan"])
+
+export
+ext_inline_nested_emphasis_in_strong : Property
+ext_inline_nested_emphasis_in_strong = oneShot $
+  parseDoc "*outer _inner_ rest*"
+    === ok (doc [paraMulti
+                   [ InlStrong
+                       [ InlText "outer "
+                       , InlEmph [InlText "inner"]
+                       , InlText " rest"
+                       ]
+                   ]])
+
+--------------------------------------------------------------------------------
+-- Unordered & ordered list parsing (Step-8 parser remainder).
+--------------------------------------------------------------------------------
+
+ulList : List String -> Block
+ulList items =
+  ListBlock emptyAttrs UnorderedDash Nothing True
+    (map (\s => MkLI emptyAttrs Nothing Nothing
+                     [Paragraph emptyAttrs [InlText s]])
+         items)
+
+export
+ext_single_item_unordered_list : Property
+ext_single_item_unordered_list = oneShot $
+  parseDoc "- alpha"
+    === ok (doc [ulList ["alpha"]])
+
+export
+ext_multi_item_unordered_list : Property
+ext_multi_item_unordered_list = oneShot $
+  parseDoc "- alpha\n- bravo\n- charlie"
+    === ok (doc [ulList ["alpha", "bravo", "charlie"]])
+
+export
+ext_unordered_list_then_paragraph : Property
+ext_unordered_list_then_paragraph = oneShot $
+  parseDoc "- one\n- two\n\nafter"
+    === ok (doc [ ulList ["one", "two"]
+                , para "after"
+                ])
+
+export
+ext_unordered_list_dash_dash_dash : Property
+ext_unordered_list_dash_dash_dash = oneShot $
+  -- "- - -" is a single list item whose content is "- -".
+  parseDoc "- - -"
+    === ok (doc [ulList ["- -"]])
+
+export
+ext_mixed_markers_break_list : Property
+ext_mixed_markers_break_list = oneShot $
+  -- A run mixing `-` and `*` markers in adjacent lines breaks list
+  -- grouping back to paragraph (Djot disallows mixed-marker runs).
+  parseDoc "- one\n* two"
+    === ok (doc [paraMulti
+                   [ InlText "- one"
+                   , InlSoftBreak
+                   , InlText "* two"
+                   ]])
+
+export
+ext_ordered_decimal_list : Property
+ext_ordered_decimal_list = oneShot $
+  parseDoc "1. alpha\n2. bravo"
+    === ok (doc [ListBlock emptyAttrs OrderedDecimal Nothing True
+                   [ MkLI emptyAttrs Nothing Nothing
+                       [Paragraph emptyAttrs [InlText "alpha"]]
+                   , MkLI emptyAttrs Nothing Nothing
+                       [Paragraph emptyAttrs [InlText "bravo"]]
+                   ]])
+
+export
+ext_unordered_list_with_inline_emphasis : Property
+ext_unordered_list_with_inline_emphasis = oneShot $
+  parseDoc "- a _b_ c"
+    === ok (doc [ListBlock emptyAttrs UnorderedDash Nothing True
+                   [ MkLI emptyAttrs Nothing Nothing
+                       [Paragraph emptyAttrs
+                          [ InlText "a "
+                          , InlEmph [InlText "b"]
+                          , InlText " c"
+                          ]]
+                   ]])
+
 export
 group : Group
 group = MkGroup "Cribrum.Djot.Parser"
@@ -595,4 +766,20 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("pbt_parser_total",                         pbt_parser_total)
   , ("pbt_safe_single_line_is_paragraph",        pbt_safe_single_line_is_paragraph)
   , ("pbt_block_count_eq_group_count",           pbt_block_count_eq_group_count)
+  , ("ext_inline_emphasis",                      ext_inline_emphasis)
+  , ("ext_inline_strong",                        ext_inline_strong)
+  , ("ext_inline_verbatim",                      ext_inline_verbatim)
+  , ("ext_inline_link",                          ext_inline_link)
+  , ("ext_inline_link_with_emphasis_label",      ext_inline_link_with_emphasis_label)
+  , ("ext_inline_unpaired_marker_is_text",       ext_inline_unpaired_marker_is_text)
+  , ("ext_inline_empty_emphasis_is_text",        ext_inline_empty_emphasis_is_text)
+  , ("ext_inline_unpaired_link_is_text",         ext_inline_unpaired_link_is_text)
+  , ("ext_inline_nested_emphasis_in_strong",     ext_inline_nested_emphasis_in_strong)
+  , ("ext_single_item_unordered_list",           ext_single_item_unordered_list)
+  , ("ext_multi_item_unordered_list",            ext_multi_item_unordered_list)
+  , ("ext_unordered_list_then_paragraph",        ext_unordered_list_then_paragraph)
+  , ("ext_unordered_list_dash_dash_dash",        ext_unordered_list_dash_dash_dash)
+  , ("ext_mixed_markers_break_list",             ext_mixed_markers_break_list)
+  , ("ext_ordered_decimal_list",                 ext_ordered_decimal_list)
+  , ("ext_unordered_list_with_inline_emphasis",  ext_unordered_list_with_inline_emphasis)
   ]

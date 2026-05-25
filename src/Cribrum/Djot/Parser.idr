@@ -69,14 +69,115 @@ parseHeadingMarker s =
         else Nothing
 
 --------------------------------------------------------------------------------
--- Inline parser (slice: plain text only — emphasis et al. arrive later).
+-- Inline parser. Slice covers plain text + emphasis (`_em_`), strong
+-- (`*strong*`), verbatim (`\`code\``), and inline links (`[text](url)`).
+-- Smart-punctuation, images, footnotes, autolinks, and reference links
+-- arrive in later slices.
+--
+-- Tokenisation strategy: scan a character list left-to-right with an
+-- accumulator of "pending plain characters" that flushes to one
+-- `InlText` whenever a recognised marker pairs successfully. An
+-- unpaired or empty-inner marker simply joins the accumulator as a
+-- literal character. This avoids inline fragmentation (one `InlText`
+-- per plain run) and keeps `**` etc. as paragraphs of plain text.
+--
+-- Termination: each recursive descent runs on a strictly shorter
+-- character list (either the suffix after a paired marker or the
+-- contents *between* paired markers).
 --------------------------------------------------------------------------------
 
-||| Parse a single line's inline content. Slice v1: the whole line becomes one
-||| `InlText`, except an empty string yields no inlines.
+||| Scan `cs` for the first occurrence of `target`. Returns
+|||   `Just (inside, rest)` — characters up to but not including the closer
+|||                            and the characters after it
+|||   `Nothing`             — no closer
+findClose : Char -> List Char -> Maybe (List Char, List Char)
+findClose _ []        = Nothing
+findClose c (x :: xs) =
+  if x == c
+    then Just ([], xs)
+    else case findClose c xs of
+      Just (ins, rest) => Just (x :: ins, rest)
+      Nothing          => Nothing
+
+||| Flush an accumulator of plain characters to an `InlText` (singleton
+||| or empty). The accumulator is held in reverse order; flushing
+||| reverses + packs.
+flushAcc : List Char -> List Inline
+flushAcc []  = []
+flushAcc acc = [InlText (pack (reverse acc))]
+
+mutual
+  ||| Parse the body inside `[...]` and the matching `(...)` URL. Returns
+  ||| an `InlLink` plus the rest of the input on success, `Nothing` on
+  ||| malformed link (missing `]`, empty body, no following `(`, missing
+  ||| `)`, or empty URL).
+  parseLinkBody : List Char -> Maybe (Inline, List Char)
+  parseLinkBody chars = case findClose ']' chars of
+    Just (label, afterClose) =>
+      if label == []
+        then Nothing
+        else case afterClose of
+          ('(' :: rest) => case findClose ')' rest of
+            Just (url, after) =>
+              if url == []
+                then Nothing
+                else
+                  let inner = assert_total (parseInlines label)
+                   in Just (InlLink emptyAttrs
+                              (LinkInline (pack url) Nothing) inner
+                          , after)
+            Nothing => Nothing
+          _ => Nothing
+    Nothing => Nothing
+
+  ||| Drive the tokenizer with a plain-character accumulator. `acc` is
+  ||| the reversed list of plain characters scanned so far in the
+  ||| current run; pairs flush it, unpaired markers append to it.
+  parseInlinesAcc : List Char -> List Char -> List Inline
+  parseInlinesAcc acc [] = flushAcc acc
+  parseInlinesAcc acc (c :: cs) = case c of
+    '_' => case findClose '_' cs of
+      Just (inner, after) =>
+        if inner == []
+          then assert_total (parseInlinesAcc ('_' :: acc) cs)
+          else flushAcc acc
+            ++ [InlEmph (assert_total (parseInlinesAcc [] inner))]
+            ++ assert_total (parseInlinesAcc [] after)
+      Nothing => assert_total (parseInlinesAcc ('_' :: acc) cs)
+    '*' => case findClose '*' cs of
+      Just (inner, after) =>
+        if inner == []
+          then assert_total (parseInlinesAcc ('*' :: acc) cs)
+          else flushAcc acc
+            ++ [InlStrong (assert_total (parseInlinesAcc [] inner))]
+            ++ assert_total (parseInlinesAcc [] after)
+      Nothing => assert_total (parseInlinesAcc ('*' :: acc) cs)
+    '`' => case findClose '`' cs of
+      Just (inner, after) =>
+        if inner == []
+          then assert_total (parseInlinesAcc ('`' :: acc) cs)
+          else flushAcc acc
+            ++ [InlVerbatim emptyAttrs (pack inner)]
+            ++ assert_total (parseInlinesAcc [] after)
+      Nothing => assert_total (parseInlinesAcc ('`' :: acc) cs)
+    '[' => case parseLinkBody cs of
+      Just (link, after) =>
+        flushAcc acc ++ [link]
+          ++ assert_total (parseInlinesAcc [] after)
+      Nothing => assert_total (parseInlinesAcc ('[' :: acc) cs)
+    other => assert_total (parseInlinesAcc (other :: acc) cs)
+
+  ||| Top-level inline tokenizer over character lists.
+  public export
+  parseInlines : List Char -> List Inline
+  parseInlines chars = parseInlinesAcc [] chars
+
+||| Parse a single line's inline content. Empty string yields no inlines;
+||| otherwise the inline tokenizer runs over the line's characters.
+public export
 parseInlineLine : String -> List Inline
 parseInlineLine "" = []
-parseInlineLine s  = [InlText s]
+parseInlineLine s  = parseInlines (unpack s)
 
 ||| Parse a paragraph body: consecutive non-blank lines joined by SoftBreaks.
 parseParagraphLines : List1 String -> List Inline
@@ -229,11 +330,69 @@ isThematicBreak s =
             && length (c :: cs) >= 3
             && all (== c) cs
 
+--------------------------------------------------------------------------------
+-- List parsing. The slice covers unordered lists with `-`, `*`, `+`
+-- markers and ordered lists with `<n>. ` decimal markers. Nested lists,
+-- task lists, definition lists, and continuation-line indentation
+-- arrive in later slices.
+--------------------------------------------------------------------------------
+
+||| Recognise a list-item line. Returns `(style, body)` where `body` is
+||| the inline content (everything after the marker + space).
+isListLine : String -> Maybe (ListStyle, String)
+isListLine s = case unpack s of
+  ('-' :: ' ' :: rest) => Just (UnorderedDash,     pack rest)
+  ('*' :: ' ' :: rest) => Just (UnorderedAsterisk, pack rest)
+  ('+' :: ' ' :: rest) => Just (UnorderedPlus,     pack rest)
+  cs                   => case parseOrderedMarker cs of
+    Just (digits, body) => Just (OrderedDecimal, pack body)
+    Nothing             => Nothing
+  where
+    -- Consume one or more digits followed by ". ". Returns
+    -- `(digits, rest-after-space)` on success.
+    spanDigits : List Char -> (List Char, List Char)
+    spanDigits []        = ([], [])
+    spanDigits (c :: cs) =
+      if c >= '0' && c <= '9'
+        then let (ds, r) = spanDigits cs in (c :: ds, r)
+        else ([], c :: cs)
+
+    parseOrderedMarker : List Char -> Maybe (List Char, List Char)
+    parseOrderedMarker chars = case spanDigits chars of
+      ([], _)               => Nothing
+      (digits, '.' :: ' ' :: rest) => Just (digits, rest)
+      _                     => Nothing
+
+||| Pair a list-item line with its (style, parsed content). Each item
+||| holds a single `Paragraph` of the line's inline content. Multi-line
+||| / loose / nested items arrive in later slices.
+parseListItem : String -> Maybe (ListStyle, ListItem)
+parseListItem line = case isListLine line of
+  Just (style, body) =>
+    Just (style, MkLI emptyAttrs Nothing Nothing
+                      [Paragraph emptyAttrs (parseInlineLine body)])
+  Nothing => Nothing
+
+||| Try to build a `ListBlock` from a run of consecutive lines. All lines
+||| must be list items AND share the same style (per Djot, mixed markers
+||| break the run). Returns `Nothing` if the first line isn't a list
+||| item OR any subsequent line doesn't match.
+tryParseList : List1 String -> Maybe Block
+tryParseList (l ::: ls) = do
+  (style, firstItem) <- parseListItem l
+  rest <- traverse (matchSameStyle style) ls
+  pure (ListBlock emptyAttrs style Nothing True (firstItem :: rest))
+  where
+    matchSameStyle : ListStyle -> String -> Maybe ListItem
+    matchSameStyle want line = do
+      (got, item) <- parseListItem line
+      if got == want then Just item else Nothing
+
 ||| Convert one NORMAL line group into a block.
 |||
 ||| Order matters: thematic break is checked first (a single `---` line is
-||| not a heading and not a paragraph). Heading is checked next; everything
-||| else falls through to paragraph.
+||| not a heading and not a paragraph). Heading is checked next; then
+||| list block; everything else falls through to paragraph.
 normalGroupToBlock : List1 String -> Block
 normalGroupToBlock (l ::: ls) =
   if isNil ls && isThematicBreak l
@@ -243,7 +402,9 @@ normalGroupToBlock (l ::: ls) =
              if isNil ls
                then Heading emptyAttrs lvl (parseInlineLine rest)
                else Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
-           Nothing => Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
+           Nothing => case tryParseList (l ::: ls) of
+             Just listBlock => listBlock
+             Nothing        => Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
 
 ||| Convert a LineGroup into a Block. Quote groups recurse.
 public export
