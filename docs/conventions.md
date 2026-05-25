@@ -35,12 +35,12 @@ honour.
 | Paragraph             | `<p>`                      | spike    | Inlines map child-wise. |
 | Heading (level n)     | `<h1>`...`<h6>`            | spike    | Levels 1..6; >6 currently parses as paragraph. |
 | Thematic break        | `<hr>`                     | spike    | `---` / `***`, 3+ chars, surrounding ws ok. |
-| Block quote           | `<blockquote>`             | deferred | Lines prefixed `> `. |
+| Block quote           | `<blockquote>`             | spike    | Lines prefixed `> `; recursive nesting supported. |
 | List (unordered)      | `<ul>` + `<li>`            | deferred | Marker `-` / `*` / `+`. |
 | List (ordered)        | `<ol>` + `<li>`            | deferred | Decimal / roman / alpha; `start` carried. |
 | List (task)           | `<ul>` + `<li>` w/ checkbox| deferred | Renders `<input type="checkbox" disabled>` first child. |
 | List (definition)     | `<dl>` + `<dt>` + `<dd>`   | deferred | `term` carried separately. |
-| Code block (fenced)   | `<pre><code>`              | deferred | `info` string becomes language class. |
+| Code block (fenced)   | `<pre><code>`              | spike    | `info` string parsed but not yet promoted to language class (deferred). |
 | Raw block             | (passthrough)              | deferred | Format tag `html` injects literal; other tags suppressed. |
 | Div (fenced)          | (see conventions §2)       | deferred | Class drives semantic-element promotion. |
 | Pipe table            | `<table>`, `<thead>`, ...  | deferred | Column alignment becomes `style="text-align: ..."`. |
@@ -125,11 +125,14 @@ convention annotation.
 ### Phase 4 Structural set — type-level propositions
 
 All 10 rules below ship as `IsAA_<rule>` propositions in `Cribrum.AA.Typed`
-with `Dec` decision procedures. Strict-mode elaboration is intended to
-make these hard errors at the elaborate boundary (sharpened `StructuralAA`
-codomain) — currently the elaborator still uses the unit placeholder; the
-sharpening is the next plan §P4.1 task. Until then, each rule is also
-emitted by `Cribrum.AA.Pass`.
+with `Dec` decision procedures. Strict-mode elaboration makes these hard
+errors at the elaborate boundary: `Cribrum.Elaborate.StructuralAA` is the
+real conjunct of all 10 propositions, decided by `decStructuralAA`; strict
+`elaborate` fails with `StructuralAaFailure ruleId path` on the first
+failing predicate (per-node rules carry `Just path`, root-only
+`document-lang` carries `Just []`, whole-tree rules carry `Nothing`). Each
+rule is also emitted by `Cribrum.AA.Pass` for the draft-mode / reporting
+path.
 
 | Rule id            | What                                              | Phase 3 (Pass) | Phase 4 (Typed) |
 |--------------------|---------------------------------------------------|----------------|-----------------|
