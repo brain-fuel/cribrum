@@ -11,6 +11,7 @@ import Test.Cribrum.Render.Html
 import Test.Cribrum.Render.Dom
 import Test.Cribrum.AA.Pass
 import Test.Cribrum.AA.Typed
+import Test.Cribrum.AA.Partition
 import Test.Cribrum.Integration
 
 main : IO ()
@@ -25,5 +26,6 @@ main = test
   , Test.Cribrum.Render.Dom.group
   , Test.Cribrum.AA.Pass.group
   , Test.Cribrum.AA.Typed.group
+  , Test.Cribrum.AA.Partition.group
   , Test.Cribrum.Integration.group
   ]

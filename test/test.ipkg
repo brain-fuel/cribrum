@@ -21,6 +21,7 @@ modules = Test.Cribrum.Node
         , Test.Cribrum.Render.Dom
         , Test.Cribrum.AA.Pass
         , Test.Cribrum.AA.Typed
+        , Test.Cribrum.AA.Partition
         , Test.Cribrum.Integration
         , Test.Cribrum.Gen
         , Main

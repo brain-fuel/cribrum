@@ -408,3 +408,30 @@ duplicateIdOk : HExpr -> Bool
 duplicateIdOk h = case decDuplicateIdOk h of
   Yes _ => True
   No  _ => False
+
+--------------------------------------------------------------------------------
+-- Partitioning audit predicate (plan.dj §P3.3).
+--
+-- `isTypedPromoted ruleId` is `True` iff this module exposes an
+-- `IsAA_<rule>` proposition (with `Dec` decider) for that catalog id.
+-- The partition test in `Test.Cribrum.AA.Partition` asserts that this
+-- predicate agrees with `confidence == Structural` across every entry
+-- in `Cribrum.AA.Catalog.allRules` — every Structural rule has a typed
+-- promotion, and no Heuristic/Runtime rule does.
+--
+-- Adding a new typed promotion: also add its catalog id here.
+--------------------------------------------------------------------------------
+
+public export
+isTypedPromoted : String -> Bool
+isTypedPromoted "img-alt"           = True
+isTypedPromoted "anchor-href"       = True
+isTypedPromoted "iframe-title"      = True
+isTypedPromoted "label-for-control" = True
+isTypedPromoted "fieldset-legend"   = True
+isTypedPromoted "button-name"       = True
+isTypedPromoted "link-name"         = True
+isTypedPromoted "document-lang"     = True
+isTypedPromoted "heading-no-skip"   = True
+isTypedPromoted "duplicate-id"      = True
+isTypedPromoted _                   = False

@@ -18,7 +18,7 @@
 | `Cribrum.Render.Dom`      | 5     | **Spike**: tiny FFI surface (createElement/createTextNode/createComment/setAttribute/removeAttribute/addEventListener/appendChild/replaceChild/getElementById/clearChildren) + `currentEventValue` (input-value extraction) + `captureFocus`/`restoreFocus` (focus + selection-range preservation across reconcile). `renderDom : HExpr -> IO DomNode`, `reconcile` (Day-1 blow-and-rebuild, skip on unchanged tree, focus bracketed), `mountInto`. JS-backend only at runtime; chez type-checks via multi-spec %foreign with a scheme: fallback. Handler attrs dispatch via `window.__cribrumDispatch`; the dispatcher pre-extracts `event.target.value` into `window.__cribrumValue` for `onInput`/`onChange`. |
 | `Cribrum.AA.Catalog`      | 3+4   | Shared rule catalog (single source of truth across pass + future types). Types (`Rule`/`Confidence`/`Severity`) in `Cribrum.AA.Catalog.Types`; rule data in `Cribrum.AA.Catalog.Generated`, ingested from `ingest/aa.ts` by `ingest/aa-catalog.ts` (plan §P3.1 scaffold) with `make ingest-check` drift gate. 11 rules: img-alt, anchor-href, alt-meaningful, heading-no-skip, document-lang, iframe-title, label-for-control, fieldset-legend, link-name, button-name, duplicate-id. |
 | `Cribrum.AA.Pass`         | 3     | Per-rule traversal: 4 spike rules + 7 added (document-lang root check, iframe-title, label-for-control with implicit-control support, fieldset-legend, link-name with `aria-label`/`title`/text fallbacks, button-name, duplicate-id whole-tree). Total. Confidence-partitioned (Structural / Heuristic). Data-interpreter refactor still ahead — current style is per-rule hand-written walkers. |
-| `Cribrum.AA.Typed`        | 4     | **All 10 Structural rules** from the catalog promoted to type-level propositions via `So`: img-alt, anchor-href, iframe-title, label-for-control, fieldset-legend, button-name, link-name (per-node `All` over `walkNodes`); document-lang (root-only); heading-no-skip, duplicate-id (whole-tree bool + `So`). Decision via `decSo` (and `All` for per-node rules). Each per-node rule's typed wrapper is a 5-line alias through `Cribrum.AA.Promote`. |
+| `Cribrum.AA.Typed`        | 4     | **All 10 Structural rules** from the catalog promoted to type-level propositions via `So`: img-alt, anchor-href, iframe-title, label-for-control, fieldset-legend, button-name, link-name (per-node `All` over `walkNodes`); document-lang (root-only); heading-no-skip, duplicate-id (whole-tree bool + `So`). Decision via `decSo` (and `All` for per-node rules). Each per-node rule's typed wrapper is a 5-line alias through `Cribrum.AA.Promote`. Partitioning witness `isTypedPromoted : String -> Bool` exposes the promoted-id set; `Test.Cribrum.AA.Partition` (plan §P3.3) asserts it agrees with `confidence == Structural` across `allRules`. |
 | `Cribrum.AA.Promote`      | 4     | Per plan §P4.2 the bool-predicate + `So` + `All` over `walkNodes` pattern is factored into a single generic interface: `NodeOk pred`, `AllNodesOk pred`, `decAllNodesOk pred`, `allNodesOk pred`. Per-node rules in `Cribrum.AA.Typed` consume it; adding a new per-node rule is now ~5 lines. |
 | `TEAWeb.Html`             | T1    | **Spike**: view-builder smart constructors for 34 elements; `Attr msg` data type (`Plain` / `On`); `View msg` record = (HExpr, HandlerTable with `Event -> IO msg` closures); leaf nodes (`text_`, `comment_`); void elements (`br_`, `hr_`); plain attribute helpers (`class_`, `id_`, `href_`, ...). `viewSafe` routes through Phase-2's `decideHtmlLocated`, returning `Either ViewError ((h ** IsValidHtml h), HandlerTable)` with `LocatedReject` on rejection — content-model + attribute-permission misuse is now caught dynamically with path-into-tree diagnostics. Statically-typed-by-construction constructors (e.g. `ul_ : List (h ** IsLiChild h) -> View msg`) are the planned post-Phase-2 follow-on; the dynamic gate covers the contract until that lands. `eventTargetValue` re-exports the value-extraction primitive from `Cribrum.Render.Dom`. |
 | `TEAWeb.Event`            | T2    | **Spike**: `onClick`/`onSubmit`/`onFocus`/`onBlur`/`onDoubleClick`/`onMouseEnter`/`onMouseLeave` (msg-form, IO-wrapped via `pure`); `onInput`/`onChange` (String-callback form; the closure runs `eventTargetValue` to read the pre-extracted `event.target.value`). Callback ids app-supplied for MVP; deterministic `hash(path, event)` when keyed diff lands. |
@@ -28,7 +28,7 @@
 | `TEAWeb.Runtime`          | T3+T4 | **Spike**: `mount` + tail-recursive interpreter loop in Idris; `installDispatch` installs single global `window.__cribrumDispatch`; `runCmd` interprets Focus/Blur via FFI; reconcile after each update keeps state ref + handler table in lockstep. JS-backend execution only. |
 | `TEAWeb.Ports`            | T5    | Not started. Typed JSON FFI boundary for app-specific JS. |
 
-## Tests (326 total, all green)
+## Tests (331 total, all green)
 
 ```
 $ make test-fast        # cribrum + teaweb suites
@@ -37,8 +37,8 @@ $ make test             # adds ingest drift gate + mutation gate
 
 Counts per group: 18 Node + 16 Surface + 57 Parser + 20 Model + 39 Valid
 + 17 Elaborate + 17 Render.Html + 1 Render.Dom + 34 AA.Pass + 68 AA.Typed
-+ 4 Integration (README.dj + plan.dj) = 291 Cribrum. 10 TEAWeb.Html
-+ 10 TEAWeb.Event + 6 TEAWeb.Cmd + 9 TEAWeb.Program = 35 TEAWeb.
++ 5 AA.Partition + 4 Integration (README.dj + plan.dj) = 296 Cribrum.
+10 TEAWeb.Html + 10 TEAWeb.Event + 6 TEAWeb.Cmd + 9 TEAWeb.Program = 35 TEAWeb.
 
 Each module has:
 - **EXTs** (example tests) — canonical cases for each behaviour.
