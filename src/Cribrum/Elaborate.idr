@@ -43,17 +43,22 @@ import public Cribrum.AA.Typed
 public export
 StructuralAA : HExpr -> Type
 StructuralAA h =
-  ( ImgsAllOk        h
-  , AnchorsAllOk     h
-  , IframesAllOk     h
-  , LabelsAllOk      h
-  , FieldsetsAllOk   h
-  , ButtonsAllOk     h
-  , LinksAllOk       h
-  , DocumentLangOk   h
-  , HeadingNoSkipOk  h
-  , DuplicateIdOk    h
-  , UniqueMainOk     h
+  ( ImgsAllOk          h
+  , AnchorsAllOk       h
+  , IframesAllOk       h
+  , LabelsAllOk        h
+  , FieldsetsAllOk     h
+  , ButtonsAllOk       h
+  , LinksAllOk         h
+  , DocumentLangOk     h
+  , HeadingNoSkipOk    h
+  , DuplicateIdOk      h
+  , UniqueMainOk       h
+  , AreasAllOk         h
+  , LinkEmptyHrefAllOk h
+  , MetaNoRefreshAllOk h
+  , SummariesAllOk     h
+  , TracksAllOk        h
   )
 
 --------------------------------------------------------------------------------
@@ -130,7 +135,24 @@ decStructuralAA h = case decImgsAllOk h of
                     No  _   => Left ("duplicate-id",  Nothing)
                     Yes p10 => case decUniqueMainOk h of
                       No  _   => Left ("unique-main", Nothing)
-                      Yes p11 => Right (p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11)
+                      Yes p11 => case decAreasAllOk h of
+                        No  _   => Left ("area-alt",
+                                          pathOfFirstFailing areaOkBool h)
+                        Yes p12 => case decLinkEmptyHrefAllOk h of
+                          No  _   => Left ("link-empty-href",
+                                            pathOfFirstFailing linkEmptyHrefOkBool h)
+                          Yes p13 => case decMetaNoRefreshAllOk h of
+                            No  _   => Left ("meta-no-refresh",
+                                              pathOfFirstFailing metaNoRefreshOkBool h)
+                            Yes p14 => case decSummariesAllOk h of
+                              No  _   => Left ("summary-not-empty",
+                                                pathOfFirstFailing summaryOkBool h)
+                              Yes p15 => case decTracksAllOk h of
+                                No  _   => Left ("track-kind",
+                                                  pathOfFirstFailing trackOkBool h)
+                                Yes p16 => Right (p1, p2, p3, p4, p5, p6, p7
+                                                 , p8, p9, p10, p11
+                                                 , p12, p13, p14, p15, p16)
 
 --------------------------------------------------------------------------------
 -- Inline elaboration.
@@ -161,8 +183,13 @@ elaborateInline (InlInsert xs)     =
 elaborateInline (InlDelete xs)     =
   Element "del" [] (assert_total (map elaborateInline xs))
 elaborateInline (InlVerbatim _ s)  = Element "code" [] [Text s]
-elaborateInline (InlLink _ _ xs)   =
-  Element "a" [] (assert_total (map elaborateInline xs))
+elaborateInline (InlLink _ ref xs) =
+  let inner = assert_total (map elaborateInline xs)
+      attrs = case ref of
+                LinkInline url _    => [MkHAttr "href" (Str url)]
+                LinkReference label => [MkHAttr "href" (Str ("#" ++ label))]
+                LinkAuto url        => [MkHAttr "href" (Str url)]
+   in Element "a" attrs inner
 elaborateInline (InlImage _ _ xs)  =
   -- Image alt source = concatenated text of children; the full structural-AA
   -- check ("image must have an alt source") will land with Phase 4. For now
@@ -216,8 +243,22 @@ elaborateBlock (Div _ bs) =
 elaborateBlock (CodeBlock _ _ body) =
   Element "pre" [] [Element "code" [] [Text body]]
 elaborateBlock (RawBlock _ body) = Text body
-elaborateBlock (ListBlock _ _ _ _ items) =
-  Element "ul" [] (map (\i => Element "li" [] (assert_total (map elaborateBlock (content i)))) items)
+elaborateBlock (ListBlock _ style _ _ items) =
+  let tag = case style of
+              OrderedDecimal     => "ol"
+              OrderedRomanLower  => "ol"
+              OrderedRomanUpper  => "ol"
+              OrderedAlphaLower  => "ol"
+              OrderedAlphaUpper  => "ol"
+              UnorderedDash      => "ul"
+              UnorderedAsterisk  => "ul"
+              UnorderedPlus      => "ul"
+              TaskList           => "ul"
+              Definition         => "dl"
+      elabItem : ListItem -> HExpr
+      elabItem i = Element "li" []
+                     (assert_total (map elaborateBlock (content i)))
+   in Element tag [] (map elabItem items)
 elaborateBlock (Table _ _ _) =
   -- Table elaboration arrives with the table parser slice; emit empty table.
   Element "section" [] []

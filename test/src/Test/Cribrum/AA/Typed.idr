@@ -662,6 +662,106 @@ ext_nested_mains_typed_fails = oneShot $
            [ Element "main" [] [Text "inner"] ]
        ]) === False
 
+-- ----------------------------------------------------------------------------
+-- Post Step-5 typed promotions: area-alt, link-empty-href, meta-no-refresh,
+-- summary-not-empty, track-kind.
+-- ----------------------------------------------------------------------------
+
+export
+ext_area_with_href_no_alt_typed_fails : Property
+ext_area_with_href_no_alt_typed_fails = withTests 1 . property $
+  areasAllOk (Element "area" [MkHAttr "href" (Str "/x")] []) === False
+
+export
+ext_area_with_alt_typed_ok : Property
+ext_area_with_alt_typed_ok = withTests 1 . property $
+  areasAllOk (Element "area"
+                [ MkHAttr "href" (Str "/x")
+                , MkHAttr "alt"  (Str "zone") ] []) === True
+
+export
+ext_area_without_href_typed_ok : Property
+ext_area_without_href_typed_ok = withTests 1 . property $
+  areasAllOk (Element "area" [] []) === True
+
+export
+ext_link_empty_href_typed_fails : Property
+ext_link_empty_href_typed_fails = withTests 1 . property $
+  linkEmptyHrefAllOk (Element "a" [MkHAttr "href" (Str "")] [Text "go"]) === False
+
+export
+ext_link_nonempty_href_typed_ok : Property
+ext_link_nonempty_href_typed_ok = withTests 1 . property $
+  linkEmptyHrefAllOk (Element "a" [MkHAttr "href" (Str "/x")] [Text "go"]) === True
+
+export
+ext_link_no_href_typed_ok : Property
+ext_link_no_href_typed_ok = withTests 1 . property $
+  linkEmptyHrefAllOk (Element "a" [] [Text "go"]) === True
+
+export
+ext_meta_refresh_typed_fails : Property
+ext_meta_refresh_typed_fails = withTests 1 . property $
+  metaNoRefreshAllOk
+    (Element "meta" [ MkHAttr "http-equiv" (Str "refresh") ] []) === False
+
+export
+ext_meta_refresh_typed_case_insensitive : Property
+ext_meta_refresh_typed_case_insensitive = withTests 1 . property $
+  metaNoRefreshAllOk
+    (Element "meta" [ MkHAttr "http-equiv" (Str "REFRESH") ] []) === False
+
+export
+ext_meta_charset_typed_ok : Property
+ext_meta_charset_typed_ok = withTests 1 . property $
+  metaNoRefreshAllOk
+    (Element "meta" [ MkHAttr "charset" (Str "utf-8") ] []) === True
+
+export
+ext_details_without_summary_typed_fails : Property
+ext_details_without_summary_typed_fails = withTests 1 . property $
+  summariesAllOk (Element "details" [] [Element "p" [] [Text "body"]]) === False
+
+export
+ext_details_with_summary_text_typed_ok : Property
+ext_details_with_summary_text_typed_ok = withTests 1 . property $
+  summariesAllOk
+    (Element "details" []
+       [ Element "summary" [] [Text "click"]
+       , Element "p" [] [Text "body"]
+       ]) === True
+
+export
+ext_details_empty_summary_typed_fails : Property
+ext_details_empty_summary_typed_fails = withTests 1 . property $
+  summariesAllOk
+    (Element "details" []
+       [ Element "summary" [] []
+       , Element "p" [] [Text "body"]
+       ]) === False
+
+export
+ext_no_details_typed_ok : Property
+ext_no_details_typed_ok = withTests 1 . property $
+  summariesAllOk (Element "div" [] [Text "x"]) === True
+
+export
+ext_track_no_kind_typed_fails : Property
+ext_track_no_kind_typed_fails = withTests 1 . property $
+  tracksAllOk (Element "track" [MkHAttr "src" (Str "/c.vtt")] []) === False
+
+export
+ext_track_with_kind_typed_ok : Property
+ext_track_with_kind_typed_ok = withTests 1 . property $
+  tracksAllOk (Element "track"
+                 [ MkHAttr "kind" (Str "captions")
+                 , MkHAttr "src"  (Str "/c.vtt") ] []) === True
+
+export
+ext_no_track_typed_ok : Property
+ext_no_track_typed_ok = withTests 1 . property $
+  tracksAllOk (Element "div" [] []) === True
+
 export
 group : Group
 group = MkGroup "Cribrum.AA.Typed"
@@ -737,4 +837,21 @@ group = MkGroup "Cribrum.AA.Typed"
   , ("ext_single_main_typed_ok",               ext_single_main_typed_ok)
   , ("ext_sibling_mains_typed_fails",          ext_sibling_mains_typed_fails)
   , ("ext_nested_mains_typed_fails",           ext_nested_mains_typed_fails)
+  , ("ext_area_with_href_no_alt_typed_fails",  ext_area_with_href_no_alt_typed_fails)
+  , ("ext_area_with_alt_typed_ok",             ext_area_with_alt_typed_ok)
+  , ("ext_area_without_href_typed_ok",         ext_area_without_href_typed_ok)
+  , ("ext_link_empty_href_typed_fails",        ext_link_empty_href_typed_fails)
+  , ("ext_link_nonempty_href_typed_ok",        ext_link_nonempty_href_typed_ok)
+  , ("ext_link_no_href_typed_ok",              ext_link_no_href_typed_ok)
+  , ("ext_meta_refresh_typed_fails",           ext_meta_refresh_typed_fails)
+  , ("ext_meta_refresh_typed_case_insensitive",
+        ext_meta_refresh_typed_case_insensitive)
+  , ("ext_meta_charset_typed_ok",              ext_meta_charset_typed_ok)
+  , ("ext_details_without_summary_typed_fails", ext_details_without_summary_typed_fails)
+  , ("ext_details_with_summary_text_typed_ok", ext_details_with_summary_text_typed_ok)
+  , ("ext_details_empty_summary_typed_fails",  ext_details_empty_summary_typed_fails)
+  , ("ext_no_details_typed_ok",                ext_no_details_typed_ok)
+  , ("ext_track_no_kind_typed_fails",          ext_track_no_kind_typed_fails)
+  , ("ext_track_with_kind_typed_ok",           ext_track_with_kind_typed_ok)
+  , ("ext_no_track_typed_ok",                  ext_no_track_typed_ok)
   ]

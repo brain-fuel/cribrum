@@ -447,6 +447,168 @@ pbt_checkAA_total = property $ do
 
 export
 group : Group
+-- ----------------------------------------------------------------------------
+-- Post Step-5 rule checks.
+-- ----------------------------------------------------------------------------
+
+export
+ext_area_with_href_no_alt_fires : Property
+ext_area_with_href_no_alt_fires = oneShot $
+  case checked (Element "area"
+                 [ MkHAttr "href" (Str "/x") ] []) of
+    Right report => ruleIds (structuralFindings report) === ["area-alt"]
+    Left e => failWith Nothing e
+
+export
+ext_area_with_alt_ok : Property
+ext_area_with_alt_ok = oneShot $
+  case checked (Element "area"
+                 [ MkHAttr "href" (Str "/x")
+                 , MkHAttr "alt"  (Str "hot zone") ] []) of
+    Right report => structuralFindings report === []
+    Left e       => failWith Nothing e
+
+export
+ext_area_without_href_skipped : Property
+ext_area_without_href_skipped = oneShot $
+  case checked (Element "area" [] []) of
+    Right report => structuralFindings report === []
+    Left e       => failWith Nothing e
+
+export
+ext_link_empty_href_fires : Property
+ext_link_empty_href_fires = oneShot $
+  case checked (Element "a"
+                 [ MkHAttr "href" (Str "") ] [Text "go"]) of
+    Right report => ruleIds report === ["link-empty-href"]
+    Left e       => failWith Nothing e
+
+export
+ext_link_nonempty_href_ok : Property
+ext_link_nonempty_href_ok = oneShot $
+  case checked (Element "a"
+                 [ MkHAttr "href" (Str "/x") ] [Text "go"]) of
+    Right report => filter ((== "link-empty-href") . Rule.id . rule) report === []
+    Left e       => failWith Nothing e
+
+export
+ext_meta_refresh_fires : Property
+ext_meta_refresh_fires = oneShot $
+  case checked (Element "meta"
+                 [ MkHAttr "http-equiv" (Str "refresh")
+                 , MkHAttr "content"    (Str "5") ] []) of
+    Right report => ruleIds report === ["meta-no-refresh"]
+    Left e       => failWith Nothing e
+
+export
+ext_meta_refresh_case_insensitive : Property
+ext_meta_refresh_case_insensitive = oneShot $
+  case checked (Element "meta"
+                 [ MkHAttr "http-equiv" (Str "Refresh") ] []) of
+    Right report => ruleIds report === ["meta-no-refresh"]
+    Left e       => failWith Nothing e
+
+export
+ext_meta_charset_ok : Property
+ext_meta_charset_ok = oneShot $
+  case checked (Element "meta"
+                 [ MkHAttr "charset" (Str "utf-8") ] []) of
+    Right report => filter ((== "meta-no-refresh") . Rule.id . rule) report === []
+    Left e       => failWith Nothing e
+
+export
+ext_track_without_kind_fires : Property
+ext_track_without_kind_fires = oneShot $
+  case checked (Element "track"
+                 [ MkHAttr "src" (Str "/captions.vtt") ] []) of
+    Right report => ruleIds report === ["track-kind"]
+    Left e       => failWith Nothing e
+
+export
+ext_track_with_kind_ok : Property
+ext_track_with_kind_ok = oneShot $
+  case checked (Element "track"
+                 [ MkHAttr "kind" (Str "captions")
+                 , MkHAttr "src"  (Str "/c.vtt") ] []) of
+    Right report => filter ((== "track-kind") . Rule.id . rule) report === []
+    Left e       => failWith Nothing e
+
+export
+ext_details_without_summary_fires : Property
+ext_details_without_summary_fires = oneShot $
+  case checked (Element "details" []
+                 [ Element "p" [] [Text "hidden body"] ]) of
+    Right report => ruleIds report === ["summary-not-empty"]
+    Left e       => failWith Nothing e
+
+export
+ext_details_with_summary_text_ok : Property
+ext_details_with_summary_text_ok = oneShot $
+  case checked (Element "details" []
+                 [ Element "summary" [] [Text "click to reveal"]
+                 , Element "p"       [] [Text "body"]
+                 ]) of
+    Right report => filter ((== "summary-not-empty") . Rule.id . rule) report === []
+    Left e       => failWith Nothing e
+
+export
+ext_details_empty_summary_fires : Property
+ext_details_empty_summary_fires = oneShot $
+  case checked (Element "details" []
+                 [ Element "summary" [] []
+                 , Element "p"       [] [Text "body"]
+                 ]) of
+    Right report => ruleIds report === ["summary-not-empty"]
+    Left e       => failWith Nothing e
+
+export
+ext_aria_label_matches_text_is_heuristic : Property
+ext_aria_label_matches_text_is_heuristic = oneShot $
+  case checked (Element "button"
+                 [ MkHAttr "aria-label" (Str "Save") ]
+                 [ Text "Save" ]) of
+    Right report => do
+      ruleIds (heuristicFindings report) === ["aria-label-redundant"]
+      structuralFindings report === []
+    Left e => failWith Nothing e
+
+export
+ext_aria_label_differs_from_text_ok : Property
+ext_aria_label_differs_from_text_ok = oneShot $
+  case checked (Element "button"
+                 [ MkHAttr "aria-label" (Str "Save changes") ]
+                 [ Text "Save" ]) of
+    Right report =>
+      filter ((== "aria-label-redundant") . Rule.id . rule) report === []
+    Left e => failWith Nothing e
+
+export
+ext_positive_tabindex_is_heuristic : Property
+ext_positive_tabindex_is_heuristic = oneShot $
+  case checked (Element "div"
+                 [ MkHAttr "tabindex" (Str "3") ] [Text "x"]) of
+    Right report =>
+      ruleIds (heuristicFindings report) === ["positive-tabindex"]
+    Left e => failWith Nothing e
+
+export
+ext_tabindex_zero_ok : Property
+ext_tabindex_zero_ok = oneShot $
+  case checked (Element "div"
+                 [ MkHAttr "tabindex" (Str "0") ] [Text "x"]) of
+    Right report =>
+      filter ((== "positive-tabindex") . Rule.id . rule) report === []
+    Left e => failWith Nothing e
+
+export
+ext_tabindex_negative_one_ok : Property
+ext_tabindex_negative_one_ok = oneShot $
+  case checked (Element "div"
+                 [ MkHAttr "tabindex" (Str "-1") ] [Text "x"]) of
+    Right report =>
+      filter ((== "positive-tabindex") . Rule.id . rule) report === []
+    Left e => failWith Nothing e
+
 group = MkGroup "Cribrum.AA.Pass"
   [ ("ext_valid_p_no_findings",                ext_valid_p_no_findings)
   , ("ext_img_no_alt_emits_finding",           ext_img_no_alt_emits_finding)
@@ -488,4 +650,23 @@ group = MkGroup "Cribrum.AA.Pass"
   , ("ext_duplicate_id_fires",                 ext_duplicate_id_fires)
   , ("ext_unique_ids_ok",                      ext_unique_ids_ok)
   , ("ext_triplicate_id_fires_twice",          ext_triplicate_id_fires_twice)
+  , ("ext_area_with_href_no_alt_fires",        ext_area_with_href_no_alt_fires)
+  , ("ext_area_with_alt_ok",                   ext_area_with_alt_ok)
+  , ("ext_area_without_href_skipped",          ext_area_without_href_skipped)
+  , ("ext_link_empty_href_fires",              ext_link_empty_href_fires)
+  , ("ext_link_nonempty_href_ok",              ext_link_nonempty_href_ok)
+  , ("ext_meta_refresh_fires",                 ext_meta_refresh_fires)
+  , ("ext_meta_refresh_case_insensitive",      ext_meta_refresh_case_insensitive)
+  , ("ext_meta_charset_ok",                    ext_meta_charset_ok)
+  , ("ext_track_without_kind_fires",           ext_track_without_kind_fires)
+  , ("ext_track_with_kind_ok",                 ext_track_with_kind_ok)
+  , ("ext_details_without_summary_fires",      ext_details_without_summary_fires)
+  , ("ext_details_with_summary_text_ok",       ext_details_with_summary_text_ok)
+  , ("ext_details_empty_summary_fires",        ext_details_empty_summary_fires)
+  , ("ext_aria_label_matches_text_is_heuristic",
+        ext_aria_label_matches_text_is_heuristic)
+  , ("ext_aria_label_differs_from_text_ok",    ext_aria_label_differs_from_text_ok)
+  , ("ext_positive_tabindex_is_heuristic",     ext_positive_tabindex_is_heuristic)
+  , ("ext_tabindex_zero_ok",                   ext_tabindex_zero_ok)
+  , ("ext_tabindex_negative_one_ok",           ext_tabindex_negative_one_ok)
   ]

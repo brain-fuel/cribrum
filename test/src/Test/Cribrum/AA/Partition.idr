@@ -59,8 +59,10 @@ ext_promoted_count_matches : Property
 ext_promoted_count_matches = oneShot $
   length promotedIdsInCatalog === length structuralIds
 
-||| The 10 expected Structural rule ids — pins the catalog shape and
-||| guards against silent renames in `aa.ts`.
+||| The expected Structural rule ids — pins the catalog shape and
+||| guards against silent renames in `aa.ts`. Post Step-5: 16
+||| Structural rules (11 originals + area-alt, link-empty-href,
+||| meta-no-refresh, summary-not-empty, track-kind).
 export
 ext_structural_ids_canonical : Property
 ext_structural_ids_canonical = oneShot $
@@ -76,15 +78,22 @@ ext_structural_ids_canonical = oneShot $
          , "heading-no-skip"
          , "duplicate-id"
          , "unique-main"
+         , "area-alt"
+         , "link-empty-href"
+         , "meta-no-refresh"
+         , "summary-not-empty"
+         , "track-kind"
          ]
 
-||| `alt-meaningful` (Heuristic) is the lone non-Structural rule today.
-||| Pinned so any reclassification (or addition of a new Heuristic /
-||| Runtime rule) lands in the audit explicitly.
+||| Heuristic/Runtime rules — currently 3: `alt-meaningful`,
+||| `aria-label-redundant`, `positive-tabindex`. Pinned so any
+||| reclassification (or addition of a new Heuristic / Runtime rule)
+||| lands in the audit explicitly.
 export
 ext_nonstructural_ids_canonical : Property
 ext_nonstructural_ids_canonical = oneShot $
-  sort nonStructuralIds === sort ["alt-meaningful"]
+  sort nonStructuralIds ===
+    sort ["alt-meaningful", "aria-label-redundant", "positive-tabindex"]
 
 --------------------------------------------------------------------------------
 -- Group.

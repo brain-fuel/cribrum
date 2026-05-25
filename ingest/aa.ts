@@ -42,6 +42,16 @@ export const AA_CATALOG: AARuleRow[] = [
     title: "Anchor (`<a>`) must have an `href` attribute",
     confidence: "Structural", severity: "Error" },
 
+  { id: "area-alt",
+    wcag: "1.1.1", level: "A",
+    title: "Each `<area>` with `href` must have an `alt` attribute",
+    confidence: "Structural", severity: "Error" },
+
+  { id: "aria-label-redundant",
+    wcag: "4.1.2", level: "AA",
+    title: "`aria-label` should not duplicate the element's visible text",
+    confidence: "Heuristic", severity: "Warning" },
+
   { id: "button-name",
     wcag: "4.1.2", level: "A",
     title: "Each `<button>` must have an accessible name (text content or `aria-label`)",
@@ -82,9 +92,34 @@ export const AA_CATALOG: AARuleRow[] = [
     title: "Each `<label>` must have a `for` attribute or contain its control",
     confidence: "Structural", severity: "Error" },
 
+  { id: "link-empty-href",
+    wcag: "2.4.4", level: "A",
+    title: "`<a href=\"\">` is ineffective and rejected",
+    confidence: "Structural", severity: "Warning" },
+
   { id: "link-name",
     wcag: "2.4.4", level: "A",
     title: "Each `<a>` with `href` must have accessible text (text content or `aria-label`)",
+    confidence: "Structural", severity: "Error" },
+
+  { id: "meta-no-refresh",
+    wcag: "2.2.1", level: "A",
+    title: "`<meta http-equiv=\"refresh\">` triggers an unsolicited timeout",
+    confidence: "Structural", severity: "Warning" },
+
+  { id: "positive-tabindex",
+    wcag: "2.4.3", level: "A",
+    title: "Positive `tabindex` values disrupt natural focus order",
+    confidence: "Heuristic", severity: "Warning" },
+
+  { id: "summary-not-empty",
+    wcag: "1.3.1", level: "A",
+    title: "`<details>` must contain a non-empty `<summary>` for accessible name",
+    confidence: "Structural", severity: "Warning" },
+
+  { id: "track-kind",
+    wcag: "1.2.2", level: "A",
+    title: "Each `<track>` must declare a `kind` attribute",
     confidence: "Structural", severity: "Error" },
 
   { id: "unique-main",

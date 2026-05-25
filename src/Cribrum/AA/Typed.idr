@@ -303,6 +303,193 @@ linksAllOk : HExpr -> Bool
 linksAllOk = allNodesOk linkOkBool
 
 --------------------------------------------------------------------------------
+-- Local helpers used by the post-Step-5 new structural promotions.
+--------------------------------------------------------------------------------
+
+attrValueLookup : String -> List HAttr -> Maybe String
+attrValueLookup _    []                          = Nothing
+attrValueLookup name (MkHAttr n (Str s) :: rest) =
+  if n == name then Just s else attrValueLookup name rest
+attrValueLookup name (_ :: rest)                 = attrValueLookup name rest
+
+hasAttrName : String -> List HAttr -> Bool
+hasAttrName _    []                       = False
+hasAttrName name (MkHAttr n _ :: rest)    =
+  n == name || hasAttrName name rest
+
+toLowerAscii : Char -> Char
+toLowerAscii c =
+  let n = ord c
+   in if n >= 65 && n <= 90 then chr (n + 32) else c
+
+lowerStr : String -> String
+lowerStr s = pack (map toLowerAscii (unpack s))
+
+--------------------------------------------------------------------------------
+-- area-alt: per-node. `<area>` with `href` must carry an `alt`.
+--------------------------------------------------------------------------------
+
+public export
+areaOkBool : HExpr -> Bool
+areaOkBool (Element "area" attrs _) =
+  not (hasHrefAttr attrs) || hasAltAttr attrs
+areaOkBool _                        = True
+
+public export
+AreaHereOk : HExpr -> Type
+AreaHereOk = NodeOk areaOkBool
+
+public export
+decAreaHereOk : (h : HExpr) -> Dec (AreaHereOk h)
+decAreaHereOk = decNodeOk areaOkBool
+
+public export
+AreasAllOk : HExpr -> Type
+AreasAllOk = AllNodesOk areaOkBool
+
+public export
+decAreasAllOk : (h : HExpr) -> Dec (AreasAllOk h)
+decAreasAllOk = decAllNodesOk areaOkBool
+
+public export
+areasAllOk : HExpr -> Bool
+areasAllOk = allNodesOk areaOkBool
+
+--------------------------------------------------------------------------------
+-- link-empty-href: per-node. `<a href="">` rejected.
+--------------------------------------------------------------------------------
+
+public export
+linkEmptyHrefOkBool : HExpr -> Bool
+linkEmptyHrefOkBool (Element "a" attrs _) = case attrValueLookup "href" attrs of
+  Just "" => False
+  _       => True
+linkEmptyHrefOkBool _                     = True
+
+public export
+LinkEmptyHrefHereOk : HExpr -> Type
+LinkEmptyHrefHereOk = NodeOk linkEmptyHrefOkBool
+
+public export
+decLinkEmptyHrefHereOk : (h : HExpr) -> Dec (LinkEmptyHrefHereOk h)
+decLinkEmptyHrefHereOk = decNodeOk linkEmptyHrefOkBool
+
+public export
+LinkEmptyHrefAllOk : HExpr -> Type
+LinkEmptyHrefAllOk = AllNodesOk linkEmptyHrefOkBool
+
+public export
+decLinkEmptyHrefAllOk : (h : HExpr) -> Dec (LinkEmptyHrefAllOk h)
+decLinkEmptyHrefAllOk = decAllNodesOk linkEmptyHrefOkBool
+
+public export
+linkEmptyHrefAllOk : HExpr -> Bool
+linkEmptyHrefAllOk = allNodesOk linkEmptyHrefOkBool
+
+--------------------------------------------------------------------------------
+-- meta-no-refresh: per-node. `<meta http-equiv="refresh">` rejected
+-- (any value; the attribute alone is the trigger).
+--------------------------------------------------------------------------------
+
+public export
+metaNoRefreshOkBool : HExpr -> Bool
+metaNoRefreshOkBool (Element "meta" attrs _) =
+  case attrValueLookup "http-equiv" attrs of
+    Just v  => lowerStr v /= "refresh"
+    Nothing => True
+metaNoRefreshOkBool _                        = True
+
+public export
+MetaNoRefreshHereOk : HExpr -> Type
+MetaNoRefreshHereOk = NodeOk metaNoRefreshOkBool
+
+public export
+decMetaNoRefreshHereOk : (h : HExpr) -> Dec (MetaNoRefreshHereOk h)
+decMetaNoRefreshHereOk = decNodeOk metaNoRefreshOkBool
+
+public export
+MetaNoRefreshAllOk : HExpr -> Type
+MetaNoRefreshAllOk = AllNodesOk metaNoRefreshOkBool
+
+public export
+decMetaNoRefreshAllOk : (h : HExpr) -> Dec (MetaNoRefreshAllOk h)
+decMetaNoRefreshAllOk = decAllNodesOk metaNoRefreshOkBool
+
+public export
+metaNoRefreshAllOk : HExpr -> Bool
+metaNoRefreshAllOk = allNodesOk metaNoRefreshOkBool
+
+--------------------------------------------------------------------------------
+-- summary-not-empty: per-node. `<details>` must contain a `<summary>`
+-- with non-empty text content.
+--------------------------------------------------------------------------------
+
+trimEmpty : String -> Bool
+trimEmpty s = all (== ' ') (unpack s)
+
+detailsHasSummaryWithText : List HExpr -> Bool
+detailsHasSummaryWithText []        = False
+detailsHasSummaryWithText (c :: cs) = case c of
+  Element "summary" _ scs =>
+    let txt = concatMap collectText scs
+     in (not (trimEmpty txt)) || detailsHasSummaryWithText cs
+  _                        => detailsHasSummaryWithText cs
+
+public export
+summaryOkBool : HExpr -> Bool
+summaryOkBool (Element "details" _ cs) = detailsHasSummaryWithText cs
+summaryOkBool _                         = True
+
+public export
+SummaryHereOk : HExpr -> Type
+SummaryHereOk = NodeOk summaryOkBool
+
+public export
+decSummaryHereOk : (h : HExpr) -> Dec (SummaryHereOk h)
+decSummaryHereOk = decNodeOk summaryOkBool
+
+public export
+SummariesAllOk : HExpr -> Type
+SummariesAllOk = AllNodesOk summaryOkBool
+
+public export
+decSummariesAllOk : (h : HExpr) -> Dec (SummariesAllOk h)
+decSummariesAllOk = decAllNodesOk summaryOkBool
+
+public export
+summariesAllOk : HExpr -> Bool
+summariesAllOk = allNodesOk summaryOkBool
+
+--------------------------------------------------------------------------------
+-- track-kind: per-node. `<track>` must declare a `kind` attribute.
+--------------------------------------------------------------------------------
+
+public export
+trackOkBool : HExpr -> Bool
+trackOkBool (Element "track" attrs _) = hasAttrName "kind" attrs
+trackOkBool _                          = True
+
+public export
+TrackHereOk : HExpr -> Type
+TrackHereOk = NodeOk trackOkBool
+
+public export
+decTrackHereOk : (h : HExpr) -> Dec (TrackHereOk h)
+decTrackHereOk = decNodeOk trackOkBool
+
+public export
+TracksAllOk : HExpr -> Type
+TracksAllOk = AllNodesOk trackOkBool
+
+public export
+decTracksAllOk : (h : HExpr) -> Dec (TracksAllOk h)
+decTracksAllOk = decAllNodesOk trackOkBool
+
+public export
+tracksAllOk : HExpr -> Bool
+tracksAllOk = allNodesOk trackOkBool
+
+--------------------------------------------------------------------------------
 -- document-lang: ROOT-only rule. Proposition fires only when the top-level
 -- node is `<html>`; descendant `<html>` nodes (illegal anyway under
 -- Phase-2 validity) are ignored here.
@@ -470,4 +657,9 @@ isTypedPromoted "document-lang"     = True
 isTypedPromoted "heading-no-skip"   = True
 isTypedPromoted "duplicate-id"      = True
 isTypedPromoted "unique-main"       = True
+isTypedPromoted "area-alt"          = True
+isTypedPromoted "link-empty-href"   = True
+isTypedPromoted "meta-no-refresh"   = True
+isTypedPromoted "summary-not-empty" = True
+isTypedPromoted "track-kind"        = True
 isTypedPromoted _                   = False
