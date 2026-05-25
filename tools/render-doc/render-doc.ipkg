@@ -1,0 +1,14 @@
+package render-doc
+version = 0.1.0
+authors = "Matthew Laine"
+brief   = "Run a Djot source file through the Cribrum pipeline (parse -> elaborate -> renderHtml) and emit an HTML document."
+
+sourcedir = "src"
+depends   = base
+          , contrib
+          , cribrum
+
+main       = Main
+executable = "render-doc"
+
+modules = Main

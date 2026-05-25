@@ -1,0 +1,14 @@
+package render-docsnav
+version = 0.1.0
+authors = "Matthew Laine"
+brief   = "Render README.dj into examples/teaweb/docsnav/index.html + generate examples/teaweb/docsnav/src/Generated.idr (TOC items) — closes plan T6."
+
+sourcedir = "src"
+depends   = base
+          , contrib
+          , cribrum
+
+main       = Main
+executable = "render-docsnav"
+
+modules = Main

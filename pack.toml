@@ -19,3 +19,13 @@ type = "local"
 path = "test/teaweb"
 ipkg = "teaweb-test.ipkg"
 test = "teaweb-test.ipkg"
+
+[custom.all.render-doc]
+type = "local"
+path = "tools/render-doc"
+ipkg = "render-doc.ipkg"
+
+[custom.all.render-docsnav]
+type = "local"
+path = "tools/render-docsnav"
+ipkg = "render-docsnav.ipkg"

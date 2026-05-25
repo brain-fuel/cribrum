@@ -1,0 +1,16 @@
+package docsnav
+version = 0.1.0
+brief   = "TEAWeb T6 demo — Cribrum docs nav island (search-as-you-type + keyboard navigation)."
+
+sourcedir = "src"
+depends   = base
+          , contrib
+          , cribrum
+          , teaweb
+
+main       = Main
+executable = "docsnav"
+
+modules = TocData
+        , Generated
+        , Main

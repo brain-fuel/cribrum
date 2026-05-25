@@ -1,17 +1,95 @@
 # Cribrum
 
-A single intermediate representation — the HExpr — authored as prose in Djot,
-elaborated into full semantic, accessible HTML, typechecked as HTML, and
-checked for WCAG AA accessibility.
+This document is the static-rendered prose half of the TEAWeb T6 demo: a
+Cribrum-checked HExpr tree, parsed from Djot, elaborated to semantic
+accessible HTML, then rendered. The interactive sidebar in the docs-nav
+demo is a TEAWeb island that harvests its table of contents from these
+very headings.
 
-## Why
+## What Cribrum is
 
-Each conformance layer is a sieve of increasing fineness. One tree passes
-through successively finer meshes.
+Cribrum is a single intermediate representation — the `HExpr` — authored
+as prose in Djot, elaborated into full semantic, accessible HTML,
+typechecked as HTML, and checked for WCAG AA accessibility. All
+conformance is expressed as nested refinements over one node type, never
+a family of separate types.
 
----
+## Current status
 
-## Pipeline
+Phases 1b, 2, 3 (12 to 19 rules), 4 (16-rule conjunct), and 5 ship;
+TEAWeb MVP runtime plus the typed-by-content view layer
+(`TEAWeb.Html.Typed`) ship. This page is the T6 demo deliverable.
 
-The pipeline composes four phases: parse Djot, elaborate to HExpr, witness
-HTML validity, render to HTML.
+### The IR (single-tree HExpr)
+
+One datatype, full HTML tag space, handler-capable attribute model.
+`div` and `span` are two elements among many, not a catch-all.
+
+### HTML validity as a refinement
+
+`IsValidHtml` is a decidable predicate over `HExpr` with a total decision
+procedure. A located rejection (path plus reason) is surfaced when the
+decider refuses.
+
+### AA accessibility as a refinement
+
+Structural rules promote to type-level propositions; the non-decidable
+rules stay in the checking pass forever.
+
+## Phase order
+
+1 then 2 then 3 then 4 then 5, with TEAWeb T0 to T4 (MVP runtime)
+shipping alongside Phase 5.
+
+### Phase 1 — Djot parser + elaborate
+
+Phase 1a is a faithful Djot parser; 1b elaborates the surface AST into
+semantic accessible HExpr.
+
+### Phase 2 — Validity in types
+
+The HTML content model plus per-element attribute permission as a
+decidable proposition over `HExpr`.
+
+### Phase 3 — AA checking pass
+
+19 rules and growing; Structural / Heuristic / Runtime confidence
+partition is honoured. The traversal engine walks a `(Rule, impl)`
+registry rather than calling each rule by name.
+
+### Phase 4 — Structural AA in types
+
+16 Structural rules promoted to types. `elaborate` hard-errors on every
+Phase-4 violation.
+
+### Phase 5 — DOM render
+
+Tiny FFI surface plus a blow-and-rebuild reconcile with focus
+preservation.
+
+## TEAWeb — Elm++ on Cribrum
+
+The Elm Architecture realised in Idris 2, with views that are
+proof-carrying HExpr. Cribrum is the substrate; TEAWeb is the first
+interactive-UI consumer.
+
+### TEAWeb runtime + dispatch
+
+A tail-recursive interpreter loop in Idris drives the model / update /
+view cycle; the only FFI boundary is Cribrum's render-to-DOM module.
+
+### TEAWeb typed-by-content view API
+
+Each typed smart constructor returns a child-restricted view; children
+carry a compile-time witness that the catalog permits the tag.
+
+## Convention layer
+
+`.dj` files use class and attribute idioms that Cribrum's elaboration
+understands. The convention catalog lives in `docs/conventions.md`.
+
+## Ingest pipeline
+
+The HTML content model and the WCAG AA rule catalog are ingested from
+machine-readable upstreams (TypeScript) and compiled to Idris source.
+`make ingest-check` gates drift.

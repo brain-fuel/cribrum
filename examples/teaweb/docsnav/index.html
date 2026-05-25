@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Cribrum docs — TEAWeb T6 demo</title>
+    <style>
+      :root {
+        --bg:          #fdfcf8;
+        --fg:          #1c1b18;
+        --muted:       #6b6862;
+        --accent:      #1059a4;
+        --highlight:   #fff4c0;
+        --border:      #d9d6cf;
+        --code-bg:     #f0eee8;
+      }
+      * { box-sizing: border-box; }
+      html, body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: ui-serif, Georgia, serif;
+        line-height: 1.55;
+      }
+      .docs-shell {
+        display: grid;
+        grid-template-columns: 18rem 1fr;
+        gap: 2rem;
+        max-width: 72rem;
+        margin: 0 auto;
+        padding: 2rem 1.5rem;
+      }
+      aside.docs-sidebar {
+        position: sticky;
+        top: 2rem;
+        align-self: start;
+        max-height: calc(100vh - 4rem);
+        overflow: auto;
+      }
+      main.docs-content {
+        min-width: 0;
+      }
+      main.docs-content > :first-child { margin-top: 0; }
+      h1, h2, h3 {
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        margin-top: 2rem;
+      }
+      h1 { font-size: 1.75rem; }
+      h2 { font-size: 1.35rem; padding-top: 0.25rem; border-top: 1px solid var(--border); }
+      h3 { font-size: 1.05rem; }
+      pre, code { font-family: ui-monospace, "JetBrains Mono", monospace; }
+      pre {
+        background: var(--code-bg);
+        padding: 0.75rem 1rem;
+        border-radius: 0.25rem;
+        overflow: auto;
+      }
+      code { background: var(--code-bg); padding: 0.05rem 0.25rem; border-radius: 0.2rem; }
+      pre code { background: transparent; padding: 0; }
+
+      /* TEAWeb island styling */
+      .docsnav-island {
+        border: 1px solid var(--border);
+        border-radius: 0.5rem;
+        background: white;
+        padding: 1rem;
+        font-family: ui-sans-serif, system-ui, sans-serif;
+        font-size: 0.95rem;
+      }
+      .docsnav-header h2 {
+        margin: 0 0 0.25rem;
+        font-size: 1.05rem;
+        border: none;
+        padding: 0;
+      }
+      .docsnav-help {
+        margin: 0;
+        font-size: 0.78rem;
+        color: var(--muted);
+      }
+      .docsnav-search {
+        display: flex;
+        gap: 0.5rem;
+        margin: 0.75rem 0;
+      }
+      .docsnav-search input {
+        flex: 1;
+        padding: 0.4rem 0.5rem;
+        border: 1px solid var(--border);
+        border-radius: 0.25rem;
+        font-size: inherit;
+      }
+      .docsnav-search input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+      .docsnav-search button {
+        padding: 0.4rem 0.7rem;
+        border: 1px solid var(--border);
+        border-radius: 0.25rem;
+        background: var(--bg);
+        cursor: pointer;
+      }
+      .docsnav-list {
+        list-style: none;
+        padding: 0;
+        margin: 0.25rem 0 0.75rem;
+        max-height: 24rem;
+        overflow: auto;
+      }
+      .toc-item {
+        line-height: 1.4;
+        padding: 0;
+      }
+      .toc-item a {
+        display: block;
+        padding: 0.25rem 0.5rem;
+        color: var(--fg);
+        text-decoration: none;
+        border-radius: 0.2rem;
+      }
+      .toc-l2 a { padding-left: 1.5rem; font-size: 0.9rem; color: var(--muted); }
+      .toc-item.selected a {
+        background: var(--highlight);
+        color: var(--fg);
+        outline: 1px solid var(--accent);
+      }
+      .toc-item a:hover { background: #f3efe2; }
+      .docsnav-empty {
+        margin: 0.5rem 0;
+        font-style: italic;
+        color: var(--muted);
+      }
+      .docsnav-status {
+        margin: 0;
+        font-size: 0.78rem;
+        color: var(--muted);
+        border-top: 1px solid var(--border);
+        padding-top: 0.4rem;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="docs-shell">
+      <aside class="docs-sidebar">
+        <!-- The interactive TEAWeb island mounts here. -->
+        <div id="toc-island"></div>
+      </aside>
+
+      <main class="docs-content"><h1 id="cribrum">Cribrum</h1><p>This document is the static-rendered prose half of the TEAWeb T6 demo: a Cribrum-checked HExpr tree, parsed from Djot, elaborated to semantic accessible HTML, then rendered. The interactive sidebar in the docs-nav demo is a TEAWeb island that harvests its table of contents from these very headings.</p><h2 id="what-cribrum-is">What Cribrum is</h2><p>Cribrum is a single intermediate representation — the <code>HExpr</code> — authored as prose in Djot, elaborated into full semantic, accessible HTML, typechecked as HTML, and checked for WCAG AA accessibility. All conformance is expressed as nested refinements over one node type, never a family of separate types.</p><h2 id="current-status">Current status</h2><p>Phases 1b, 2, 3 (12 to 19 rules), 4 (16-rule conjunct), and 5 ship; TEAWeb MVP runtime plus the typed-by-content view layer (<code>TEAWeb.Html.Typed</code>) ship. This page is the T6 demo deliverable.</p><h3 id="the-ir-single-tree-hexpr">The IR (single-tree HExpr)</h3><p>One datatype, full HTML tag space, handler-capable attribute model. <code>div</code> and <code>span</code> are two elements among many, not a catch-all.</p><h3 id="html-validity-as-a-refinement">HTML validity as a refinement</h3><p><code>IsValidHtml</code> is a decidable predicate over <code>HExpr</code> with a total decision procedure. A located rejection (path plus reason) is surfaced when the decider refuses.</p><h3 id="aa-accessibility-as-a-refinement">AA accessibility as a refinement</h3><p>Structural rules promote to type-level propositions; the non-decidable rules stay in the checking pass forever.</p><h2 id="phase-order">Phase order</h2><p>1 then 2 then 3 then 4 then 5, with TEAWeb T0 to T4 (MVP runtime) shipping alongside Phase 5.</p><h3 id="phase-1-djot-parser-elaborate">Phase 1 — Djot parser + elaborate</h3><p>Phase 1a is a faithful Djot parser; 1b elaborates the surface AST into semantic accessible HExpr.</p><h3 id="phase-2-validity-in-types">Phase 2 — Validity in types</h3><p>The HTML content model plus per-element attribute permission as a decidable proposition over <code>HExpr</code>.</p><h3 id="phase-3-aa-checking-pass">Phase 3 — AA checking pass</h3><p>19 rules and growing; Structural / Heuristic / Runtime confidence partition is honoured. The traversal engine walks a <code>(Rule, impl)</code> registry rather than calling each rule by name.</p><h3 id="phase-4-structural-aa-in-types">Phase 4 — Structural AA in types</h3><p>16 Structural rules promoted to types. <code>elaborate</code> hard-errors on every Phase-4 violation.</p><h3 id="phase-5-dom-render">Phase 5 — DOM render</h3><p>Tiny FFI surface plus a blow-and-rebuild reconcile with focus preservation.</p><h2 id="teaweb-elm-on-cribrum">TEAWeb — Elm++ on Cribrum</h2><p>The Elm Architecture realised in Idris 2, with views that are proof-carrying HExpr. Cribrum is the substrate; TEAWeb is the first interactive-UI consumer.</p><h3 id="teaweb-runtime-dispatch">TEAWeb runtime + dispatch</h3><p>A tail-recursive interpreter loop in Idris drives the model / update / view cycle; the only FFI boundary is Cribrum&#39;s render-to-DOM module.</p><h3 id="teaweb-typed-by-content-view-api">TEAWeb typed-by-content view API</h3><p>Each typed smart constructor returns a child-restricted view; children carry a compile-time witness that the catalog permits the tag.</p><h2 id="convention-layer">Convention layer</h2><p><code>.dj</code> files use class and attribute idioms that Cribrum&#39;s elaboration understands. The convention catalog lives in <code>docs/conventions.md</code>.</p><h2 id="ingest-pipeline">Ingest pipeline</h2><p>The HTML content model and the WCAG AA rule catalog are ingested from machine-readable upstreams (TypeScript) and compiled to Idris source. <code>make ingest-check</code> gates drift.</p>
+      </main>
+    </div>
+    <script src="build/exec/docsnav"></script>
+  </body>
+</html>
