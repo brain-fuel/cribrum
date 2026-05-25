@@ -7,8 +7,8 @@ help:
 	@echo "  test-cribrum Cribrum suite only"
 	@echo "  test-teaweb  TEAWeb suite only"
 	@echo "  mutation     Mutation gate (changed-file scope; MUTATION_BASE=ALL for full)"
-	@echo "  ingest       Regenerate src/Cribrum/Html/Model/Generated.idr"
-	@echo "  ingest-check Fail if Generated.idr drifts from ingest sources"
+	@echo "  ingest       Regenerate Cribrum.Html.Model.Generated + Cribrum.AA.Catalog.Generated"
+	@echo "  ingest-check Fail if either generated module drifts from its ingest source"
 	@echo "  build        Typecheck cribrum + teaweb libraries"
 	@echo "  clean        Remove build artifacts"
 

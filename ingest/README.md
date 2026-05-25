@@ -32,6 +32,30 @@ from upstream data rather than carrying the seed.
 
 [webref]: https://github.com/w3c/webref
 
-## aa.ts
+## aa-catalog.ts
 
-Reserved for Phase 3 — ACT rule / WCAG SC ingestion. Not yet written.
+Compiles `ingest/aa.ts` (typed staging area for the W3C ACT-rules pull
+per plan §P3.1) into `src/Cribrum/AA/Catalog/Generated.idr`. The
+auto-generated module exposes one `Rule` constant per row plus a
+`generatedRules : List Rule` that `Cribrum.AA.Catalog` re-exports as
+`allRules`.
+
+```
+cd ingest
+npm install
+npm run ingest:aa         # regenerate Generated.idr
+npm run ingest:aa:check   # gate: error if Generated.idr is stale
+```
+
+The combined `npm run ingest` / `npm run ingest:check` run both the
+HTML-model and AA-catalog gates back-to-back, and `make ingest-check`
+is the project-level entry point.
+
+### Scope today vs. plan §P3.1
+
+`aa.ts` is hand-curated: id, WCAG SC, level, title, confidence,
+severity — the existing `Rule` shape. The ACT-rules JSON pull (the
+`applicability` / `expectation` data that would drive a true data
+interpreter in `Cribrum.AA.Pass`) is the next slice; this scaffold
+puts the I/O shape in place so the upstream pull lands as a content
+change on `aa.ts` rather than a new pipeline.

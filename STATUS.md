@@ -16,7 +16,7 @@
 | `Cribrum.Elaborate`       | 1b    | Strict elaboration `Doc -> Either ElabError (h ** (IsValidHtml h, StructuralAA h))`. Phase-2 sharpened: failure path uses `LocatedHtmlError` carrying a `LocatedReject`. **Phase-4 sharpened**: `StructuralAA h` is now the actual conjunct of all 10 Phase-4 propositions (img-alt, anchor-href, iframe-title, label-for-control, fieldset-legend, button-name, link-name, document-lang, heading-no-skip, duplicate-id) — `decStructuralAA` short-circuits to `StructuralAaFailure ruleId path` on the first failing predicate. AA failure-path **located**: per-node rules carry `Just path`; root-only `document-lang` carries `Just []`; whole-tree rules (heading-no-skip, duplicate-id) carry `Nothing`. |
 | `Cribrum.Render.Html`     | 5     | Total `HExpr -> String`. HTML 5 void-element handling, escaping, handler attrs render as `data-on-<event>`. |
 | `Cribrum.Render.Dom`      | 5     | **Spike**: tiny FFI surface (createElement/createTextNode/createComment/setAttribute/removeAttribute/addEventListener/appendChild/replaceChild/getElementById/clearChildren) + `currentEventValue` (input-value extraction) + `captureFocus`/`restoreFocus` (focus + selection-range preservation across reconcile). `renderDom : HExpr -> IO DomNode`, `reconcile` (Day-1 blow-and-rebuild, skip on unchanged tree, focus bracketed), `mountInto`. JS-backend only at runtime; chez type-checks via multi-spec %foreign with a scheme: fallback. Handler attrs dispatch via `window.__cribrumDispatch`; the dispatcher pre-extracts `event.target.value` into `window.__cribrumValue` for `onInput`/`onChange`. |
-| `Cribrum.AA.Catalog`      | 3+4   | Shared rule catalog (single source of truth across pass + future types). 11 rules: img-alt, anchor-href, alt-meaningful, heading-no-skip, document-lang, iframe-title, label-for-control, fieldset-legend, link-name, button-name, duplicate-id. |
+| `Cribrum.AA.Catalog`      | 3+4   | Shared rule catalog (single source of truth across pass + future types). Types (`Rule`/`Confidence`/`Severity`) in `Cribrum.AA.Catalog.Types`; rule data in `Cribrum.AA.Catalog.Generated`, ingested from `ingest/aa.ts` by `ingest/aa-catalog.ts` (plan §P3.1 scaffold) with `make ingest-check` drift gate. 11 rules: img-alt, anchor-href, alt-meaningful, heading-no-skip, document-lang, iframe-title, label-for-control, fieldset-legend, link-name, button-name, duplicate-id. |
 | `Cribrum.AA.Pass`         | 3     | Per-rule traversal: 4 spike rules + 7 added (document-lang root check, iframe-title, label-for-control with implicit-control support, fieldset-legend, link-name with `aria-label`/`title`/text fallbacks, button-name, duplicate-id whole-tree). Total. Confidence-partitioned (Structural / Heuristic). Data-interpreter refactor still ahead — current style is per-rule hand-written walkers. |
 | `Cribrum.AA.Typed`        | 4     | **All 10 Structural rules** from the catalog promoted to type-level propositions via `So`: img-alt, anchor-href, iframe-title, label-for-control, fieldset-legend, button-name, link-name (per-node `All` over `walkNodes`); document-lang (root-only); heading-no-skip, duplicate-id (whole-tree bool + `So`). Decision via `decSo` (and `All` for per-node rules). Each per-node rule's typed wrapper is a 5-line alias through `Cribrum.AA.Promote`. |
 | `Cribrum.AA.Promote`      | 4     | Per plan §P4.2 the bool-predicate + `So` + `All` over `walkNodes` pattern is factored into a single generic interface: `NodeOk pred`, `AllNodesOk pred`, `decAllNodesOk pred`, `allNodesOk pred`. Per-node rules in `Cribrum.AA.Typed` consume it; adding a new per-node rule is now ~5 lines. |
@@ -144,10 +144,16 @@ through Cribrum's own pipeline (matching `README.dj`'s role).
 - **Convention layer**: §2 of `docs/conventions.md` is mostly deferred —
   elaboration currently only wraps blocks in `<main>`; `:::nav` etc. don't
   promote yet.
-- **Ingest pipeline**: HTML content model is in `Cribrum.Html.Model`
-  (hand-curated dataset, ~95 elements); `ingest/html-model.ts`
-  provides the round-trip scaffold. WCAG AA catalog is still hand-
-  listed (spike subset of 4 rules); `ingest/aa.ts` is Phase 3 work.
+- **Ingest pipeline**: Both gates shipped — HTML content model (114
+  elements, `Cribrum.Html.Model.Generated` from `ingest/content-model.ts`
+  + `@webref/elements@2.6.0` cross-validation) AND the AA catalog
+  scaffold (11 rules, `Cribrum.AA.Catalog.Generated` from `ingest/aa.ts`
+  via `ingest/aa-catalog.ts`). `make ingest-check` covers both. ACT-rule
+  upstream pull + applicability/expectation data are still ahead — the
+  scaffold matches the existing `Rule` shape so the upstream pull lands
+  as content on `aa.ts` rather than a new pipeline. Catalog growth
+  (~50 SCs / ~35 ACT rules) + `Cribrum.AA.Pass` data-interpreter refactor
+  (plan §P3.2) remain.
 - **Phase T (TEAWeb) full inventory**: MVP slice ships (Html, Event,
   Cmd None/Batch/Focus/Blur, Sub None/Batch, Program, Runtime, plus
   examples/teaweb/counter demo). Still missing: Sub leaf variants

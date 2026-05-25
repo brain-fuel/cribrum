@@ -2,11 +2,15 @@
   "name": "cribrum-ingest",
   "version": "0.1.0",
   "private": true,
-  "description": "Spec ingestion scripts for Cribrum. Pulls HTML element model from WHATWG / @webref/elements and emits Cribrum.Html.Model.idr.",
+  "description": "Spec ingestion scripts for Cribrum. Emits Cribrum.Html.Model.Generated (from @webref/elements + content-model.ts) and Cribrum.AA.Catalog.Generated (from aa.ts).",
   "type": "module",
   "scripts": {
-    "ingest": "tsx html-model.ts",
-    "ingest:check": "tsx html-model.ts --check"
+    "ingest": "tsx html-model.ts && tsx aa-catalog.ts",
+    "ingest:check": "tsx html-model.ts --check && tsx aa-catalog.ts --check",
+    "ingest:html": "tsx html-model.ts",
+    "ingest:html:check": "tsx html-model.ts --check",
+    "ingest:aa": "tsx aa-catalog.ts",
+    "ingest:aa:check": "tsx aa-catalog.ts --check"
   },
   "devDependencies": {
     "@webref/elements": "2.6.0",

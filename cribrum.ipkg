@@ -19,6 +19,8 @@ modules = Cribrum.Node
         , Cribrum.Elaborate
         , Cribrum.Render.Html
         , Cribrum.Render.Dom
+        , Cribrum.AA.Catalog.Types
+        , Cribrum.AA.Catalog.Generated
         , Cribrum.AA.Catalog
         , Cribrum.AA.Pass
         , Cribrum.AA.Promote
