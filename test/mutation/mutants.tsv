@@ -125,3 +125,6 @@ src/Cribrum/Html/Model/Invariants.idr	decAllChildTagsExist es = All.all (decChil
 src/Cribrum/AA/Catalog.idr	allRules = generatedRules	allRules = []	Catalog: re-export replaced with empty list
 src/Cribrum/AA/Typed.idr	isTypedPromoted "img-alt"           = True	isTypedPromoted "img-alt"           = False	Typed: img-alt drops out of promoted set
 src/Cribrum/AA/Typed.idr	isTypedPromoted _                   = False	isTypedPromoted _                   = True	Typed: every id claims a typed promotion
+src/Cribrum/AA/Typed.idr	uniqueMainOkBool h = countMains h <= 1	uniqueMainOkBool h = True	Typed: unique-main always passes
+src/Cribrum/AA/Typed.idr	isMainElement (Element "main" _ _) = True	isMainElement (Element "main" _ _) = False	Typed: unique-main never detects <main>
+src/Cribrum/AA/Pass.idr	if mainCount h <= 1	if mainCount h <= 2	Pass: unique-main accepts up to 2 mains

@@ -274,6 +274,23 @@ checkDuplicateIds h = go [] (collectIds [] h)
                :: go seen rest
         else go (v :: seen) rest
 
+||| Count `<main>` elements in the whole tree (pre-order walk). Whole-tree
+||| predicate: at most one `<main>` is allowed per WCAG SC 1.3.1.
+mainCount : HExpr -> Nat
+mainCount (Element "main" _ cs) = S (assert_total (sum (map mainCount cs)))
+mainCount (Element _      _ cs) = assert_total (sum (map mainCount cs))
+mainCount _                     = 0
+
+||| Emit one finding when the tree contains more than one `<main>`. The
+||| finding is whole-tree (path = []) because the violation is the
+||| relation between multiple nodes rather than any single offending node.
+checkUniqueMain : HExpr -> List Finding
+checkUniqueMain h =
+  if mainCount h <= 1
+    then []
+    else [MkFinding ruleUniqueMain []
+            ("document contains " ++ show (mainCount h) ++ " <main> elements (expected at most 1)")]
+
 --------------------------------------------------------------------------------
 -- Top-level traversal.
 --------------------------------------------------------------------------------
@@ -315,6 +332,7 @@ checkAA h _ =
   walkNodes [] True h
     ++ checkHeadingNoSkip h
     ++ checkDuplicateIds h
+    ++ checkUniqueMain h
 
 ||| Convenience: just the structurally-tagged findings (the Phase-4-promotable
 ||| set). Heuristic/runtime are still in the full report but separated here.

@@ -86,4 +86,9 @@ export const AA_CATALOG: AARuleRow[] = [
     wcag: "2.4.4", level: "A",
     title: "Each `<a>` with `href` must have accessible text (text content or `aria-label`)",
     confidence: "Structural", severity: "Error" },
+
+  { id: "unique-main",
+    wcag: "1.3.1", level: "A",
+    title: "A document must contain at most one `<main>` landmark",
+    confidence: "Structural", severity: "Error" },
 ];

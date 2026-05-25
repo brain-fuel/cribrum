@@ -628,6 +628,40 @@ ext_triplicate_ids_typed_fails = oneShot $
        , Element "li" [MkHAttr "id" (Str "x")] []
        ]) === False
 
+-- unique-main EXTs.
+
+export
+ext_no_main_typed_ok : Property
+ext_no_main_typed_ok = oneShot $
+  uniqueMainOk (Element "section" [] [Text "no landmark"]) === True
+
+export
+ext_single_main_typed_ok : Property
+ext_single_main_typed_ok = oneShot $
+  uniqueMainOk
+    (Element "main" [] [Element "p" [] [Text "hello"]]) === True
+
+export
+ext_sibling_mains_typed_fails : Property
+ext_sibling_mains_typed_fails = oneShot $
+  uniqueMainOk
+    (Element "body" []
+       [ Element "main" [] [Text "a"]
+       , Element "main" [] [Text "b"]
+       ]) === False
+
+||| Nested `<main>` inside `<main>` is illegal HTML (content-model
+||| rejects it at Phase 2), but the AA predicate is a pure tree
+||| property: two mains anywhere fails regardless of relation.
+export
+ext_nested_mains_typed_fails : Property
+ext_nested_mains_typed_fails = oneShot $
+  uniqueMainOk
+    (Element "main" []
+       [ Element "section" []
+           [ Element "main" [] [Text "inner"] ]
+       ]) === False
+
 export
 group : Group
 group = MkGroup "Cribrum.AA.Typed"
@@ -699,4 +733,8 @@ group = MkGroup "Cribrum.AA.Typed"
   , ("ext_duplicate_sibling_ids_typed_fails",  ext_duplicate_sibling_ids_typed_fails)
   , ("ext_duplicate_nested_ids_typed_fails",   ext_duplicate_nested_ids_typed_fails)
   , ("ext_triplicate_ids_typed_fails",         ext_triplicate_ids_typed_fails)
+  , ("ext_no_main_typed_ok",                   ext_no_main_typed_ok)
+  , ("ext_single_main_typed_ok",               ext_single_main_typed_ok)
+  , ("ext_sibling_mains_typed_fails",          ext_sibling_mains_typed_fails)
+  , ("ext_nested_mains_typed_fails",           ext_nested_mains_typed_fails)
   ]

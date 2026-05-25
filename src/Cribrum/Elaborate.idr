@@ -53,6 +53,7 @@ StructuralAA h =
   , DocumentLangOk   h
   , HeadingNoSkipOk  h
   , DuplicateIdOk    h
+  , UniqueMainOk     h
   )
 
 --------------------------------------------------------------------------------
@@ -76,7 +77,7 @@ data ElabError : Type where
   ||| anchor-href, iframe-title, label-for-control, fieldset-legend,
   ||| button-name, link-name); `Just []` for the root-only document-lang;
   ||| `Nothing` for whole-tree rules whose failure isn't localised to one
-  ||| node (heading-no-skip, duplicate-id).
+  ||| node (heading-no-skip, duplicate-id, unique-main).
   StructuralAaFailure : (rule : String) -> (path : Maybe (List Nat)) -> ElabError
 
 public export
@@ -127,7 +128,9 @@ decStructuralAA h = case decImgsAllOk h of
                   No  _  => Left ("heading-no-skip",  Nothing)
                   Yes p9 => case decDuplicateIdOk h of
                     No  _   => Left ("duplicate-id",  Nothing)
-                    Yes p10 => Right (p1, p2, p3, p4, p5, p6, p7, p8, p9, p10)
+                    Yes p10 => case decUniqueMainOk h of
+                      No  _   => Left ("unique-main", Nothing)
+                      Yes p11 => Right (p1, p2, p3, p4, p5, p6, p7, p8, p9, p10, p11)
 
 --------------------------------------------------------------------------------
 -- Inline elaboration.

@@ -133,6 +133,24 @@ ext_per_node_rule_failure_is_located = oneShot $
         Left other                                         =>
           failWith Nothing ("wrong rule/path: " ++ show other)
 
+||| Whole-tree rule `unique-main` surfaces with `path = Nothing` (the
+||| violation is the relation between multiple nodes, not any single
+||| node). Hand-builds a tree with two sibling `<main>` elements.
+export
+ext_unique_main_failure_whole_tree : Property
+ext_unique_main_failure_whole_tree = oneShot $
+  let bad : HExpr
+      bad = Element "div" []
+              [ Element "main" [] []
+              , Element "main" [] []
+              ]
+   in case decStructuralAA bad of
+        Right _                                  =>
+          failWith Nothing "expected unique-main rejection"
+        Left ("unique-main", Nothing) => success
+        Left other                               =>
+          failWith Nothing ("wrong rule/path: " ++ show other)
+
 --------------------------------------------------------------------------------
 -- PDDTs.
 --------------------------------------------------------------------------------
@@ -282,6 +300,7 @@ group = MkGroup "Cribrum.Elaborate"
         ext_strict_elaboration_rejects_skipped_headings)
   , ("ext_per_node_rule_failure_is_located",
         ext_per_node_rule_failure_is_located)
+  , ("ext_unique_main_failure_whole_tree",     ext_unique_main_failure_whole_tree)
   , ("pddt_heading_tags",                      pddt_heading_tags)
   , ("pddt_inline_mapping",                    pddt_inline_mapping)
   , ("pbt_strict_elaboration_total_on_simple_docs",

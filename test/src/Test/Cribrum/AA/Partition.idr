@@ -75,6 +75,7 @@ ext_structural_ids_canonical = oneShot $
          , "document-lang"
          , "heading-no-skip"
          , "duplicate-id"
+         , "unique-main"
          ]
 
 ||| `alt-meaningful` (Heuristic) is the lone non-Structural rule today.

@@ -146,6 +146,7 @@ path.
 | `button-name`      | Each `<button>` must have an accessible name.     | ✅              | ✅               |
 | `link-name`        | Each `<a href>` must have an accessible name.     | ✅              | ✅               |
 | `duplicate-id`     | No two elements may share the same `id`.          | ✅              | ✅               |
+| `unique-main`      | At most one `<main>` landmark per document.       | ✅              | ✅               |
 
 Partitioning audit (plan §P3.3) is enforced by `Test.Cribrum.AA.Partition`:
 `Cribrum.AA.Typed.isTypedPromoted` is the witness, and the test suite asserts

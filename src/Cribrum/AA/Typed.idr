@@ -5,14 +5,14 @@
 ||| `Structural` rules from Phase 3. A rule **graduates** from finding to
 ||| proposition; it is never defined twice.
 |||
-||| Promotions wired (10 of 10 Structural rules in the catalog):
+||| Promotions wired (11 of 11 Structural rules in the catalog):
 |||   per-node, So + All over walkNodes — via `Cribrum.AA.Promote`:
 |||     img-alt, anchor-href, iframe-title, label-for-control,
 |||     fieldset-legend, button-name, link-name
 |||   root-only, So:
 |||     document-lang
 |||   whole-tree bool + So:
-|||     heading-no-skip, duplicate-id
+|||     heading-no-skip, duplicate-id, unique-main
 |||
 ||| Every Structural rule from `Cribrum.AA.Catalog` is now promoted. Adding
 ||| a new per-node rule is ~5 lines: a `<rule>OkBool` predicate plus four
@@ -410,6 +410,41 @@ duplicateIdOk h = case decDuplicateIdOk h of
   No  _ => False
 
 --------------------------------------------------------------------------------
+-- unique-main: at most one `<main>` element in the whole tree.
+--
+-- Whole-tree predicate (like heading-no-skip / duplicate-id). The
+-- elaborator wraps every Doc in a single `<main>` root today, so the
+-- rule is vacuously true for `elaborate`-produced trees; it earns its
+-- keep on hand-built `HExpr`s (TEAWeb views) and on future conventions
+-- that promote `:::main` to `<main>` (which could otherwise nest).
+--------------------------------------------------------------------------------
+
+isMainElement : HExpr -> Bool
+isMainElement (Element "main" _ _) = True
+isMainElement _                    = False
+
+countMains : HExpr -> Nat
+countMains h = length (filter isMainElement (walkNodes h))
+
+public export
+uniqueMainOkBool : HExpr -> Bool
+uniqueMainOkBool h = countMains h <= 1
+
+public export
+UniqueMainOk : HExpr -> Type
+UniqueMainOk h = So (uniqueMainOkBool h)
+
+public export
+decUniqueMainOk : (h : HExpr) -> Dec (UniqueMainOk h)
+decUniqueMainOk h = decSo (uniqueMainOkBool h)
+
+public export
+uniqueMainOk : HExpr -> Bool
+uniqueMainOk h = case decUniqueMainOk h of
+  Yes _ => True
+  No  _ => False
+
+--------------------------------------------------------------------------------
 -- Partitioning audit predicate (plan.dj §P3.3).
 --
 -- `isTypedPromoted ruleId` is `True` iff this module exposes an
@@ -434,4 +469,5 @@ isTypedPromoted "link-name"         = True
 isTypedPromoted "document-lang"     = True
 isTypedPromoted "heading-no-skip"   = True
 isTypedPromoted "duplicate-id"      = True
+isTypedPromoted "unique-main"       = True
 isTypedPromoted _                   = False

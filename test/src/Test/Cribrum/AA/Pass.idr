@@ -129,6 +129,48 @@ ext_finding_path_locates_node = oneShot $
                     ("expected single finding, got " ++ show xs)
     Left  e   => failWith Nothing e
 
+-- unique-main EXTs.
+
+export
+ext_no_main_no_finding : Property
+ext_no_main_no_finding = oneShot $
+  case checked (Element "section" [] [Text "no landmark"]) of
+    Right report => structuralFindings report === []
+    Left e       => failWith Nothing e
+
+export
+ext_single_main_no_finding : Property
+ext_single_main_no_finding = oneShot $
+  case checked (Element "main" [] [Element "p" [] [Text "hi"]]) of
+    Right report => structuralFindings report === []
+    Left e       => failWith Nothing e
+
+||| Two sibling `<main>` elements -> exactly one `unique-main` finding.
+export
+ext_two_sibling_mains_fires : Property
+ext_two_sibling_mains_fires = oneShot $
+  case checked (Element "div" []
+                 [ Element "main" [] [Text "a"]
+                 , Element "main" [] [Text "b"]
+                 ]) of
+    Right report =>
+      ruleIds (structuralFindings report) === ["unique-main"]
+    Left e => failWith Nothing e
+
+||| Three `<main>` siblings still emits exactly one finding (whole-tree
+||| rule fires once per tree, count surfaces in the finding message).
+export
+ext_three_mains_one_finding : Property
+ext_three_mains_one_finding = oneShot $
+  case checked (Element "div" []
+                 [ Element "main" [] [Text "a"]
+                 , Element "main" [] [Text "b"]
+                 , Element "main" [] [Text "c"]
+                 ]) of
+    Right report =>
+      ruleIds (structuralFindings report) === ["unique-main"]
+    Left e => failWith Nothing e
+
 --------------------------------------------------------------------------------
 -- EXTs — new structural rules (document-lang, iframe-title, label-for,
 -- fieldset-legend, link-name, button-name, duplicate-id).
@@ -418,6 +460,10 @@ group = MkGroup "Cribrum.AA.Pass"
   , ("ext_heading_consecutive_ok",             ext_heading_consecutive_ok)
   , ("ext_multiple_findings",                  ext_multiple_findings)
   , ("ext_finding_path_locates_node",          ext_finding_path_locates_node)
+  , ("ext_no_main_no_finding",                 ext_no_main_no_finding)
+  , ("ext_single_main_no_finding",             ext_single_main_no_finding)
+  , ("ext_two_sibling_mains_fires",            ext_two_sibling_mains_fires)
+  , ("ext_three_mains_one_finding",            ext_three_mains_one_finding)
   , ("pddt_alt_findings",                      pddt_alt_findings)
   , ("pbt_img_without_alt_always_reported",    pbt_img_without_alt_always_reported)
   , ("pbt_text_only_tree_no_findings",         pbt_text_only_tree_no_findings)
