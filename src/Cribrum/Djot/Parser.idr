@@ -328,6 +328,10 @@ data LineGroup : Type where
   NormalGroup : List1 String        -> LineGroup
   QuoteGroup  : List LineGroup      -> LineGroup
   CodeGroup   : (info : String) -> (body : String) -> LineGroup
+  ||| A run of pipe-table lines, carried verbatim for the table block
+  ||| parser. Each line is a row source; the cell parse + alignment
+  ||| classification happens in `tableGroupToBlock`.
+  TableGroup  : List1 String        -> LineGroup
 
 ||| `True` iff the line starts with `>` followed by space, OR is exactly `>`
 ||| (an empty quote line — Djot allows this).
@@ -366,6 +370,15 @@ isCodeFenceClose n s =
   let trimmed = trim s
       bs      = countBackticks trimmed
    in bs == n && length (unpack trimmed) == n
+
+||| `True` iff `s` is a plausible pipe-table row: trimmed line begins
+||| with `|` and contains at least one further `|` (so it has at least
+||| one cell). The trailing `|` is optional but conventional; the cell
+||| splitter handles either form.
+isTableLine : String -> Bool
+isTableLine s = case unpack (trim s) of
+  ('|' :: rest) => any (== '|') rest
+  _             => False
 
 ||| Strip the leading `> ` (or just `>`) prefix, returning the inner line.
 stripQuotePrefix : String -> String
@@ -435,7 +448,16 @@ groupLines xs = go [] [] xs
                     acc'    = flushNormal (reverse cur) acc
                     quoted  = QuoteGroup (assert_total (groupLines inner))
                  in assert_total (go [] (quoted :: acc') rest)
-              else go (x :: cur) acc xs
+              else if isTableLine x
+                then
+                  let (rows, rest) = spanList isTableLine (x :: xs)
+                      acc'         = flushNormal (reverse cur) acc
+                      table        = case rows of
+                        []         => acc'  -- impossible (x satisfies)
+                        (r :: rs)  =>
+                          TableGroup (r ::: rs) :: acc'
+                   in assert_total (go [] table rest)
+                else go (x :: cur) acc xs
 
 --------------------------------------------------------------------------------
 -- Group -> Block.
@@ -531,6 +553,104 @@ normalGroupToBlock (l ::: ls) =
              Just listBlock => listBlock
              Nothing        => Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
 
+--------------------------------------------------------------------------------
+-- Pipe tables (slice).
+--------------------------------------------------------------------------------
+
+||| Split a table-row source into trimmed cell strings. Drops the
+||| optional leading and trailing `|`, splits the rest on `|`, and
+||| trims surrounding whitespace from each cell.
+splitTableRow : String -> List String
+splitTableRow line =
+  let chars  = unpack (trim line)
+      inner  = case chars of
+                 ('|' :: rest) => rest
+                 _             => chars
+      inner' = case reverse inner of
+                 ('|' :: rs) => reverse rs
+                 _           => inner
+   in map (trim . pack) (splitOn '|' inner')
+  where
+    splitOn : Char -> List Char -> List (List Char)
+    splitOn _ []        = [[]]
+    splitOn c (x :: xs) = case splitOn c xs of
+      (cur :: rest) =>
+        if x == c then [] :: cur :: rest
+                  else (x :: cur) :: rest
+      []            => [[x]]  -- impossible: splitOn always returns ≥ 1
+
+||| Classify one alignment-row cell. A cell is an alignment marker
+||| iff it consists of a leading optional `:`, three-or-more `-`, and
+||| a trailing optional `:` (no other characters). Returns the
+||| corresponding `Align`, or `Nothing` if the cell isn't a marker.
+parseAlignCell : String -> Maybe Align
+parseAlignCell s =
+  let chars = unpack (trim s)
+      (left, mid)  = case chars of
+        (':' :: r) => (True, r)
+        _          => (False, chars)
+      revMid       = reverse mid
+      (right, bar) = case revMid of
+        (':' :: r) => (True, reverse r)
+        _          => (False, mid)
+   in if length bar >= 3 && all (== '-') bar
+        then Just $ case (left, right) of
+          (True,  True)  => AlignCenter
+          (True,  False) => AlignLeft
+          (False, True)  => AlignRight
+          (False, False) => AlignNone
+        else Nothing
+
+||| `True` iff every cell on the row is an alignment marker AND there
+||| is at least one cell. The cell count is the column count of the
+||| surrounding table.
+parseAlignRow : String -> Maybe (List Align)
+parseAlignRow s = case splitTableRow s of
+  [] => Nothing
+  cs => traverse parseAlignCell cs
+
+||| Build a `TableCell` from a raw cell source + an alignment.
+makeCell : Align -> String -> TableCell
+makeCell a body = MkCell a (parseInlineLine body)
+
+||| Build a `TableRow` from a raw row source. If `aligns` is shorter
+||| than the cells (or empty), missing positions get `AlignNone`.
+makeRow : (isHeader : Bool) -> List Align -> String -> TableRow
+makeRow header aligns line =
+  let cells = splitTableRow line
+   in MkRow header (zipWithAlign aligns cells)
+  where
+    -- Pair cells with their per-column align, padding the alignment
+    -- list with AlignNone if the row has more cells than the
+    -- alignment row promised.
+    zipWithAlign : List Align -> List String -> List TableCell
+    zipWithAlign _        []        = []
+    zipWithAlign []       (c :: cs) =
+      makeCell AlignNone c :: zipWithAlign [] cs
+    zipWithAlign (a :: as) (c :: cs) =
+      makeCell a c :: zipWithAlign as cs
+
+||| Convert a TableGroup's raw lines into a `Table` block.
+|||
+||| If the second row is an alignment row, the first row becomes the
+||| header (with the cell alignments applied) and rows from the third
+||| onward are body rows. Otherwise no alignment is in effect, no
+||| header is declared, and every row is a body row with `AlignNone`
+||| cells.
+tableGroupToBlock : List1 String -> Block
+tableGroupToBlock (l ::: ls) = case ls of
+  (alignLine :: rest) => case parseAlignRow alignLine of
+    Just aligns =>
+      let header = makeRow True  aligns l
+          body   = map (makeRow False aligns) rest
+       in Table emptyAttrs Nothing (header :: body)
+    Nothing =>
+      let rows = map (makeRow False []) (l :: ls)
+       in Table emptyAttrs Nothing rows
+  [] =>
+    let row = makeRow False [] l
+     in Table emptyAttrs Nothing [row]
+
 ||| Convert a LineGroup into a Block. Quote groups recurse.
 public export
 groupToBlock : LineGroup -> Block
@@ -539,6 +659,7 @@ groupToBlock (QuoteGroup  gs)   =
   BlockQuote emptyAttrs (assert_total (map groupToBlock gs))
 groupToBlock (CodeGroup info b) =
   CodeBlock emptyAttrs info b
+groupToBlock (TableGroup rows)  = tableGroupToBlock rows
 
 --------------------------------------------------------------------------------
 -- Top-level.

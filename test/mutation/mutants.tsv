@@ -159,3 +159,20 @@ src/Cribrum/Djot/Parser.idr	      ('.' :: '.' :: rest) =>	      ('.' :: '.' :: r
 src/Cribrum/Djot/Parser.idr	        flushAcc acc ++ [InlSmart Ellipsis]	        flushAcc acc ++ [InlText "..."]	parser: ellipsis emits literal
 src/Cribrum/Djot/Parser.idr	      let sp = if isOpenContext acc then LDQuote else RDQuote	      let sp = if isOpenContext acc then RDQuote else LDQuote	parser: double-quote orientation inverted
 src/Cribrum/Djot/Parser.idr	      let sp = if isOpenContext acc then LSQuote else RSQuote	      let sp = if isOpenContext acc then RSQuote else LSQuote	parser: single-quote orientation inverted
+src/Cribrum/Djot/Parser.idr	isTableLine s = case unpack (trim s) of	isTableLine s = False	parser: table detection disabled
+src/Cribrum/Djot/Parser.idr	  ('|' :: rest) => any (== '|') rest	  ('|' :: rest) => True	parser: table single-pipe accepted
+src/Cribrum/Djot/Parser.idr	  ('|' :: rest) => any (== '|') rest	  ('|' :: rest) => False	parser: table multi-pipe rejected
+src/Cribrum/Djot/Parser.idr	   in if length bar >= 3 && all (== '-') bar	   in if length bar >= 2 && all (== '-') bar	parser: align row requires only 2 dashes
+src/Cribrum/Djot/Parser.idr	   in if length bar >= 3 && all (== '-') bar	   in if length bar >= 3	parser: align row drops dash homogeneity check
+src/Cribrum/Djot/Parser.idr	          (True,  True)  => AlignCenter	          (True,  True)  => AlignNone	parser: align center mislabelled
+src/Cribrum/Djot/Parser.idr	          (True,  False) => AlignLeft	          (True,  False) => AlignRight	parser: align left/right swapped
+src/Cribrum/Djot/Parser.idr	          (False, True)  => AlignRight	          (False, True)  => AlignLeft	parser: align right/left swapped
+src/Cribrum/Djot/Parser.idr	          (False, False) => AlignNone	          (False, False) => AlignCenter	parser: align none becomes center
+src/Cribrum/Djot/Parser.idr	header = makeRow True  aligns l	header = makeRow False  aligns l	parser: table header row not marked as header
+src/Cribrum/Djot/Parser.idr	          body   = map (makeRow False aligns) rest	          body   = map (makeRow True aligns) rest	parser: table body rows marked as header
+src/Cribrum/Elaborate.idr	  let headerRows = filter isHeader rows	  let headerRows = []	elaborate: table never emits thead
+src/Cribrum/Elaborate.idr	      bodyRows   = filter (not . isHeader) rows	      bodyRows   = rows	elaborate: table tbody includes header rows
+src/Cribrum/Elaborate.idr	    alignAttrs AlignLeft   = [MkHAttr "style" (Str "text-align:left")]	    alignAttrs AlignLeft   = [MkHAttr "style" (Str "text-align:right")]	elaborate: align left/right swapped in style
+src/Cribrum/Elaborate.idr	    alignAttrs AlignRight  = [MkHAttr "style" (Str "text-align:right")]	    alignAttrs AlignRight  = []	elaborate: align right drops style
+src/Cribrum/Elaborate.idr	    alignAttrs AlignCenter = [MkHAttr "style" (Str "text-align:center")]	    alignAttrs AlignCenter = []	elaborate: align center drops style
+src/Cribrum/Elaborate.idr	      let cellTag = if isHeader r then "th" else "td"	      let cellTag = if isHeader r then "td" else "th"	elaborate: th/td tags swapped

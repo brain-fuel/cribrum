@@ -126,6 +126,12 @@ ext_plan_pipeline_works planSrc = withTests 1 . property $
       diff "<em>"                  isInfixOf out
       diff "<code>"                isInfixOf out
       diff "<pre><code>"           isInfixOf out
+      diff "<table>"               isInfixOf out
+      diff "<thead>"               isInfixOf out
+      diff "<tbody>"               isInfixOf out
+      diff "<tr>"                  isInfixOf out
+      diff "<th>"                  isInfixOf out
+      diff "<td>"                  isInfixOf out
 
 ||| plan.dj's elaboration carries the same dependent-pair shape as
 ||| README.dj — same witness contract.

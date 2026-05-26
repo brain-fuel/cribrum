@@ -227,6 +227,81 @@ ext_image_round_trip_through_elaborate = oneShot $
     Left  e => failWith Nothing ("elaborate failed: " ++ show e)
     Right _ => success
 
+--------------------------------------------------------------------------------
+-- Tables.
+--------------------------------------------------------------------------------
+
+||| Body-only table emits `<table><tbody><tr><td>...</td></tr></tbody></table>`
+||| with no `<thead>`.
+export
+ext_table_body_only_emit : Property
+ext_table_body_only_emit = oneShot $
+  elaborateBlock
+    (Table emptyAttrs Nothing
+       [ MkRow False [ MkCell AlignNone [InlText "a"]
+                     , MkCell AlignNone [InlText "b"]
+                     ]
+       ])
+    === Element "table" []
+          [ Element "tbody" []
+              [ Element "tr" []
+                  [ Element "td" [] [Text "a"]
+                  , Element "td" [] [Text "b"]
+                  ]
+              ]
+          ]
+
+||| Header row plus body row emits both `<thead>` and `<tbody>`. Each
+||| `<th>`/`<td>` gets a `style="text-align:..."` attribute when the
+||| cell carries a non-`AlignNone` alignment.
+export
+ext_table_with_header_and_alignment_emit : Property
+ext_table_with_header_and_alignment_emit = oneShot $
+  elaborateBlock
+    (Table emptyAttrs Nothing
+       [ MkRow True  [ MkCell AlignLeft   [InlText "h1"]
+                     , MkCell AlignCenter [InlText "h2"]
+                     , MkCell AlignRight  [InlText "h3"]
+                     ]
+       , MkRow False [ MkCell AlignLeft   [InlText "x"]
+                     , MkCell AlignCenter [InlText "y"]
+                     , MkCell AlignRight  [InlText "z"]
+                     ]
+       ])
+    === Element "table" []
+          [ Element "thead" []
+              [ Element "tr" []
+                  [ Element "th" [MkHAttr "style" (Str "text-align:left")]
+                      [Text "h1"]
+                  , Element "th" [MkHAttr "style" (Str "text-align:center")]
+                      [Text "h2"]
+                  , Element "th" [MkHAttr "style" (Str "text-align:right")]
+                      [Text "h3"]
+                  ]
+              ]
+          , Element "tbody" []
+              [ Element "tr" []
+                  [ Element "td" [MkHAttr "style" (Str "text-align:left")]
+                      [Text "x"]
+                  , Element "td" [MkHAttr "style" (Str "text-align:center")]
+                      [Text "y"]
+                  , Element "td" [MkHAttr "style" (Str "text-align:right")]
+                      [Text "z"]
+                  ]
+              ]
+          ]
+
+||| End-to-end: a parsed Djot table strict-elaborates without error.
+||| Pins the table-shape -> valid-HTML + structural-AA contract.
+export
+ext_table_round_trip_strict : Property
+ext_table_round_trip_strict = oneShot $
+  case parseDoc "| h1 | h2 |\n|----|----|\n| a  | b  |" of
+    Left  e => failWith Nothing ("parse: " ++ show e)
+    Right d => case elaborate d of
+      Right _ => success
+      Left  e => failWith Nothing ("elaborate: " ++ show e)
+
 export
 pddt_inline_mapping : Property
 pddt_inline_mapping = withTests 1 . property $ do
@@ -346,6 +421,10 @@ group = MkGroup "Cribrum.Elaborate"
   , ("pddt_inline_mapping",                    pddt_inline_mapping)
   , ("ext_image_alt_flattens_emphasis",        ext_image_alt_flattens_emphasis)
   , ("ext_image_round_trip_through_elaborate", ext_image_round_trip_through_elaborate)
+  , ("ext_table_body_only_emit",               ext_table_body_only_emit)
+  , ("ext_table_with_header_and_alignment_emit",
+        ext_table_with_header_and_alignment_emit)
+  , ("ext_table_round_trip_strict",            ext_table_round_trip_strict)
   , ("pbt_strict_elaboration_total_on_simple_docs",
         pbt_strict_elaboration_total_on_simple_docs)
   , ("pbt_elaborated_doc_isValidHtml",         pbt_elaborated_doc_isValidHtml)

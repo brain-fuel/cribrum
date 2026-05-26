@@ -306,9 +306,38 @@ elaborateBlock (ListBlock _ style _ _ items) =
       elabItem i = Element "li" []
                      (assert_total (map elaborateBlock (content i)))
    in Element tag [] (map elabItem items)
-elaborateBlock (Table _ _ _) =
-  -- Table elaboration arrives with the table parser slice; emit empty table.
-  Element "section" [] []
+elaborateBlock (Table _ _ rows) =
+  -- Emit `<table>` with `<thead>` for header rows (set by the parser
+  -- when an alignment row was present) and `<tbody>` for the body
+  -- rows. When no row is a header, `<thead>` is omitted and all rows
+  -- go into `<tbody>`.
+  let headerRows = filter isHeader rows
+      bodyRows   = filter (not . isHeader) rows
+      headSection : List HExpr
+      headSection = case headerRows of
+        [] => []
+        rs => [Element "thead" [] (map elabRow rs)]
+      bodySection : List HExpr
+      bodySection = case bodyRows of
+        [] => []
+        rs => [Element "tbody" [] (map elabRow rs)]
+   in Element "table" [] (headSection ++ bodySection)
+  where
+    alignAttrs : Align -> List HAttr
+    alignAttrs AlignNone   = []
+    alignAttrs AlignLeft   = [MkHAttr "style" (Str "text-align:left")]
+    alignAttrs AlignRight  = [MkHAttr "style" (Str "text-align:right")]
+    alignAttrs AlignCenter = [MkHAttr "style" (Str "text-align:center")]
+
+    elabCell : (cellTag : String) -> TableCell -> HExpr
+    elabCell cellTag c =
+      Element cellTag (alignAttrs (align c))
+        (assert_total (map elaborateInline (content c)))
+
+    elabRow : TableRow -> HExpr
+    elabRow r =
+      let cellTag = if isHeader r then "th" else "td"
+       in Element "tr" [] (map (elabCell cellTag) (cells r))
 elaborateBlock (RefDef _ _ _) =
   -- Reference definitions don't render as visible blocks in Djot's HTML
   -- output; suppress as an empty comment.

@@ -876,6 +876,121 @@ ext_smart_quote_after_open_paren_is_open = oneShot $
                    ]])
 
 --------------------------------------------------------------------------------
+-- Pipe tables.
+--------------------------------------------------------------------------------
+
+bodyCell : String -> TableCell
+bodyCell s = MkCell AlignNone [InlText s]
+
+bodyRow : List String -> TableRow
+bodyRow xs = MkRow False (map bodyCell xs)
+
+||| Single-row table with no alignment row -> body-only, AlignNone.
+export
+ext_table_single_row_no_header : Property
+ext_table_single_row_no_header = oneShot $
+  parseDoc "| a | b |"
+    === ok (doc [Table emptyAttrs Nothing [bodyRow ["a", "b"]]])
+
+||| Header + alignment + body. The alignment row classifies row 1 as
+||| header and supplies per-column align to ALL rows (header + body).
+export
+ext_table_header_with_alignment : Property
+ext_table_header_with_alignment = oneShot $
+  parseDoc "| h1 | h2 |\n|:---|---:|\n| a  | b  |"
+    === ok (doc [Table emptyAttrs Nothing
+                   [ MkRow True
+                       [ MkCell AlignLeft  [InlText "h1"]
+                       , MkCell AlignRight [InlText "h2"]
+                       ]
+                   , MkRow False
+                       [ MkCell AlignLeft  [InlText "a"]
+                       , MkCell AlignRight [InlText "b"]
+                       ]
+                   ]])
+
+||| `:--:` -> AlignCenter; bare `---` -> AlignNone in header context.
+export
+ext_table_all_alignments : Property
+ext_table_all_alignments = oneShot $
+  parseDoc "| a | b | c | d |\n|---|:---|:---:|---:|"
+    === ok (doc [Table emptyAttrs Nothing
+                   [ MkRow True
+                       [ MkCell AlignNone   [InlText "a"]
+                       , MkCell AlignLeft   [InlText "b"]
+                       , MkCell AlignCenter [InlText "c"]
+                       , MkCell AlignRight  [InlText "d"]
+                       ]
+                   ]])
+
+||| Two-row table where the second row is NOT an alignment row -> no
+||| header, both rows are body rows.
+export
+ext_table_two_rows_no_alignment_row : Property
+ext_table_two_rows_no_alignment_row = oneShot $
+  parseDoc "| a | b |\n| c | d |"
+    === ok (doc [Table emptyAttrs Nothing
+                   [ bodyRow ["a", "b"]
+                   , bodyRow ["c", "d"]
+                   ]])
+
+||| Cells parse as inlines (emphasis applied inside a cell).
+export
+ext_table_cell_inline_parsing : Property
+ext_table_cell_inline_parsing = oneShot $
+  parseDoc "| _em_ | *strong* |"
+    === ok (doc [Table emptyAttrs Nothing
+                   [ MkRow False
+                       [ MkCell AlignNone [InlEmph   [InlText "em"]]
+                       , MkCell AlignNone [InlStrong [InlText "strong"]]
+                       ]
+                   ]])
+
+||| A blank line ends the table and starts a new block.
+export
+ext_table_then_paragraph : Property
+ext_table_then_paragraph = oneShot $
+  parseDoc "| a | b |\n\nafter"
+    === ok (doc [ Table emptyAttrs Nothing [bodyRow ["a", "b"]]
+                , para "after"
+                ])
+
+||| A row with a leading `|` but no further `|` is NOT a table — falls
+||| through to paragraph.
+export
+ext_single_pipe_is_paragraph : Property
+ext_single_pipe_is_paragraph = oneShot $
+  parseDoc "| only one"
+    === ok (doc [para "| only one"])
+
+||| Alignment-row cells need at least 3 dashes. `|--|` (2 dashes) does
+||| NOT promote the previous row to a header — both rows stay body.
+||| (The `--` cell content then smart-puncts to an en-dash, but it is
+||| still in a `<td>` body cell, not a `<th>` header cell.) Pins the
+||| `length bar >= 3` guard.
+export
+ext_table_two_dash_align_not_header : Property
+ext_table_two_dash_align_not_header = oneShot $
+  parseDoc "| h |\n|--|"
+    === ok (doc [Table emptyAttrs Nothing
+                   [ bodyRow ["h"]
+                   , MkRow False [MkCell AlignNone [InlSmart EnDash]]
+                   ]])
+
+||| Alignment-row cells must be homogeneous dashes (with optional
+||| flanking `:`). A row with non-dash content like `|xxx|` is not an
+||| alignment row — both rows stay body. Pins the `all (== '-')`
+||| guard.
+export
+ext_table_non_dash_align_not_header : Property
+ext_table_non_dash_align_not_header = oneShot $
+  parseDoc "| h |\n|xxx|"
+    === ok (doc [Table emptyAttrs Nothing
+                   [ bodyRow ["h"]
+                   , bodyRow ["xxx"]
+                   ]])
+
+--------------------------------------------------------------------------------
 -- Unordered & ordered list parsing (Step-8 parser remainder).
 --------------------------------------------------------------------------------
 
@@ -1057,4 +1172,13 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_smart_single_quote_apostrophe",        ext_smart_single_quote_apostrophe)
   , ("ext_smart_single_quote_pair",              ext_smart_single_quote_pair)
   , ("ext_smart_quote_after_open_paren_is_open", ext_smart_quote_after_open_paren_is_open)
+  , ("ext_table_single_row_no_header",           ext_table_single_row_no_header)
+  , ("ext_table_header_with_alignment",          ext_table_header_with_alignment)
+  , ("ext_table_all_alignments",                 ext_table_all_alignments)
+  , ("ext_table_two_rows_no_alignment_row",      ext_table_two_rows_no_alignment_row)
+  , ("ext_table_cell_inline_parsing",            ext_table_cell_inline_parsing)
+  , ("ext_table_then_paragraph",                 ext_table_then_paragraph)
+  , ("ext_single_pipe_is_paragraph",             ext_single_pipe_is_paragraph)
+  , ("ext_table_two_dash_align_not_header",      ext_table_two_dash_align_not_header)
+  , ("ext_table_non_dash_align_not_header",      ext_table_non_dash_align_not_header)
   ]
