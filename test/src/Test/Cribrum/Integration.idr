@@ -1,16 +1,24 @@
 ||| Integration tests: README.dj + plan.dj end-to-end through the pipeline.
 |||
 ||| Pipeline: file -> parseDoc -> elaborate -> renderHtml.
-||| Assertions pin the *shape* (every element present, valid HTML witness
-||| produced) rather than byte-exact output so cosmetic renderer tweaks
-||| don't force a churn.
 |||
-||| plan.dj is the project's authoritative architectural narrative,
-||| dogfooded through Cribrum's own pipeline. The slice embedded below
-||| is a faithful excerpt of plan.dj exercising the constructs the
-||| current parser handles (H1, H2, H3, paragraph, thematic break);
-||| richer constructs (lists, emphasis, tables) appear in plan.dj but
-||| arrive in the test once the Phase 1a parser remainder lands (P5.4).
+||| These are *real* dogfood regression tests — they read the actual
+||| `README.dj` and `plan.dj` files at the repo root (passed in by
+||| `Main.idr` so the relative path stays in one place) and exercise
+||| the *current* parser slice against the *current* documents. Any
+||| time a Djot construct is added to the parser, or a renderer detail
+||| moves, these tests will reflect it without anyone updating an
+||| embedded slice.
+|||
+||| Failure modes the suite catches:
+|||   - parser regression on a construct README.dj or plan.dj already uses;
+|||   - elaborator regression that loses a landmark / heading / list /
+|||     emphasis / verbatim / blockquote;
+|||   - renderer regression that drops a tag or escape.
+|||
+||| Assertions pin *shape* (every kind of element observed in the real
+||| doc is present, valid HTML witness produced) rather than byte-exact
+||| output so cosmetic renderer tweaks don't force churn.
 module Test.Cribrum.Integration
 
 import Data.String
@@ -24,145 +32,141 @@ import Cribrum.Render.Html
 
 %default total
 
-readme : String
-readme =
-  """
-  # Cribrum
-
-  A single intermediate representation — the HExpr — authored as prose in Djot,
-  elaborated into full semantic, accessible HTML, typechecked as HTML, and
-  checked for WCAG AA accessibility.
-
-  ## Why
-
-  Each conformance layer is a sieve of increasing fineness. One tree passes
-  through successively finer meshes.
-
-  ---
-
-  ## Pipeline
-
-  The pipeline composes four phases: parse Djot, elaborate to HExpr, witness
-  HTML validity, render to HTML.
-  """
-
-||| End-to-end: parse a multi-construct Djot document, elaborate to HExpr
-||| with proof of validity, render to HTML string. The output must contain
-||| every section heading, the thematic break, and the wrapping <main>
-||| landmark — confirming no `div`/`span` soup at top level.
-export
-ext_readme_pipeline_works : Property
-ext_readme_pipeline_works = withTests 1 . property $ do
-  case parseDoc readme of
-    Left e  => failWith Nothing ("parse failed: " ++ show e)
-    Right d => case elaborate d of
-      Left e  => failWith Nothing ("elaborate failed: " ++ show e)
-      Right (h ** (_, _)) => do
-        let out = renderHtml h
-        diff "<main>"       isInfixOf out
-        diff "</main>"      isInfixOf out
-        diff "<h1>Cribrum</h1>" isInfixOf out
-        diff "<h2>Why</h2>"      isInfixOf out
-        diff "<h2>Pipeline</h2>" isInfixOf out
-        diff "<hr>"         isInfixOf out
-        -- No bare `<div>` soup at top level (we wrap in <main>).
-        classify "has <div>" ("<div>" `isInfixOf` out)
-        -- Sanity: HTML must include at least one paragraph.
-        diff "<p>"          isInfixOf out
-
-||| The proof carried by Right is a real `IsValidHtml h` witness — not just
-||| a boolean. We exercise the pattern match to ensure the dependent pair is
-||| usable from external call sites.
-export
-ext_readme_carries_validity_witness : Property
-ext_readme_carries_validity_witness = withTests 1 . property $ do
-  case parseDoc readme of
-    Left e  => failWith Nothing ("parse: " ++ show e)
-    Right d => case elaborate d of
-      Left e  => failWith Nothing ("elaborate: " ++ show e)
-      Right (_ ** (validHtml, structuralAa)) => do
-        -- The witness exists; observe it. Idris would have rejected the
-        -- pattern match if the projection types disagreed.
-        let _ = validHtml
-        let _ = structuralAa
-        success
-
 --------------------------------------------------------------------------------
--- plan.dj dogfood
+-- Pipeline shorthand.
 --------------------------------------------------------------------------------
 
-planSlice : String
-planSlice =
-  """
-  # Cribrum — Project Plan
+||| Run one Djot source string through the full pipeline. Returns either a
+||| human-readable error or the rendered HTML body.
+runPipeline : String -> Either String String
+runPipeline src = case parseDoc src of
+  Left e  => Left ("parse failed: " ++ show e)
+  Right d => case elaborate d of
+    Left e             => Left ("elaborate failed: " ++ show e)
+    Right (h ** (_, _)) => Right (renderHtml h)
 
-  A single intermediate representation — the HExpr — authored as prose in Djot,
-  elaborated into full semantic, accessible HTML, typechecked as HTML, and
-  checked for WCAG AA accessibility. All conformance is expressed as nested
-  refinements over one node type.
+||| Pipeline run that also exposes the validity + accessibility witnesses
+||| so a test can observe them and confirm the dependent pair shape.
+runPipelineWithWitness :
+     String
+  -> Either String (h : HExpr ** (IsValidHtml h, StructuralAA h))
+runPipelineWithWitness src = case parseDoc src of
+  Left e  => Left ("parse: " ++ show e)
+  Right d => case elaborate d of
+    Left e   => Left ("elaborate: " ++ show e)
+    Right pf => Right pf
 
-  A second deliverable, TEAWeb, sits on top of Cribrum and realises The Elm
-  Architecture with proof-carrying views.
+--------------------------------------------------------------------------------
+-- README.dj end-to-end.
+--------------------------------------------------------------------------------
 
-  ---
-
-  ## Governing principle
-
-  There is exactly one datatype: the HExpr. Conformance is a proof, never a
-  separate datatype.
-
-  ## Phase T — TEAWeb
-
-  TEAWeb is additive. Views materialise HExpr directly, gated by the same
-  validity + accessibility predicates the document pipeline uses.
-
-  ### MVP-TEAWeb milestone
-
-  Counter plus Focus button, the smallest end-to-end demo that proves the
-  architectural keystone.
-  """
-
-||| End-to-end: plan.dj slice parses, elaborates, renders. Every H1/H2/H3
-||| heading and the thematic break survive into the final HTML, wrapped in
-||| <main> with no bare top-level <div> soup. Witness for IsValidHtml is
-||| carried through the dependent pair.
+||| Real README.dj parses, elaborates, renders. Every construct README.dj
+||| currently uses (h1/h2/h3 headings, paragraphs, code spans, emphasis,
+||| strong) must survive into the final HTML, wrapped in `<main>` with no
+||| bare top-level `<div>` soup.
 export
-ext_plan_pipeline_works : Property
-ext_plan_pipeline_works = withTests 1 . property $ do
-  case parseDoc planSlice of
-    Left e  => failWith Nothing ("parse failed: " ++ show e)
-    Right d => case elaborate d of
-      Left e  => failWith Nothing ("elaborate failed: " ++ show e)
-      Right (h ** (_, _)) => do
-        let out = renderHtml h
-        diff "<main>"                              isInfixOf out
-        diff "</main>"                             isInfixOf out
-        diff "<h1>"                                isInfixOf out
-        diff "<h2>Governing principle</h2>"        isInfixOf out
-        diff "<h2>Phase T — TEAWeb</h2>"           isInfixOf out
-        diff "<h3>MVP-TEAWeb milestone</h3>"       isInfixOf out
-        diff "<hr>"                                isInfixOf out
-        diff "<p>"                                 isInfixOf out
+ext_readme_pipeline_works : String -> Property
+ext_readme_pipeline_works readmeSrc = withTests 1 . property $
+  case runPipeline readmeSrc of
+    Left e    => failWith Nothing e
+    Right out => do
+      diff "<main>"                     isInfixOf out
+      diff "</main>"                    isInfixOf out
+      diff "<h1>Cribrum</h1>"           isInfixOf out
+      diff "<h2>What Cribrum is</h2>"   isInfixOf out
+      diff "<h2>Current status</h2>"    isInfixOf out
+      diff "<h2>Phase order</h2>"       isInfixOf out
+      diff "<h3>"                       isInfixOf out
+      diff "<p>"                        isInfixOf out
+      diff "<code>HExpr</code>"         isInfixOf out
+      -- README.dj uses the wrapped `<main>` landmark; no bare top-level
+      -- `<div>` soup.
+      classify "has <div>" ("<div>" `isInfixOf` out)
 
-||| plan.dj's elaboration carries a real IsValidHtml witness — same
-||| dependent-pair shape as README.dj.
+||| The proof carried by Right is a real `IsValidHtml h × StructuralAA h`
+||| witness — not just a boolean. Pattern-match it so a regression that
+||| weakens the codomain breaks compilation.
 export
-ext_plan_carries_validity_witness : Property
-ext_plan_carries_validity_witness = withTests 1 . property $ do
-  case parseDoc planSlice of
-    Left e  => failWith Nothing ("parse: " ++ show e)
-    Right d => case elaborate d of
-      Left e  => failWith Nothing ("elaborate: " ++ show e)
-      Right (_ ** (validHtml, structuralAa)) => do
-        let _ = validHtml
-        let _ = structuralAa
-        success
+ext_readme_carries_witnesses : String -> Property
+ext_readme_carries_witnesses readmeSrc = withTests 1 . property $
+  case runPipelineWithWitness readmeSrc of
+    Left e                              => failWith Nothing e
+    Right (_ ** (validHtml, structAa))  => do
+      let _ = validHtml
+      let _ = structAa
+      success
+
+--------------------------------------------------------------------------------
+-- plan.dj end-to-end (the project's own authoritative narrative).
+--------------------------------------------------------------------------------
+
+||| Real plan.dj exercises the *broadest* set of constructs Cribrum currently
+||| handles (block quotes, fenced code blocks, ordered + unordered lists,
+||| inline strong/em/verbatim). All of them must survive into the rendered
+||| HTML — anything missing means a regression in the parser, elaborator,
+||| or renderer.
+export
+ext_plan_pipeline_works : String -> Property
+ext_plan_pipeline_works planSrc = withTests 1 . property $
+  case runPipeline planSrc of
+    Left e    => failWith Nothing e
+    Right out => do
+      diff "<main>"                isInfixOf out
+      diff "</main>"               isInfixOf out
+      diff "<h1>"                  isInfixOf out
+      diff "<h2>"                  isInfixOf out
+      diff "<h3>"                  isInfixOf out
+      diff "<hr>"                  isInfixOf out
+      diff "<p>"                   isInfixOf out
+      diff "<blockquote>"          isInfixOf out
+      diff "</blockquote>"         isInfixOf out
+      diff "<ul>"                  isInfixOf out
+      diff "<li>"                  isInfixOf out
+      diff "<strong>"              isInfixOf out
+      diff "<em>"                  isInfixOf out
+      diff "<code>"                isInfixOf out
+      diff "<pre><code>"           isInfixOf out
+
+||| plan.dj's elaboration carries the same dependent-pair shape as
+||| README.dj — same witness contract.
+export
+ext_plan_carries_witnesses : String -> Property
+ext_plan_carries_witnesses planSrc = withTests 1 . property $
+  case runPipelineWithWitness planSrc of
+    Left e                              => failWith Nothing e
+    Right (_ ** (validHtml, structAa))  => do
+      let _ = validHtml
+      let _ = structAa
+      success
+
+--------------------------------------------------------------------------------
+-- Round-trip identity sanity: the same source rendered twice byte-equal.
+-- This catches non-determinism (impure renderer paths, IORef leakage)
+-- early.
+--------------------------------------------------------------------------------
 
 export
-group : Group
-group = MkGroup "Cribrum.Integration"
-  [ ("ext_readme_pipeline_works",            ext_readme_pipeline_works)
-  , ("ext_readme_carries_validity_witness",  ext_readme_carries_validity_witness)
-  , ("ext_plan_pipeline_works",              ext_plan_pipeline_works)
-  , ("ext_plan_carries_validity_witness",    ext_plan_carries_validity_witness)
+ext_pipeline_is_deterministic : String -> Property
+ext_pipeline_is_deterministic src = withTests 1 . property $
+  case (runPipeline src, runPipeline src) of
+    (Right a, Right b) => a === b
+    (l, r)             => failWith Nothing ("non-deterministic: " ++ show (isLeft l, isLeft r))
+  where
+    isLeft : Either a b -> Bool
+    isLeft (Left _)  = True
+    isLeft (Right _) = False
+
+--------------------------------------------------------------------------------
+-- Group constructor — Main reads the real files and passes them in.
+--------------------------------------------------------------------------------
+
+export
+mkGroup : (readmeSrc : String) -> (planSrc : String) -> Group
+mkGroup readmeSrc planSrc = MkGroup "Cribrum.Integration"
+  [ ("ext_readme_pipeline_works",    ext_readme_pipeline_works   readmeSrc)
+  , ("ext_readme_carries_witnesses", ext_readme_carries_witnesses readmeSrc)
+  , ("ext_plan_pipeline_works",      ext_plan_pipeline_works      planSrc)
+  , ("ext_plan_carries_witnesses",   ext_plan_carries_witnesses   planSrc)
+  , ("ext_pipeline_deterministic_readme", ext_pipeline_is_deterministic readmeSrc)
+  , ("ext_pipeline_deterministic_plan",   ext_pipeline_is_deterministic planSrc)
   ]

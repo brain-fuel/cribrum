@@ -3,7 +3,7 @@ src/Cribrum/Djot/Parser.idr	n >= 1 && n <= 6	n >= 1 && n <= 7	heading level cap:
 src/Cribrum/Djot/Parser.idr	n >= 1 && n <= 6	n >= 0 && n <= 6	heading level floor: 1 -> 0 (accepts no-hash)
 src/Cribrum/Djot/Parser.idr	(' ' :: rest) => Just	('\t' :: rest) => Just	heading separator: space -> tab
 src/Cribrum/Djot/Parser.idr	parseInlineLine "" = []	parseInlineLine "" = [InlText ""]	inline emit on empty line
-src/Cribrum/Djot/Parser.idr	softThenLine x = InlSoftBreak :: parseInlineLine x	softThenLine x = parseInlineLine x	drop SoftBreak between paragraph lines
+src/Cribrum/Djot/Parser.idr	++ (InlSoftBreak :: go next more)	++ go next more	drop SoftBreak between paragraph lines
 src/Cribrum/Djot/Parser.idr	if isNil ls	if not (isNil ls)	flip heading/paragraph selection condition
 src/Cribrum/Djot/Parser.idr	then go [] (flushNormal (reverse cur) acc) xs	then go cur acc xs	blank line no longer flushes paragraph
 src/Cribrum/Djot/Parser.idr	go cur acc []        = reverse (flushNormal (reverse cur) acc)	go cur acc []        = reverse acc	drop final paragraph at EOF
@@ -128,3 +128,24 @@ src/Cribrum/AA/Typed.idr	isTypedPromoted _                   = False	isTypedProm
 src/Cribrum/AA/Typed.idr	uniqueMainOkBool h = countMains h <= 1	uniqueMainOkBool h = True	Typed: unique-main always passes
 src/Cribrum/AA/Typed.idr	isMainElement (Element "main" _ _) = True	isMainElement (Element "main" _ _) = False	Typed: unique-main never detects <main>
 src/Cribrum/AA/Pass.idr	if mainCount h <= 1	if mainCount h <= 2	Pass: unique-main accepts up to 2 mains
+src/Cribrum/Djot/Parser.idr	isAutolinkBody []   = False	isAutolinkBody []   = True	parser: autolink empty body accepted
+src/Cribrum/Djot/Parser.idr	noWhite && (hasColon || hasAt)	noWhite	parser: autolink heuristic drops scheme/email check
+src/Cribrum/Djot/Parser.idr	noWhite && (hasColon || hasAt)	hasColon || hasAt	parser: autolink heuristic drops whitespace guard
+src/Cribrum/Djot/Parser.idr	noWhite && (hasColon || hasAt)	noWhite && hasColon	parser: autolink heuristic drops email branch
+src/Cribrum/Djot/Parser.idr	noWhite && (hasColon || hasAt)	noWhite && hasAt	parser: autolink heuristic drops url branch
+src/Cribrum/Djot/Parser.idr	[InlLink emptyAttrs (LinkAuto url) [InlText url]]	[InlLink emptyAttrs (LinkAuto url) []]	parser: autolink emits empty label
+src/Cribrum/Djot/Parser.idr	      Just (img, after) =>	      Just (_, after) =>	parser: image body discards parsed image
+src/Cribrum/Djot/Parser.idr	parseImageBody chars = case findClose ']' chars of	parseImageBody chars = Nothing	parser: image parsing disabled
+src/Cribrum/Djot/Parser.idr	InlImage emptyAttrs	InlLink emptyAttrs	parser: image emits as link
+src/Cribrum/Djot/Parser.idr	    '!' => case cs of	    '!' => case [] of	parser: image trigger never matches
+src/Cribrum/Djot/Parser.idr	endsWithBackslash s = case unsnoc (unpack s) of	endsWithBackslash s = False	parser: hardbreak detection disabled
+src/Cribrum/Djot/Parser.idr	  Just (_, '\\') => True	  Just (_, '\\') => False	parser: hardbreak trailing backslash inverted
+src/Cribrum/Djot/Parser.idr	      if endsWithBackslash cur	      if False	parser: hardbreak branch never taken
+src/Cribrum/Djot/Parser.idr	      if endsWithBackslash cur	      if True	parser: hardbreak branch always taken
+src/Cribrum/Djot/Parser.idr	              ++ (InlHardBreak :: go next more)	              ++ (InlSoftBreak :: go next more)	parser: hardbreak downgraded to softbreak
+src/Cribrum/Djot/Parser.idr	dropTrailingChar s = case reverse (unpack s) of	dropTrailingChar s = s	parser: hardbreak drops nothing (backslash leaks into text)
+src/Cribrum/Elaborate.idr	   in Element "img" [ MkHAttr "alt" (Str alt)	   in Element "img" [ MkHAttr "src" (Str alt)	elaborate: image alt attribute renamed to src
+src/Cribrum/Elaborate.idr	                    , MkHAttr "src" (Str url)	                    , MkHAttr "alt" (Str url)	elaborate: image src attribute renamed to alt
+src/Cribrum/Elaborate.idr	   in Element "img" [ MkHAttr "alt" (Str alt)	   in Element "img" [	elaborate: image emits without alt (would break img-alt)
+src/Cribrum/Elaborate.idr	        oneText (InlText s)        = s	        oneText (InlText s)        = ""	elaborate: image alt drops literal text
+src/Cribrum/Elaborate.idr	        oneText (InlEmph ys)       = inlinesPlainText ys	        oneText (InlEmph ys)       = ""	elaborate: image alt drops emphasis children

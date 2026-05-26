@@ -184,7 +184,48 @@ inlineMappingCases =
   , (InlSpan emptyAttrs [InlText "x"],  Element "span"   [] [Text "x"])
   , (InlSmart EmDash,                   Text "\x2014")
   , (InlSmart Ellipsis,                 Text "\x2026")
+  , ( InlImage emptyAttrs (LinkInline "/x.png" Nothing) [InlText "a cat"]
+    , Element "img" [ MkHAttr "alt" (Str "a cat")
+                    , MkHAttr "src" (Str "/x.png")
+                    ] []
+    )
+  , ( InlImage emptyAttrs (LinkInline "/dec.png" Nothing) []
+    , Element "img" [ MkHAttr "alt" (Str "")
+                    , MkHAttr "src" (Str "/dec.png")
+                    ] []
+    )
+  , ( InlLink emptyAttrs (LinkAuto "https://example.org")
+        [InlText "https://example.org"]
+    , Element "a" [MkHAttr "href" (Str "https://example.org")]
+        [Text "https://example.org"]
+    )
   ]
+
+||| Image-with-emphasis-in-alt: nested inlines flatten to the alt text.
+||| Catches regressions where `inlinesPlainText` drops a constructor.
+export
+ext_image_alt_flattens_emphasis : Property
+ext_image_alt_flattens_emphasis = oneShot $
+  elaborateInline
+    (InlImage emptyAttrs (LinkInline "/x.png" Nothing)
+       [InlText "see ", InlEmph [InlText "this"], InlText "!"])
+    === Element "img"
+          [ MkHAttr "alt" (Str "see this!")
+          , MkHAttr "src" (Str "/x.png")
+          ] []
+
+||| Parsed-then-elaborated image is a void `<img alt src>`, valid HTML
+||| and AA-conformant. Pins both the parser/elaborator collaboration
+||| and the void-element invariant for images.
+export
+ext_image_round_trip_through_elaborate : Property
+ext_image_round_trip_through_elaborate = oneShot $
+  case elaborate (MkDoc [Paragraph emptyAttrs
+                          [InlImage emptyAttrs
+                             (LinkInline "/x.png" Nothing)
+                             [InlText "cat"]]]) of
+    Left  e => failWith Nothing ("elaborate failed: " ++ show e)
+    Right _ => success
 
 export
 pddt_inline_mapping : Property
@@ -303,6 +344,8 @@ group = MkGroup "Cribrum.Elaborate"
   , ("ext_unique_main_failure_whole_tree",     ext_unique_main_failure_whole_tree)
   , ("pddt_heading_tags",                      pddt_heading_tags)
   , ("pddt_inline_mapping",                    pddt_inline_mapping)
+  , ("ext_image_alt_flattens_emphasis",        ext_image_alt_flattens_emphasis)
+  , ("ext_image_round_trip_through_elaborate", ext_image_round_trip_through_elaborate)
   , ("pbt_strict_elaboration_total_on_simple_docs",
         pbt_strict_elaboration_total_on_simple_docs)
   , ("pbt_elaborated_doc_isValidHtml",         pbt_elaborated_doc_isValidHtml)

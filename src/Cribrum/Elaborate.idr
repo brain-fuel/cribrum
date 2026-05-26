@@ -190,12 +190,59 @@ elaborateInline (InlLink _ ref xs) =
                 LinkReference label => [MkHAttr "href" (Str ("#" ++ label))]
                 LinkAuto url        => [MkHAttr "href" (Str url)]
    in Element "a" attrs inner
-elaborateInline (InlImage _ _ xs)  =
-  -- Image alt source = concatenated text of children; the full structural-AA
-  -- check ("image must have an alt source") will land with Phase 4. For now
-  -- the alt attribute is omitted in the spike emit; sites that demand alt
-  -- can supply it via an attribute pass.
-  Element "img" [] (assert_total (map elaborateInline xs))
+elaborateInline (InlImage _ ref xs) =
+  -- `<img>` is a void element, so children are not legal HExpr content;
+  -- instead the alt source (concatenated plain text of the parsed alt
+  -- inlines) becomes the `alt` attribute and the link ref becomes the
+  -- `src` attribute. Empty alt (`![](url)`) is permitted by the
+  -- structural img-alt rule (decorative image — WCAG-conformant), so
+  -- the attribute is always emitted regardless of content length.
+  let alt = inlinesPlainText xs
+      url = case ref of
+              LinkInline u _    => u
+              LinkReference l   => "#" ++ l
+              LinkAuto u        => u
+   in Element "img" [ MkHAttr "alt" (Str alt)
+                    , MkHAttr "src" (Str url)
+                    ] []
+  where
+    -- Flatten the alt inlines to a plain-text string. Structural
+    -- markers (emphasis, strong, verbatim, links) contribute their
+    -- text children; hard/soft breaks contribute a single space; the
+    -- handful of leaf forms that aren't text (footnote refs, smart
+    -- punct, etc.) contribute their printed representation so the
+    -- alt source is at least non-empty when authors intended it.
+    inlinesPlainText : List Inline -> String
+    inlinesPlainText is = concat (assert_total (map oneText is))
+      where
+        oneText : Inline -> String
+        oneText (InlText s)        = s
+        oneText InlSoftBreak       = " "
+        oneText InlHardBreak       = " "
+        oneText (InlComment _)     = ""
+        oneText (InlEmph ys)       = inlinesPlainText ys
+        oneText (InlStrong ys)     = inlinesPlainText ys
+        oneText (InlHighlight ys)  = inlinesPlainText ys
+        oneText (InlSuper ys)      = inlinesPlainText ys
+        oneText (InlSub ys)        = inlinesPlainText ys
+        oneText (InlInsert ys)     = inlinesPlainText ys
+        oneText (InlDelete ys)     = inlinesPlainText ys
+        oneText (InlVerbatim _ s)  = s
+        oneText (InlLink _ _ ys)   = inlinesPlainText ys
+        oneText (InlImage _ _ ys)  = inlinesPlainText ys
+        oneText (InlMath _ s)      = s
+        oneText (InlFootnoteRef l) = "[" ++ l ++ "]"
+        oneText (InlSymbol n)      = ":" ++ n ++ ":"
+        oneText (InlRaw _ s)       = s
+        oneText (InlSpan _ ys)     = inlinesPlainText ys
+        oneText (InlSmart sp)      = case sp of
+          LDQuote  => "\x201C"
+          RDQuote  => "\x201D"
+          LSQuote  => "\x2018"
+          RSQuote  => "\x2019"
+          EnDash   => "\x2013"
+          EmDash   => "\x2014"
+          Ellipsis => "\x2026"
 elaborateInline (InlMath _ s)      = Element "code" [] [Text s]
 elaborateInline (InlFootnoteRef l) = Text ("[" ++ l ++ "]")
 elaborateInline (InlSymbol n)      = Text (":" ++ n ++ ":")

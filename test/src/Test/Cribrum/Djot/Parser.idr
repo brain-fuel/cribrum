@@ -627,6 +627,162 @@ ext_inline_nested_emphasis_in_strong = oneShot $
                    ]])
 
 --------------------------------------------------------------------------------
+-- Inline images (`![alt](src)`).
+--------------------------------------------------------------------------------
+
+export
+ext_inline_image_basic : Property
+ext_inline_image_basic = oneShot $
+  parseDoc "see ![cat](/cat.png) here"
+    === ok (doc [paraMulti
+                   [ InlText "see "
+                   , InlImage emptyAttrs (LinkInline "/cat.png" Nothing)
+                       [InlText "cat"]
+                   , InlText " here"
+                   ]])
+
+||| Empty alt is permitted (Djot's decorative-image form).
+export
+ext_inline_image_empty_alt : Property
+ext_inline_image_empty_alt = oneShot $
+  parseDoc "![](/dec.png)"
+    === ok (doc [paraMulti
+                   [ InlImage emptyAttrs (LinkInline "/dec.png" Nothing) []
+                   ]])
+
+||| Alt content is recursively parsed for inline markup.
+export
+ext_inline_image_with_emphasis_alt : Property
+ext_inline_image_with_emphasis_alt = oneShot $
+  parseDoc "![_pic_](/x.png)"
+    === ok (doc [paraMulti
+                   [ InlImage emptyAttrs (LinkInline "/x.png" Nothing)
+                       [InlEmph [InlText "pic"]]
+                   ]])
+
+||| Empty src is rejected (the `!` falls back to literal text).
+export
+ext_inline_image_empty_src_is_text : Property
+ext_inline_image_empty_src_is_text = oneShot $
+  parseDoc "![alt]()"
+    === ok (doc [para "![alt]()"])
+
+||| `!` not followed by a well-formed image body is literal text.
+export
+ext_inline_bang_alone_is_text : Property
+ext_inline_bang_alone_is_text = oneShot $
+  parseDoc "wow!" === ok (doc [para "wow!"])
+
+--------------------------------------------------------------------------------
+-- Autolinks (`<url>` / `<email>`).
+--------------------------------------------------------------------------------
+
+export
+ext_inline_autolink_url : Property
+ext_inline_autolink_url = oneShot $
+  parseDoc "visit <https://example.org> today"
+    === ok (doc [paraMulti
+                   [ InlText "visit "
+                   , InlLink emptyAttrs (LinkAuto "https://example.org")
+                       [InlText "https://example.org"]
+                   , InlText " today"
+                   ]])
+
+export
+ext_inline_autolink_email : Property
+ext_inline_autolink_email = oneShot $
+  parseDoc "ping <me@example.org>"
+    === ok (doc [paraMulti
+                   [ InlText "ping "
+                   , InlLink emptyAttrs (LinkAuto "me@example.org")
+                       [InlText "me@example.org"]
+                   ]])
+
+||| `<x>` without scheme/email is treated as literal text (the simple
+||| heuristic guards against eating every angle-bracketed phrase in
+||| prose; stock Djot is more permissive — full conformance arrives
+||| with the reference-suite gate). The unpaired `<` falls back into
+||| the plain-text accumulator so the surrounding run stays a single
+||| `InlText`.
+export
+ext_inline_angle_bracketed_word_is_text : Property
+ext_inline_angle_bracketed_word_is_text = oneShot $
+  parseDoc "see <foo> below"
+    === ok (doc [para "see <foo> below"])
+
+||| Whitespace inside the brackets disqualifies the autolink.
+export
+ext_inline_angle_with_space_is_text : Property
+ext_inline_angle_with_space_is_text = oneShot $
+  parseDoc "x <a b> y"
+    === ok (doc [para "x <a b> y"])
+
+||| Whitespace inside the brackets disqualifies even when the body
+||| *would* otherwise pass the scheme heuristic. Pins the
+||| `noWhite &&` guard against being dropped in favour of just
+||| `hasColon || hasAt`.
+export
+ext_inline_angle_with_scheme_and_space_is_text : Property
+ext_inline_angle_with_scheme_and_space_is_text = oneShot $
+  parseDoc "x <foo:bar baz> y"
+    === ok (doc [para "x <foo:bar baz> y"])
+
+||| Empty body `<>` is not an autolink — pins
+||| `isAutolinkBody []  = False`.
+export
+ext_inline_angle_empty_is_text : Property
+ext_inline_angle_empty_is_text = oneShot $
+  parseDoc "x <> y"
+    === ok (doc [para "x <> y"])
+
+--------------------------------------------------------------------------------
+-- Hard breaks (trailing `\\` on a paragraph line).
+--------------------------------------------------------------------------------
+
+export
+ext_hardbreak_between_lines : Property
+ext_hardbreak_between_lines = oneShot $
+  parseDoc "alpha\\\nbravo"
+    === ok (doc [paraMulti
+                   [ InlText "alpha"
+                   , InlHardBreak
+                   , InlText "bravo"
+                   ]])
+
+||| Plain soft break (no trailing `\\`) is still a SoftBreak — slice
+||| does not regress prior behaviour.
+export
+ext_softbreak_still_default : Property
+ext_softbreak_still_default = oneShot $
+  parseDoc "alpha\nbravo"
+    === ok (doc [paraMulti
+                   [ InlText "alpha"
+                   , InlSoftBreak
+                   , InlText "bravo"
+                   ]])
+
+||| Trailing `\\` on the *last* line of a paragraph is left literal —
+||| no following line means no hard break is meaningful.
+export
+ext_trailing_backslash_at_eop_is_literal : Property
+ext_trailing_backslash_at_eop_is_literal = oneShot $
+  parseDoc "alpha\\"
+    === ok (doc [paraMulti [InlText "alpha\\"]])
+
+||| Hard break in a three-line paragraph: mixed soft + hard breaks.
+export
+ext_hardbreak_mixed_with_softbreak : Property
+ext_hardbreak_mixed_with_softbreak = oneShot $
+  parseDoc "alpha\\\nbravo\ncharlie"
+    === ok (doc [paraMulti
+                   [ InlText "alpha"
+                   , InlHardBreak
+                   , InlText "bravo"
+                   , InlSoftBreak
+                   , InlText "charlie"
+                   ]])
+
+--------------------------------------------------------------------------------
 -- Unordered & ordered list parsing (Step-8 parser remainder).
 --------------------------------------------------------------------------------
 
@@ -782,4 +938,20 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_mixed_markers_break_list",             ext_mixed_markers_break_list)
   , ("ext_ordered_decimal_list",                 ext_ordered_decimal_list)
   , ("ext_unordered_list_with_inline_emphasis",  ext_unordered_list_with_inline_emphasis)
+  , ("ext_inline_image_basic",                   ext_inline_image_basic)
+  , ("ext_inline_image_empty_alt",               ext_inline_image_empty_alt)
+  , ("ext_inline_image_with_emphasis_alt",       ext_inline_image_with_emphasis_alt)
+  , ("ext_inline_image_empty_src_is_text",       ext_inline_image_empty_src_is_text)
+  , ("ext_inline_bang_alone_is_text",            ext_inline_bang_alone_is_text)
+  , ("ext_inline_autolink_url",                  ext_inline_autolink_url)
+  , ("ext_inline_autolink_email",                ext_inline_autolink_email)
+  , ("ext_inline_angle_bracketed_word_is_text",  ext_inline_angle_bracketed_word_is_text)
+  , ("ext_inline_angle_with_space_is_text",      ext_inline_angle_with_space_is_text)
+  , ("ext_inline_angle_with_scheme_and_space_is_text",
+        ext_inline_angle_with_scheme_and_space_is_text)
+  , ("ext_inline_angle_empty_is_text",           ext_inline_angle_empty_is_text)
+  , ("ext_hardbreak_between_lines",              ext_hardbreak_between_lines)
+  , ("ext_softbreak_still_default",              ext_softbreak_still_default)
+  , ("ext_trailing_backslash_at_eop_is_literal", ext_trailing_backslash_at_eop_is_literal)
+  , ("ext_hardbreak_mixed_with_softbreak",       ext_hardbreak_mixed_with_softbreak)
   ]

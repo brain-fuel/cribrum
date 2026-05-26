@@ -70,9 +70,10 @@ parseHeadingMarker s =
 
 --------------------------------------------------------------------------------
 -- Inline parser. Slice covers plain text + emphasis (`_em_`), strong
--- (`*strong*`), verbatim (`\`code\``), and inline links (`[text](url)`).
--- Smart-punctuation, images, footnotes, autolinks, and reference links
--- arrive in later slices.
+-- (`*strong*`), verbatim (`\`code\``), inline links (`[text](url)`),
+-- inline images (`![alt](src)`), and autolinks (`<url>` / `<email>`).
+-- Smart-punctuation, footnotes, and reference links arrive in later
+-- slices.
 --
 -- Tokenisation strategy: scan a character list left-to-right with an
 -- accumulator of "pending plain characters" that flushes to one
@@ -106,6 +107,20 @@ flushAcc : List Char -> List Inline
 flushAcc []  = []
 flushAcc acc = [InlText (pack (reverse acc))]
 
+||| `True` iff the angle-bracketed body is a plausible Djot autolink:
+||| non-empty, contains no whitespace, and looks like a URL (contains a
+||| `:` scheme separator) OR an email (contains `@`). Stock Djot is more
+||| permissive on the URL form (any scheme is accepted); the heuristic
+||| here keeps the slice tight enough to avoid swallowing every `<x>`
+||| literal in prose.
+isAutolinkBody : List Char -> Bool
+isAutolinkBody []   = False
+isAutolinkBody body =
+  let noWhite = not (any isSpace body)
+      hasColon = any (== ':') body
+      hasAt    = any (== '@') body
+   in noWhite && (hasColon || hasAt)
+
 mutual
   ||| Parse the body inside `[...]` and the matching `(...)` URL. Returns
   ||| an `InlLink` plus the rest of the input on success, `Nothing` on
@@ -128,6 +143,27 @@ mutual
                           , after)
             Nothing => Nothing
           _ => Nothing
+    Nothing => Nothing
+
+  ||| Parse the body inside `[...]` and the matching `(...)` URL for an
+  ||| inline image (`![alt](src)`). Same shape as `parseLinkBody` — the
+  ||| `!` prefix is consumed by the caller. Empty alt is allowed (Djot
+  ||| permits `![](url)` for decorative images); missing src or
+  ||| malformed link bodies fall back so the `!` becomes literal text.
+  parseImageBody : List Char -> Maybe (Inline, List Char)
+  parseImageBody chars = case findClose ']' chars of
+    Just (label, afterClose) => case afterClose of
+      ('(' :: rest) => case findClose ')' rest of
+        Just (url, after) =>
+          if url == []
+            then Nothing
+            else
+              let inner = assert_total (parseInlines label)
+               in Just ( InlImage emptyAttrs
+                           (LinkInline (pack url) Nothing) inner
+                       , after)
+        Nothing => Nothing
+      _ => Nothing
     Nothing => Nothing
 
   ||| Drive the tokenizer with a plain-character accumulator. `acc` is
@@ -165,6 +201,23 @@ mutual
         flushAcc acc ++ [link]
           ++ assert_total (parseInlinesAcc [] after)
       Nothing => assert_total (parseInlinesAcc ('[' :: acc) cs)
+    '!' => case cs of
+      ('[' :: rest) => case parseImageBody rest of
+        Just (img, after) =>
+          flushAcc acc ++ [img]
+            ++ assert_total (parseInlinesAcc [] after)
+        Nothing => assert_total (parseInlinesAcc ('!' :: acc) cs)
+      _ => assert_total (parseInlinesAcc ('!' :: acc) cs)
+    '<' => case findClose '>' cs of
+      Just (inner, after) =>
+        if isAutolinkBody inner
+          then
+            let url = pack inner
+             in flushAcc acc
+                  ++ [InlLink emptyAttrs (LinkAuto url) [InlText url]]
+                  ++ assert_total (parseInlinesAcc [] after)
+          else assert_total (parseInlinesAcc ('<' :: acc) cs)
+      Nothing => assert_total (parseInlinesAcc ('<' :: acc) cs)
     other => assert_total (parseInlinesAcc (other :: acc) cs)
 
   ||| Top-level inline tokenizer over character lists.
@@ -179,14 +232,50 @@ parseInlineLine : String -> List Inline
 parseInlineLine "" = []
 parseInlineLine s  = parseInlines (unpack s)
 
-||| Parse a paragraph body: consecutive non-blank lines joined by SoftBreaks.
-parseParagraphLines : List1 String -> List Inline
-parseParagraphLines (l ::: ls) = case ls of
-  [] => parseInlineLine l
-  _  => parseInlineLine l ++ concatMap softThenLine ls
+||| `True` iff `s` ends with a single backslash. Djot uses a trailing
+||| backslash on a paragraph line as the hard-break marker — the line
+||| break in the rendered output is a real `<br>`, not a soft break that
+||| can be collapsed. Only meaningful between lines of the *same*
+||| paragraph; at end-of-paragraph the backslash is left literal.
+endsWithBackslash : String -> Bool
+endsWithBackslash s = case unsnoc (unpack s) of
+  Just (_, '\\') => True
+  _              => False
   where
-    softThenLine : String -> List Inline
-    softThenLine x = InlSoftBreak :: parseInlineLine x
+    unsnoc : List Char -> Maybe (List Char, Char)
+    unsnoc []        = Nothing
+    unsnoc [x]       = Just ([], x)
+    unsnoc (x :: xs) = case unsnoc xs of
+      Just (init, last) => Just (x :: init, last)
+      Nothing           => Nothing
+
+||| Drop the trailing character (assumed `\\` per `endsWithBackslash`).
+||| Returns the line without its terminating backslash. If the input is
+||| empty, returns empty.
+dropTrailingChar : String -> String
+dropTrailingChar s = case reverse (unpack s) of
+  []        => ""
+  (_ :: rs) => pack (reverse rs)
+
+||| Parse a paragraph body: consecutive non-blank lines joined by
+||| `InlSoftBreak`, OR by `InlHardBreak` when the preceding line ends
+||| with a `\\` (Djot's hard-break marker — the `\\` is stripped from
+||| the line content before parsing).
+|||
+||| End-of-paragraph: the last line's trailing `\\` is left literal
+||| (Djot only treats the marker as a hard break when followed by
+||| another line in the same paragraph).
+parseParagraphLines : List1 String -> List Inline
+parseParagraphLines (l ::: ls) = go l ls
+  where
+    go : (cur : String) -> (rest : List String) -> List Inline
+    go cur []              = parseInlineLine cur
+    go cur (next :: more)  =
+      if endsWithBackslash cur
+        then parseInlineLine (dropTrailingChar cur)
+              ++ (InlHardBreak :: go next more)
+        else parseInlineLine cur
+              ++ (InlSoftBreak :: go next more)
 
 --------------------------------------------------------------------------------
 -- Block grouping over the raw lines.
