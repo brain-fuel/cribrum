@@ -302,10 +302,55 @@ elaborateBlock (ListBlock _ style _ _ items) =
               UnorderedPlus      => "ul"
               TaskList           => "ul"
               Definition         => "dl"
+      -- For TaskList items the reference Djot renderer emits inline
+      -- content directly inside `<li>` (no `<p>` wrap); collapse a
+      -- single-`Paragraph` body to its inline children so the gate
+      -- matches without the `<p>` wrapper.
+      unwrapTight : List Block -> List HExpr
+      unwrapTight [Paragraph _ inls] = map elaborateInline inls
+      unwrapTight bs                 =
+        assert_total (map elaborateBlock bs)
+
+      -- TaskList items carry `checked = Just bool`. The reference
+      -- renderer adds a `class="checked"` / `"unchecked"` attribute
+      -- on the `<li>` itself rather than emitting a checkbox input.
+      taskLiAttrs : Maybe Bool -> List HAttr
+      taskLiAttrs (Just True)  = [MkHAttr "class" (Str "checked")]
+      taskLiAttrs (Just False) = [MkHAttr "class" (Str "unchecked")]
+      taskLiAttrs Nothing      = []
+
       elabItem : ListItem -> HExpr
       elabItem i = Element "li" []
                      (assert_total (map elaborateBlock (content i)))
-   in Element tag [] (map elabItem items)
+
+      elabTaskItem : ListItem -> HExpr
+      elabTaskItem i =
+        Element "li" (taskLiAttrs (checked i)) (unwrapTight (content i))
+
+      -- Definition items decompose into one `<dt>` (term) and an
+      -- optional `<dd>` (body) sibling pair. Items with no body emit
+      -- just the `<dt>`. Body blocks elaborate normally so multi-
+      -- paragraph definitions / nested lists round-trip.
+      defPair : ListItem -> List HExpr
+      defPair i =
+        let termInls = case term i of
+                         Just ts => ts
+                         Nothing => []
+            dt = Element "dt" [] (map elaborateInline termInls)
+            dd = case content i of
+                   [] => []
+                   bs => [Element "dd" []
+                            (assert_total (map elaborateBlock bs))]
+         in dt :: dd
+
+   in case style of
+        TaskList   =>
+          Element "ul" [MkHAttr "class" (Str "task-list")]
+            (map elabTaskItem items)
+        Definition =>
+          Element "dl" [] (concatMap defPair items)
+        _          =>
+          Element tag [] (map elabItem items)
 elaborateBlock (Table _ _ rows) =
   -- Emit `<table>` with `<thead>` for header rows (set by the parser
   -- when an alignment row was present) and `<tbody>` for the body

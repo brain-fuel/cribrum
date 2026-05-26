@@ -350,6 +350,11 @@ data LineGroup : Type where
   ||| parser. Each line is a row source; the cell parse + alignment
   ||| classification happens in `tableGroupToBlock`.
   TableGroup  : List1 String        -> LineGroup
+  ||| A definition-list run: `: term` openers plus their indented
+  ||| (and blank-line-bridged) continuation lines. Carried verbatim so
+  ||| the def-list parser can split items, identify terms, and parse
+  ||| each item's body as nested blocks.
+  DefListGroup : List1 String       -> LineGroup
 
 ||| `True` iff the line starts with `>` followed by space, OR is exactly `>`
 ||| (an empty quote line — Djot allows this).
@@ -398,6 +403,23 @@ isTableLine s = case unpack (trim s) of
   ('|' :: rest) => any (== '|') rest
   _             => False
 
+||| `True` iff `s` is a definition-list opener: `: ` (colon-space) or
+||| `:` alone (column-0; no leading indent). Lines that merely begin
+||| with `:` but lack the trailing space (like `:emoji:` symbols inside
+||| a paragraph) do not open a def list.
+isDefListOpener : String -> Bool
+isDefListOpener s = case unpack s of
+  (':' :: ' ' :: _) => True
+  [':']             => True
+  _                 => False
+
+||| `True` iff `s` begins with at least one space (a continuation line
+||| for an open def-list item).
+isIndentedLine : String -> Bool
+isIndentedLine s = case unpack s of
+  (' ' :: _) => True
+  _          => False
+
 ||| Strip the leading `> ` (or just `>`) prefix, returning the inner line.
 stripQuotePrefix : String -> String
 stripQuotePrefix s = case unpack s of
@@ -444,6 +466,27 @@ groupLines xs = go [] [] xs
         then (reverse body, ls)
         else collectCodeBody n (l :: body) ls
 
+    -- Greedily collect def-list continuation lines from `xs`.
+    -- Returns `(continuation, rest-after-group)`. A trailing run of
+    -- blanks at the end of the file is consumed (they are stripped
+    -- on the way out by the normal blank-line drop path); a blank line
+    -- followed by a non-indented non-opener line ends the group.
+    collectDefList : List String -> (List String, List String)
+    collectDefList []        = ([], [])
+    collectDefList (l :: ls) =
+      if isBlankLine l
+        then case ls of
+          [] => ([], [])
+          (l' :: _) =>
+            if isIndentedLine l' || isDefListOpener l'
+              then let (more, rest) = collectDefList ls
+                    in (l :: more, rest)
+              else ([], l :: ls)
+        else if isIndentedLine l || isDefListOpener l
+          then let (more, rest) = collectDefList ls
+                in (l :: more, rest)
+          else ([], l :: ls)
+
     go : (cur : List String) -> (acc : List LineGroup)
        -> List String -> List LineGroup
     go cur acc []        = reverse (flushNormal (reverse cur) acc)
@@ -475,7 +518,19 @@ groupLines xs = go [] [] xs
                         (r :: rs)  =>
                           TableGroup (r ::: rs) :: acc'
                    in assert_total (go [] table rest)
-                else go (x :: cur) acc xs
+                else if isDefListOpener x
+                  then
+                    -- Def-list runs span blank lines (a loose item's
+                    -- body is a paragraph at indent ≥ 2 separated from
+                    -- the term line by a blank). Collect all immediate
+                    -- continuation lines (blank, indented, or another
+                    -- `:` opener); stop on the first non-blank,
+                    -- non-indented, non-opener line.
+                    let (rest, rs) = collectDefList xs
+                        acc'       = flushNormal (reverse cur) acc
+                        defList    = DefListGroup (x ::: rest)
+                     in assert_total (go [] (defList :: acc') rs)
+                  else go (x :: cur) acc xs
 
 --------------------------------------------------------------------------------
 -- Group -> Block.
@@ -497,22 +552,45 @@ isThematicBreak s =
 
 --------------------------------------------------------------------------------
 -- List parsing. The slice covers unordered lists with `-`, `*`, `+`
--- markers and ordered lists with `<n>. ` decimal markers. Nested lists,
--- task lists, definition lists, and continuation-line indentation
--- arrive in later slices.
+-- markers, ordered lists with `<n>. ` decimal markers, and task-list
+-- items (`- [ ]`/`- [x]` and `+`/`*` variants). Nested lists,
+-- continuation-line indentation, and loose task lists arrive in later
+-- slices; definition lists land via `DefListGroup` (a separate
+-- LineGroup variant) since their multi-line structure spans the blank
+-- lines `groupLines` would otherwise split on.
 --------------------------------------------------------------------------------
 
-||| Recognise a list-item line. Returns `(style, body)` where `body` is
-||| the inline content (everything after the marker + space).
-isListLine : String -> Maybe (ListStyle, String)
+||| Recognise a task-list checkbox at the start of `cs`. Returns
+||| `Just (checked, body)` for `[ ] <body>` (unchecked) / `[x] <body>` /
+||| `[X] <body>` (checked); `Nothing` otherwise.
+parseTaskMarker : List Char -> Maybe (Bool, String)
+parseTaskMarker ('[' :: ' ' :: ']' :: ' ' :: rest) = Just (False, pack rest)
+parseTaskMarker ('[' :: 'x' :: ']' :: ' ' :: rest) = Just (True,  pack rest)
+parseTaskMarker ('[' :: 'X' :: ']' :: ' ' :: rest) = Just (True,  pack rest)
+parseTaskMarker _                                  = Nothing
+
+||| Recognise a list-item line. Returns `(style, body, checked)` where
+||| `body` is the inline content (everything after the marker — and the
+||| task-checkbox token, when present) and `checked` is `Just bool`
+||| only for `TaskList` items.
+isListLine : String -> Maybe (ListStyle, String, Maybe Bool)
 isListLine s = case unpack s of
-  ('-' :: ' ' :: rest) => Just (UnorderedDash,     pack rest)
-  ('*' :: ' ' :: rest) => Just (UnorderedAsterisk, pack rest)
-  ('+' :: ' ' :: rest) => Just (UnorderedPlus,     pack rest)
+  ('-' :: ' ' :: rest) => Just (taskOr UnorderedDash     rest)
+  ('*' :: ' ' :: rest) => Just (taskOr UnorderedAsterisk rest)
+  ('+' :: ' ' :: rest) => Just (taskOr UnorderedPlus     rest)
   cs                   => case parseOrderedMarker cs of
-    Just (digits, body) => Just (OrderedDecimal, pack body)
+    Just (digits, body) => Just (OrderedDecimal, pack body, Nothing)
     Nothing             => Nothing
   where
+    -- If `rest` opens with a task-list checkbox, the item becomes a
+    -- TaskList item (the bullet flavour collapses — TaskList is its
+    -- own ListStyle per `Cribrum.Djot.Surface`). Otherwise the bullet
+    -- flavour is kept and the item is a regular unordered item.
+    taskOr : ListStyle -> List Char -> (ListStyle, String, Maybe Bool)
+    taskOr fallback rest = case parseTaskMarker rest of
+      Just (checked, body) => (TaskList, body,     Just checked)
+      Nothing              => (fallback, pack rest, Nothing)
+
     -- Consume one or more digits followed by ". ". Returns
     -- `(digits, rest-after-space)` on success.
     spanDigits : List Char -> (List Char, List Char)
@@ -533,8 +611,8 @@ isListLine s = case unpack s of
 ||| / loose / nested items arrive in later slices.
 parseListItem : String -> Maybe (ListStyle, ListItem)
 parseListItem line = case isListLine line of
-  Just (style, body) =>
-    Just (style, MkLI emptyAttrs Nothing Nothing
+  Just (style, body, checked) =>
+    Just (style, MkLI emptyAttrs checked Nothing
                       [Paragraph emptyAttrs (parseInlineLine body)])
   Nothing => Nothing
 
@@ -722,6 +800,62 @@ makeRow header aligns line =
     zipWithAlign (a :: as) (c :: cs) =
       makeCell a c :: zipWithAlign as cs
 
+--------------------------------------------------------------------------------
+-- Definition-list group processing.
+--------------------------------------------------------------------------------
+
+||| Strip up to `n` leading space characters from `s`. Tabs are not
+||| expanded; lines indented with `\t` are passed through unchanged.
+dropLeadingSpaces : Nat -> String -> String
+dropLeadingSpaces n s = pack (drop' n (unpack s))
+  where
+    drop' : Nat -> List Char -> List Char
+    drop' Z     xs               = xs
+    drop' (S _) []               = []
+    drop' (S k) (' ' :: xs)      = drop' k xs
+    drop' (S _) xs               = xs
+
+||| Strip a def-list opener prefix from a line. `: foo` -> `foo`,
+||| `:` -> `""`, anything else -> the input verbatim.
+stripDefOpener : String -> String
+stripDefOpener s = case unpack s of
+  (':' :: ' ' :: rest) => pack rest
+  [':']                => ""
+  _                    => s
+
+||| Group raw def-list lines into per-item runs. Each run starts with
+||| an opener line (kept as the run's first element); blanks and
+||| continuation lines stay attached to the preceding opener.
+splitDefItems : List String -> List (List String)
+splitDefItems []        = []
+splitDefItems (l :: ls) = go [l] [] ls
+  where
+    -- `cur` is the current item's lines in reverse order; `acc` is the
+    -- accumulated items in reverse order. Each `: ` line starts a new
+    -- run.
+    go : (cur : List String) -> (acc : List (List String))
+       -> List String -> List (List String)
+    go cur acc []        = reverse (reverse cur :: acc)
+    go cur acc (x :: xs) =
+      if isDefListOpener x
+        then go [x] (reverse cur :: acc) xs
+        else go (x :: cur) acc xs
+
+||| Split a per-item run into `(termLines, bodyLines)`. The term is the
+||| first paragraph: the opener line (with `: ` stripped) plus any
+||| immediately-following non-blank continuation lines. The body is
+||| everything after the first blank, with the dedent (up to 2 spaces)
+||| applied so the inner block parser can re-grouping the body
+||| recursively.
+splitTermBody : List String -> (List String, List String)
+splitTermBody [] = ([], [])
+splitTermBody (opener :: more) =
+  let termHead     = stripDefOpener opener
+      (cont, rest) = spanList (not . isBlankLine) more
+      bodyRaw      = dropWhile isBlankLine rest
+      body         = map (dropLeadingSpaces 2) bodyRaw
+   in (termHead :: cont, body)
+
 ||| Convert a TableGroup's raw lines into a `Table` block.
 |||
 ||| If the second row is an alignment row, the first row becomes the
@@ -743,15 +877,47 @@ tableGroupToBlock (l ::: ls) = case ls of
     let row = makeRow False [] l
      in Table emptyAttrs Nothing [row]
 
-||| Convert a LineGroup into a Block. Quote groups recurse.
-public export
-groupToBlock : LineGroup -> Block
-groupToBlock (NormalGroup g)    = normalGroupToBlock g
-groupToBlock (QuoteGroup  gs)   =
-  BlockQuote emptyAttrs (assert_total (map groupToBlock gs))
-groupToBlock (CodeGroup info b) =
-  CodeBlock emptyAttrs info b
-groupToBlock (TableGroup rows)  = tableGroupToBlock rows
+mutual
+  ||| Build a `Definition`-style `ListBlock` from a `DefListGroup`'s
+  ||| raw lines. Each per-item run becomes a `ListItem` whose `term` is
+  ||| the inline parse of the term paragraph and whose `content` is
+  ||| the body parsed recursively as blocks.
+  defListGroupToBlock : List1 String -> Block
+  defListGroupToBlock (l ::: ls) =
+    let items = map mkItem (splitDefItems (l :: ls))
+     in ListBlock emptyAttrs Definition Nothing False items
+    where
+      mkItem : List String -> ListItem
+      mkItem run =
+        let (termLs, bodyLs) = splitTermBody run
+            termSoft         = parseTermLines termLs
+            bodyBlocks       = parseBodyBlocks bodyLs
+         in MkLI emptyAttrs Nothing (Just termSoft) bodyBlocks
+
+  ||| Inline-parse the term paragraph: each line through
+  ||| `parseInlineLine`, joined by `InlSoftBreak`.
+  parseTermLines : List String -> List Inline
+  parseTermLines []        = []
+  parseTermLines (l :: ls) = case ls of
+    [] => parseInlineLine l
+    _  => parseInlineLine l ++ (InlSoftBreak :: parseTermLines ls)
+
+  ||| Parse the dedented body lines as a sequence of blocks by re-
+  ||| running the block grouper + group→block conversion.
+  parseBodyBlocks : List String -> List Block
+  parseBodyBlocks ls =
+    assert_total (map groupToBlock (groupLines ls))
+
+  ||| Convert a LineGroup into a Block. Quote groups recurse.
+  public export
+  groupToBlock : LineGroup -> Block
+  groupToBlock (NormalGroup g)    = normalGroupToBlock g
+  groupToBlock (QuoteGroup  gs)   =
+    BlockQuote emptyAttrs (assert_total (map groupToBlock gs))
+  groupToBlock (CodeGroup info b) =
+    CodeBlock emptyAttrs info b
+  groupToBlock (TableGroup rows)  = tableGroupToBlock rows
+  groupToBlock (DefListGroup rs)  = defListGroupToBlock rs
 
 -- ============================================================
 -- Reference-link resolution (two-pass).

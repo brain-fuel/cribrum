@@ -1169,6 +1169,55 @@ ext_unordered_list_with_inline_emphasis = oneShot $
                           ]]
                    ]])
 
+--------------------------------------------------------------------------------
+-- Task lists + definition lists (P5.4 remainder slice).
+--------------------------------------------------------------------------------
+
+export
+ext_task_list_unchecked_then_checked : Property
+ext_task_list_unchecked_then_checked = oneShot $
+  parseDoc "- [ ] one\n- [x] two"
+    === ok (doc [ListBlock emptyAttrs TaskList Nothing True
+                   [ MkLI emptyAttrs (Just False) Nothing
+                       [Paragraph emptyAttrs [InlText "one"]]
+                   , MkLI emptyAttrs (Just True) Nothing
+                       [Paragraph emptyAttrs [InlText "two"]]
+                   ]])
+
+export
+ext_task_list_uppercase_x_is_checked : Property
+ext_task_list_uppercase_x_is_checked = oneShot $
+  parseDoc "* [X] done"
+    === ok (doc [ListBlock emptyAttrs TaskList Nothing True
+                   [ MkLI emptyAttrs (Just True) Nothing
+                       [Paragraph emptyAttrs [InlText "done"]]
+                   ]])
+
+export
+ext_definition_list_basic : Property
+ext_definition_list_basic = oneShot $
+  parseDoc ": apple\n\n  red fruit\n: banana\n\n  yellow fruit"
+    === ok (doc [ListBlock emptyAttrs Definition Nothing False
+                   [ MkLI emptyAttrs Nothing
+                       (Just [InlText "apple"])
+                       [Paragraph emptyAttrs [InlText "red fruit"]]
+                   , MkLI emptyAttrs Nothing
+                       (Just [InlText "banana"])
+                       [Paragraph emptyAttrs [InlText "yellow fruit"]]
+                   ]])
+
+export
+ext_definition_list_term_only : Property
+ext_definition_list_term_only = oneShot $
+  -- An opener with no body produces an item whose `term` is the
+  -- inline content and whose `content` is empty.
+  parseDoc ": orange"
+    === ok (doc [ListBlock emptyAttrs Definition Nothing False
+                   [ MkLI emptyAttrs Nothing
+                       (Just [InlText "orange"])
+                       []
+                   ]])
+
 export
 group : Group
 group = MkGroup "Cribrum.Djot.Parser"
@@ -1251,6 +1300,10 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_mixed_markers_break_list",             ext_mixed_markers_break_list)
   , ("ext_ordered_decimal_list",                 ext_ordered_decimal_list)
   , ("ext_unordered_list_with_inline_emphasis",  ext_unordered_list_with_inline_emphasis)
+  , ("ext_task_list_unchecked_then_checked",     ext_task_list_unchecked_then_checked)
+  , ("ext_task_list_uppercase_x_is_checked",     ext_task_list_uppercase_x_is_checked)
+  , ("ext_definition_list_basic",                ext_definition_list_basic)
+  , ("ext_definition_list_term_only",            ext_definition_list_term_only)
   , ("ext_inline_image_basic",                   ext_inline_image_basic)
   , ("ext_inline_image_empty_alt",               ext_inline_image_empty_alt)
   , ("ext_inline_image_with_emphasis_alt",       ext_inline_image_with_emphasis_alt)

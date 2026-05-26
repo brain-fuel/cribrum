@@ -432,6 +432,48 @@ pbt_parse_elaborate_round_trip = property $ do
       Right _ => success
       Left  e => failWith Nothing ("elaborate failed: " ++ show e)
 
+--------------------------------------------------------------------------------
+-- Task lists + definition lists (P5.4 remainder slice).
+--------------------------------------------------------------------------------
+
+export
+ext_task_list_emits_class_attrs : Property
+ext_task_list_emits_class_attrs = oneShot $
+  -- TaskList items unwrap a single Paragraph body so the rendered
+  -- `<li class="…">` directly contains its inline content (matches
+  -- the reference Djot renderer's tight-task-list output).
+  elaborateDoc
+    (doc [ListBlock emptyAttrs TaskList Nothing True
+            [ MkLI emptyAttrs (Just False) Nothing
+                [Paragraph emptyAttrs [InlText "one"]]
+            , MkLI emptyAttrs (Just True) Nothing
+                [Paragraph emptyAttrs [InlText "two"]]
+            ]])
+    === Element "main" []
+          [ Element "ul" [MkHAttr "class" (Str "task-list")]
+              [ Element "li" [MkHAttr "class" (Str "unchecked")]
+                  [Text "one"]
+              , Element "li" [MkHAttr "class" (Str "checked")]
+                  [Text "two"]
+              ]]
+
+export
+ext_definition_list_emits_dl_dt_dd : Property
+ext_definition_list_emits_dl_dt_dd = oneShot $
+  elaborateDoc
+    (doc [ListBlock emptyAttrs Definition Nothing False
+            [ MkLI emptyAttrs Nothing (Just [InlText "apple"])
+                [Paragraph emptyAttrs [InlText "red fruit"]]
+            , MkLI emptyAttrs Nothing (Just [InlText "orange"]) []
+            ]])
+    === Element "main" []
+          [ Element "dl" []
+              [ Element "dt" [] [Text "apple"]
+              , Element "dd" []
+                  [Element "p" [] [Text "red fruit"]]
+              , Element "dt" [] [Text "orange"]
+              ]]
+
 export
 group : Group
 group = MkGroup "Cribrum.Elaborate"
@@ -466,4 +508,6 @@ group = MkGroup "Cribrum.Elaborate"
         pbt_strict_elaboration_total_on_simple_docs)
   , ("pbt_elaborated_doc_isValidHtml",         pbt_elaborated_doc_isValidHtml)
   , ("pbt_parse_elaborate_round_trip",         pbt_parse_elaborate_round_trip)
+  , ("ext_task_list_emits_class_attrs",        ext_task_list_emits_class_attrs)
+  , ("ext_definition_list_emits_dl_dt_dd",     ext_definition_list_emits_dl_dt_dd)
   ]
