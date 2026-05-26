@@ -71,9 +71,9 @@ parseHeadingMarker s =
 --------------------------------------------------------------------------------
 -- Inline parser. Slice covers plain text + emphasis (`_em_`), strong
 -- (`*strong*`), verbatim (`\`code\``), inline links (`[text](url)`),
--- inline images (`![alt](src)`), and autolinks (`<url>` / `<email>`).
--- Smart-punctuation, footnotes, and reference links arrive in later
--- slices.
+-- inline images (`![alt](src)`), autolinks (`<url>` / `<email>`), and
+-- smart punctuation (`--`/`---`/`...`/`"`/`'`). Footnotes and
+-- reference links arrive in later slices.
 --
 -- Tokenisation strategy: scan a character list left-to-right with an
 -- accumulator of "pending plain characters" that flushes to one
@@ -106,6 +106,18 @@ findClose c (x :: xs) =
 flushAcc : List Char -> List Inline
 flushAcc []  = []
 flushAcc acc = [InlText (pack (reverse acc))]
+
+||| `True` iff a smart quote at this point should open (left-curly) vs
+||| close (right-curly). Open if there is no preceding character (start
+||| of the inline run) or the most-recently-seen character is
+||| whitespace or an opening punctuation form (`(`, `[`, `{`).
+|||
+||| `acc` is the reversed list of plain characters already buffered, so
+||| `head acc` is the most-recently-seen character.
+isOpenContext : List Char -> Bool
+isOpenContext []        = True
+isOpenContext (c :: _)  =
+  isSpace c || c == '(' || c == '[' || c == '{'
 
 ||| `True` iff the angle-bracketed body is a plausible Djot autolink:
 ||| non-empty, contains no whitespace, and looks like a URL (contains a
@@ -218,6 +230,30 @@ mutual
                   ++ assert_total (parseInlinesAcc [] after)
           else assert_total (parseInlinesAcc ('<' :: acc) cs)
       Nothing => assert_total (parseInlinesAcc ('<' :: acc) cs)
+    -- Smart punctuation: dash runs, ellipsis, and orientation-aware
+    -- curly quotes. Order matters — longer runs match first so `---`
+    -- becomes an em-dash, not en-dash + literal `-`.
+    '-' => case cs of
+      ('-' :: '-' :: rest) =>
+        flushAcc acc ++ [InlSmart EmDash]
+          ++ assert_total (parseInlinesAcc [] rest)
+      ('-' :: rest) =>
+        flushAcc acc ++ [InlSmart EnDash]
+          ++ assert_total (parseInlinesAcc [] rest)
+      _ => assert_total (parseInlinesAcc ('-' :: acc) cs)
+    '.' => case cs of
+      ('.' :: '.' :: rest) =>
+        flushAcc acc ++ [InlSmart Ellipsis]
+          ++ assert_total (parseInlinesAcc [] rest)
+      _ => assert_total (parseInlinesAcc ('.' :: acc) cs)
+    '"' =>
+      let sp = if isOpenContext acc then LDQuote else RDQuote
+       in flushAcc acc ++ [InlSmart sp]
+            ++ assert_total (parseInlinesAcc [] cs)
+    '\'' =>
+      let sp = if isOpenContext acc then LSQuote else RSQuote
+       in flushAcc acc ++ [InlSmart sp]
+            ++ assert_total (parseInlinesAcc [] cs)
     other => assert_total (parseInlinesAcc (other :: acc) cs)
 
   ||| Top-level inline tokenizer over character lists.

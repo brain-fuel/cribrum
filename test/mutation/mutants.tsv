@@ -149,3 +149,13 @@ src/Cribrum/Elaborate.idr	                    , MkHAttr "src" (Str url)	        
 src/Cribrum/Elaborate.idr	   in Element "img" [ MkHAttr "alt" (Str alt)	   in Element "img" [	elaborate: image emits without alt (would break img-alt)
 src/Cribrum/Elaborate.idr	        oneText (InlText s)        = s	        oneText (InlText s)        = ""	elaborate: image alt drops literal text
 src/Cribrum/Elaborate.idr	        oneText (InlEmph ys)       = inlinesPlainText ys	        oneText (InlEmph ys)       = ""	elaborate: image alt drops emphasis children
+src/Cribrum/Djot/Parser.idr	isOpenContext []        = True	isOpenContext []        = False	parser: quote orientation flips start-of-string default
+src/Cribrum/Djot/Parser.idr	  isSpace c || c == '(' || c == '[' || c == '{'	  False	parser: quote orientation always close
+src/Cribrum/Djot/Parser.idr	  isSpace c || c == '(' || c == '[' || c == '{'	  True	parser: quote orientation always open
+src/Cribrum/Djot/Parser.idr	      ('-' :: '-' :: rest) =>	      ('-' :: '-' :: rest) | False =>	parser: em-dash detection disabled
+src/Cribrum/Djot/Parser.idr	        flushAcc acc ++ [InlSmart EmDash]	        flushAcc acc ++ [InlSmart EnDash]	parser: em-dash downgraded to en-dash
+src/Cribrum/Djot/Parser.idr	        flushAcc acc ++ [InlSmart EnDash]	        flushAcc acc ++ [InlSmart EmDash]	parser: en-dash upgraded to em-dash
+src/Cribrum/Djot/Parser.idr	      ('.' :: '.' :: rest) =>	      ('.' :: '.' :: rest) | False =>	parser: ellipsis detection disabled
+src/Cribrum/Djot/Parser.idr	        flushAcc acc ++ [InlSmart Ellipsis]	        flushAcc acc ++ [InlText "..."]	parser: ellipsis emits literal
+src/Cribrum/Djot/Parser.idr	      let sp = if isOpenContext acc then LDQuote else RDQuote	      let sp = if isOpenContext acc then RDQuote else LDQuote	parser: double-quote orientation inverted
+src/Cribrum/Djot/Parser.idr	      let sp = if isOpenContext acc then LSQuote else RSQuote	      let sp = if isOpenContext acc then RSQuote else LSQuote	parser: single-quote orientation inverted

@@ -149,11 +149,12 @@ ext_thematic_with_surrounding_whitespace : Property
 ext_thematic_with_surrounding_whitespace = oneShot $
   parseDoc "   ---   " === ok (doc [ThematicBreak emptyAttrs])
 
-||| Two dashes is NOT a thematic break — falls through to paragraph.
+||| Two dashes is NOT a thematic break — falls through to paragraph,
+||| where the smart-punctuation pass converts it to an en-dash.
 export
 ext_two_dashes_is_paragraph : Property
 ext_two_dashes_is_paragraph = oneShot $
-  parseDoc "--" === ok (doc [para "--"])
+  parseDoc "--" === ok (doc [paraMulti [InlSmart EnDash]])
 
 ||| Mixed `-`/`*` is NOT a thematic break.
 export
@@ -171,24 +172,26 @@ ext_para_then_break_then_para = oneShot $
     === ok (doc [para "before", ThematicBreak emptyAttrs, para "after"])
 
 ||| A `---` line GLUED to a paragraph (no surrounding blank line) is
-||| currently absorbed into the paragraph. This is a known limitation of the
-||| single-pass slice; a later iteration will treat a thematic break as a
-||| paragraph terminator. Pin the current behaviour so the regression is
-||| explicit.
+||| absorbed into the paragraph, where the smart-punctuation pass then
+||| converts it into an em-dash. This is a known limitation of the
+||| single-pass block slice; a later iteration will treat a thematic
+||| break as a paragraph terminator. Pin the current behaviour so the
+||| regression is explicit.
 export
 ext_dashes_glued_to_paragraph_is_paragraph : Property
 ext_dashes_glued_to_paragraph_is_paragraph = oneShot $
   parseDoc "hi\n---"
-    === ok (doc [paraMulti [InlText "hi", InlSoftBreak, InlText "---"]])
+    === ok (doc [paraMulti [InlText "hi", InlSoftBreak, InlSmart EmDash]])
 
-||| Symmetric case: `---` as the FIRST line of a multi-line group is also
-||| absorbed (NOT a thematic break that drops the rest of the group).
-||| Pins the `isNil ls && ...` guard against mutants that drop the `isNil ls`.
+||| Symmetric case: `---` as the FIRST line of a multi-line group is
+||| also absorbed into the paragraph (NOT a thematic break that drops
+||| the rest of the group) and smart-puncts to an em-dash. Pins the
+||| `isNil ls && ...` guard against mutants that drop the `isNil ls`.
 export
 ext_dashes_first_in_multi_line_group_is_paragraph : Property
 ext_dashes_first_in_multi_line_group_is_paragraph = oneShot $
   parseDoc "---\nbody"
-    === ok (doc [paraMulti [InlText "---", InlSoftBreak, InlText "body"]])
+    === ok (doc [paraMulti [InlSmart EmDash, InlSoftBreak, InlText "body"]])
 
 --------------------------------------------------------------------------------
 -- PDDTs.
@@ -255,27 +258,24 @@ pddt_thematic_breaks = withTests 1 . property $ do
   for_ thematicCases $ \s =>
     parseDoc s === ok (doc [ThematicBreak emptyAttrs])
 
-||| Variants that look thematic-ish but are NOT. Each parses to a
-||| paragraph with a single `InlText` of the original line, since none
-||| of the inline markers (`*`/`_`/`\``/`[`) pair within the line.
-||| `- - -` was historically in this list as a "whitespace-separated
-||| thematic break (later slice)" placeholder, but the list parser now
-||| recognises `- ` as an unordered list-item marker — that case
-||| migrated to a dedicated list EXT below.
-nonThematicCases : List String
+||| Variants that look thematic-ish but are NOT a block-level
+||| ThematicBreak. Some now smart-punct inside the paragraph (e.g.
+||| `--` becomes en-dash, `---` em-dash) but the block-level claim
+||| holds: none of these inputs produces a ThematicBreak.
+nonThematicCases : List (String, Block)
 nonThematicCases =
-  [ "--"        -- only 2
-  , "**"
-  , "-*-"       -- mixed, no closing `*`
-  , "-=-"       -- non-marker chars
-  , "===---"    -- garbage prefix
+  [ ("--",      paraMulti [InlSmart EnDash])
+  , ("**",      para "**")
+  , ("-*-",     para "-*-")
+  , ("-=-",     para "-=-")
+  , ("===---",  paraMulti [InlText "===", InlSmart EmDash])
   ]
 
 export
 pddt_non_thematic : Property
 pddt_non_thematic = withTests 1 . property $ do
-  for_ nonThematicCases $ \s =>
-    parseDoc s === ok (doc [para s])
+  for_ nonThematicCases $ \(s, expected) =>
+    parseDoc s === ok (doc [expected])
 
 --------------------------------------------------------------------------------
 -- PBTs.
@@ -783,6 +783,99 @@ ext_hardbreak_mixed_with_softbreak = oneShot $
                    ]])
 
 --------------------------------------------------------------------------------
+-- Smart punctuation (`--`/`---`/`...`/`"`/`'`).
+--------------------------------------------------------------------------------
+
+export
+ext_smart_endash : Property
+ext_smart_endash = oneShot $
+  parseDoc "a--b"
+    === ok (doc [paraMulti
+                   [InlText "a", InlSmart EnDash, InlText "b"]])
+
+export
+ext_smart_emdash : Property
+ext_smart_emdash = oneShot $
+  parseDoc "a---b"
+    === ok (doc [paraMulti
+                   [InlText "a", InlSmart EmDash, InlText "b"]])
+
+||| Em-dash takes precedence over en-dash on a 3-dash run.
+export
+ext_smart_emdash_wins_over_endash : Property
+ext_smart_emdash_wins_over_endash = oneShot $
+  parseDoc "x---y--z"
+    === ok (doc [paraMulti
+                   [ InlText "x", InlSmart EmDash, InlText "y"
+                   , InlSmart EnDash, InlText "z"
+                   ]])
+
+||| Four dashes = em-dash + literal `-`. Six dashes = two em-dashes.
+export
+ext_smart_four_dashes : Property
+ext_smart_four_dashes = oneShot $
+  parseDoc "a----b"
+    === ok (doc [paraMulti
+                   [InlText "a", InlSmart EmDash, InlText "-b"]])
+
+export
+ext_smart_ellipsis : Property
+ext_smart_ellipsis = oneShot $
+  parseDoc "wait... maybe"
+    === ok (doc [paraMulti
+                   [InlText "wait", InlSmart Ellipsis, InlText " maybe"]])
+
+||| Two dots stay literal.
+export
+ext_smart_two_dots_is_literal : Property
+ext_smart_two_dots_is_literal = oneShot $
+  parseDoc "ok.." === ok (doc [para "ok.."])
+
+||| Quote orientation: open after start-of-string, close after letter.
+export
+ext_smart_double_quote_orientation : Property
+ext_smart_double_quote_orientation = oneShot $
+  parseDoc "\"hello\""
+    === ok (doc [paraMulti
+                   [ InlSmart LDQuote
+                   , InlText "hello"
+                   , InlSmart RDQuote
+                   ]])
+
+export
+ext_smart_single_quote_apostrophe : Property
+ext_smart_single_quote_apostrophe = oneShot $
+  parseDoc "Djot's"
+    === ok (doc [paraMulti
+                   [InlText "Djot", InlSmart RSQuote, InlText "s"]])
+
+||| Open after whitespace, close after letter.
+export
+ext_smart_single_quote_pair : Property
+ext_smart_single_quote_pair = oneShot $
+  parseDoc "say 'hi' now"
+    === ok (doc [paraMulti
+                   [ InlText "say "
+                   , InlSmart LSQuote
+                   , InlText "hi"
+                   , InlSmart RSQuote
+                   , InlText " now"
+                   ]])
+
+||| Quote after `(` is opening (opening-punct context).
+export
+ext_smart_quote_after_open_paren_is_open : Property
+ext_smart_quote_after_open_paren_is_open = oneShot $
+  parseDoc "(\"a\")"
+    === ok (doc [paraMulti
+                   [ InlText "("
+                   , InlSmart LDQuote
+                   , InlText "a"
+                   , InlSmart RDQuote
+                   , InlText ")"
+                   ]])
+
+--------------------------------------------------------------------------------
 -- Unordered & ordered list parsing (Step-8 parser remainder).
 --------------------------------------------------------------------------------
 
@@ -954,4 +1047,14 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_softbreak_still_default",              ext_softbreak_still_default)
   , ("ext_trailing_backslash_at_eop_is_literal", ext_trailing_backslash_at_eop_is_literal)
   , ("ext_hardbreak_mixed_with_softbreak",       ext_hardbreak_mixed_with_softbreak)
+  , ("ext_smart_endash",                         ext_smart_endash)
+  , ("ext_smart_emdash",                         ext_smart_emdash)
+  , ("ext_smart_emdash_wins_over_endash",        ext_smart_emdash_wins_over_endash)
+  , ("ext_smart_four_dashes",                    ext_smart_four_dashes)
+  , ("ext_smart_ellipsis",                       ext_smart_ellipsis)
+  , ("ext_smart_two_dots_is_literal",            ext_smart_two_dots_is_literal)
+  , ("ext_smart_double_quote_orientation",       ext_smart_double_quote_orientation)
+  , ("ext_smart_single_quote_apostrophe",        ext_smart_single_quote_apostrophe)
+  , ("ext_smart_single_quote_pair",              ext_smart_single_quote_pair)
+  , ("ext_smart_quote_after_open_paren_is_open", ext_smart_quote_after_open_paren_is_open)
   ]
