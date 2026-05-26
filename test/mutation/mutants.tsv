@@ -176,3 +176,11 @@ src/Cribrum/Elaborate.idr	    alignAttrs AlignLeft   = [MkHAttr "style" (Str "te
 src/Cribrum/Elaborate.idr	    alignAttrs AlignRight  = [MkHAttr "style" (Str "text-align:right")]	    alignAttrs AlignRight  = []	elaborate: align right drops style
 src/Cribrum/Elaborate.idr	    alignAttrs AlignCenter = [MkHAttr "style" (Str "text-align:center")]	    alignAttrs AlignCenter = []	elaborate: align center drops style
 src/Cribrum/Elaborate.idr	      let cellTag = if isHeader r then "th" else "td"	      let cellTag = if isHeader r then "td" else "th"	elaborate: th/td tags swapped
+src/Cribrum/Djot/Parser.idr	          ('[' :: rest) => case findClose ']' rest of	          ('[' :: rest) => Nothing	parser: reference-style link `[text][ref]` disabled
+src/Cribrum/Djot/Parser.idr	              let label' = if refLabel == []	              let label' = if refLabel /= []	parser: collapsed-ref label condition inverted
+src/Cribrum/Djot/Parser.idr	parseRefDef src = case unpack src of	parseRefDef src = Nothing	parser: refdef recognition disabled
+src/Cribrum/Djot/Parser.idr	      (':' :: ' ' :: body) =>	      (':' :: body) =>	parser: refdef space-after-colon dropped
+src/Cribrum/Djot/Parser.idr	  refDefsFromBlock (RefDef l u _)      = [(l, u)]	  refDefsFromBlock (RefDef l u _)      = []	parser: refdef collection drops every entry
+src/Cribrum/Djot/Parser.idr	    InlLink a (LinkReference l) xs => case lookup l tab of	    InlLink a (LinkReference l) xs => case Nothing of	parser: ref resolution always misses
+src/Cribrum/Djot/Parser.idr	      Just url => InlLink a (LinkInline url Nothing)	      Just url => InlLink a (LinkReference l)	parser: ref resolution keeps reference instead of resolving
+src/Cribrum/Djot/Parser.idr	      table = collectRefDefs raw	      table = []	parser: ref table never populated

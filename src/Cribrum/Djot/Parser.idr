@@ -134,10 +134,17 @@ isAutolinkBody body =
    in noWhite && (hasColon || hasAt)
 
 mutual
-  ||| Parse the body inside `[...]` and the matching `(...)` URL. Returns
-  ||| an `InlLink` plus the rest of the input on success, `Nothing` on
-  ||| malformed link (missing `]`, empty body, no following `(`, missing
-  ||| `)`, or empty URL).
+  ||| Parse the body inside `[...]` and the matching `(...)` URL or
+  ||| `[...]` reference label. Returns an `InlLink` plus the rest of
+  ||| the input on success, `Nothing` on malformed link (missing `]`,
+  ||| empty body, no following `(` or `[`, missing `)`/`]`, or empty
+  ||| URL for the inline form).
+  |||
+  ||| Three link forms supported:
+  |||
+  |||   `[text](url)`    -> InlLink (LinkInline url Nothing)
+  |||   `[text][ref]`    -> InlLink (LinkReference ref)   (full reference)
+  |||   `[text][]`       -> InlLink (LinkReference text)  (collapsed reference)
   parseLinkBody : List Char -> Maybe (Inline, List Char)
   parseLinkBody chars = case findClose ']' chars of
     Just (label, afterClose) =>
@@ -153,6 +160,17 @@ mutual
                    in Just (InlLink emptyAttrs
                               (LinkInline (pack url) Nothing) inner
                           , after)
+            Nothing => Nothing
+          ('[' :: rest) => case findClose ']' rest of
+            Just (refLabel, after) =>
+              -- Empty ref body = collapsed form; the visible text
+              -- doubles as the reference label.
+              let label' = if refLabel == []
+                             then pack label
+                             else pack refLabel
+                  inner  = assert_total (parseInlines label)
+               in Just ( InlLink emptyAttrs (LinkReference label') inner
+                       , after)
             Nothing => Nothing
           _ => Nothing
     Nothing => Nothing
@@ -535,11 +553,76 @@ tryParseList (l ::: ls) = do
       (got, item) <- parseListItem line
       if got == want then Just item else Nothing
 
+||| Find the first `]` in `xs` and return `(before, after-the-bracket)`,
+||| or `Nothing` if no `]` exists. Used to extract a reference label
+||| from a `[label]: ...` line.
+findCloseRBracket : List Char -> Maybe (List Char, List Char)
+findCloseRBracket []           = Nothing
+findCloseRBracket (']' :: xs)  = Just ([], xs)
+findCloseRBracket (x   :: xs)  = case findCloseRBracket xs of
+  Just (ins, rest) => Just (x :: ins, rest)
+  Nothing          => Nothing
+
+||| Find the first occurrence of `c` in `xs`, returning the prefix
+||| before it and the suffix after it (`c` itself dropped).
+breakOnChar : Char -> List Char -> Maybe (List Char, List Char)
+breakOnChar _ []        = Nothing
+breakOnChar c (x :: xs) =
+  if x == c
+    then Just ([], xs)
+    else case breakOnChar c xs of
+      Just (a, b) => Just (x :: a, b)
+      Nothing     => Nothing
+
+||| If `s` looks like `<url> "title"`, return `(url, title)` with the
+||| surrounding double-quotes stripped. Otherwise `Nothing` (body is
+||| just a URL with no title).
+extractRefTitle : String -> Maybe (String, String)
+extractRefTitle s = case unpack s of
+  [] => Nothing
+  cs => case reverse cs of
+    ('"' :: rcs) => case breakOnChar '"' rcs of
+      Just (titleRev, afterOpen) =>
+        let url   = trim (pack (reverse afterOpen))
+            title = pack (reverse titleRev)
+         in if url == ""
+              then Nothing
+              else Just (url, title)
+      Nothing => Nothing
+    _ => Nothing
+
+||| Recognise a Djot reference definition line: `[ref]: url` (optionally
+||| with a trailing `"title"`). Returns `(label, url, title)` on a
+||| match. The label is the bracketed identifier with surrounding
+||| whitespace trimmed; the url is everything between `:` and the
+||| optional title, trimmed. The title slice handles only the
+||| double-quoted form for now; single-quote and paren forms arrive
+||| with the parser remainder.
+parseRefDef : String -> Maybe (String, String, Maybe String)
+parseRefDef src = case unpack src of
+  ('[' :: rest) => case findCloseRBracket rest of
+    Just (label, afterClose) => case afterClose of
+      (':' :: ' ' :: body) =>
+        let bodyStr = trim (pack body)
+         in case extractRefTitle bodyStr of
+              Just (url, title) =>
+                if pack label == "" || url == ""
+                  then Nothing
+                  else Just (pack label, url, Just title)
+              Nothing =>
+                if pack label == "" || bodyStr == ""
+                  then Nothing
+                  else Just (pack label, bodyStr, Nothing)
+      _ => Nothing
+    Nothing => Nothing
+  _ => Nothing
+
 ||| Convert one NORMAL line group into a block.
 |||
 ||| Order matters: thematic break is checked first (a single `---` line is
-||| not a heading and not a paragraph). Heading is checked next; then
-||| list block; everything else falls through to paragraph.
+||| not a heading and not a paragraph). Heading next; then reference
+||| definition (single-line `[ref]: url`); then list block; everything
+||| else falls through to paragraph.
 normalGroupToBlock : List1 String -> Block
 normalGroupToBlock (l ::: ls) =
   if isNil ls && isThematicBreak l
@@ -549,9 +632,18 @@ normalGroupToBlock (l ::: ls) =
              if isNil ls
                then Heading emptyAttrs lvl (parseInlineLine rest)
                else Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
-           Nothing => case tryParseList (l ::: ls) of
-             Just listBlock => listBlock
-             Nothing        => Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
+           Nothing =>
+             if isNil ls
+               then case parseRefDef l of
+                 Just (label, url, title) => RefDef label url title
+                 Nothing => case tryParseList (l ::: ls) of
+                   Just listBlock => listBlock
+                   Nothing => Paragraph emptyAttrs
+                                (parseParagraphLines (l ::: ls))
+               else case tryParseList (l ::: ls) of
+                 Just listBlock => listBlock
+                 Nothing => Paragraph emptyAttrs
+                              (parseParagraphLines (l ::: ls))
 
 --------------------------------------------------------------------------------
 -- Pipe tables (slice).
@@ -661,15 +753,109 @@ groupToBlock (CodeGroup info b) =
   CodeBlock emptyAttrs info b
 groupToBlock (TableGroup rows)  = tableGroupToBlock rows
 
---------------------------------------------------------------------------------
--- Top-level.
---------------------------------------------------------------------------------
+-- ============================================================
+-- Reference-link resolution (two-pass).
+--
+-- Phase 1: parse into raw blocks (with LinkReference label for any
+--          [text][label] / [text][] form).
+-- Phase 2: walk the block list collecting RefDef labels -> urls,
+--          then walk the inline trees rewriting LinkReference label
+--          to LinkInline url when label is defined. Undefined refs
+--          stay as LinkReference (the elaborator emits them as
+--          anchor-href placeholders so the failure is visible).
+-- ============================================================
 
-||| Parse a Djot document. Total; never fails on the current slice's input
-||| classes (paragraph + heading). Returns `Either` so future constructs can
+mutual
+  ||| Build a lookup table from a list of blocks. Only top-level
+  ||| RefDef blocks contribute; nested defs (inside block quotes) are
+  ||| recursively scanned.
+  collectRefDefs : List Block -> List (String, String)
+  collectRefDefs []        = []
+  collectRefDefs (b :: bs) =
+    refDefsFromBlock b ++ assert_total (collectRefDefs bs)
+
+  refDefsFromBlock : Block -> List (String, String)
+  refDefsFromBlock (RefDef l u _)      = [(l, u)]
+  refDefsFromBlock (BlockQuote _ bs')  =
+    assert_total (collectRefDefs bs')
+  refDefsFromBlock _                   = []
+
+mutual
+  ||| Resolve `LinkReference label` to `LinkInline url` when the label
+  ||| is known. Other forms (LinkInline, LinkAuto) pass through.
+  resolveInline : List (String, String) -> Inline -> Inline
+  resolveInline tab i = case i of
+    InlLink a (LinkReference l) xs => case lookup l tab of
+      Just url => InlLink a (LinkInline url Nothing)
+                    (assert_total (resolveInlines tab xs))
+      Nothing  => InlLink a (LinkReference l)
+                    (assert_total (resolveInlines tab xs))
+    InlLink a r xs   =>
+      InlLink a r (assert_total (resolveInlines tab xs))
+    InlImage a r xs  =>
+      InlImage a r (assert_total (resolveInlines tab xs))
+    InlEmph xs       =>
+      InlEmph       (assert_total (resolveInlines tab xs))
+    InlStrong xs     =>
+      InlStrong     (assert_total (resolveInlines tab xs))
+    InlHighlight xs  =>
+      InlHighlight  (assert_total (resolveInlines tab xs))
+    InlSuper xs      =>
+      InlSuper      (assert_total (resolveInlines tab xs))
+    InlSub xs        =>
+      InlSub        (assert_total (resolveInlines tab xs))
+    InlInsert xs     =>
+      InlInsert     (assert_total (resolveInlines tab xs))
+    InlDelete xs     =>
+      InlDelete     (assert_total (resolveInlines tab xs))
+    InlSpan a xs     =>
+      InlSpan a     (assert_total (resolveInlines tab xs))
+    other            => other
+
+  resolveInlines : List (String, String) -> List Inline -> List Inline
+  resolveInlines tab = map (resolveInline tab)
+
+mutual
+  resolveBlock : List (String, String) -> Block -> Block
+  resolveBlock tab b = case b of
+    Paragraph a is        => Paragraph a (resolveInlines tab is)
+    Heading a lvl is      => Heading a lvl (resolveInlines tab is)
+    BlockQuote a bs       =>
+      BlockQuote a (assert_total (resolveBlocks tab bs))
+    ListBlock a s st t is =>
+      ListBlock a s st t (assert_total (map (resolveItem tab) is))
+    Div a bs              =>
+      Div a (assert_total (resolveBlocks tab bs))
+    Table a cap rs        =>
+      Table a (map (resolveInlines tab) cap)
+            (map (resolveRow tab) rs)
+    FootnoteDef a l bs    =>
+      FootnoteDef a l (assert_total (resolveBlocks tab bs))
+    other                 => other
+
+  resolveBlocks : List (String, String) -> List Block -> List Block
+  resolveBlocks tab = map (resolveBlock tab)
+
+  resolveItem : List (String, String) -> ListItem -> ListItem
+  resolveItem tab (MkLI a c t bs) =
+    MkLI a c (map (resolveInlines tab) t)
+      (assert_total (resolveBlocks tab bs))
+
+  resolveRow : List (String, String) -> TableRow -> TableRow
+  resolveRow tab (MkRow h cs) = MkRow h (map (resolveCell tab) cs)
+
+  resolveCell : List (String, String) -> TableCell -> TableCell
+  resolveCell tab (MkCell a is) = MkCell a (resolveInlines tab is)
+
+||| Parse a Djot document, then resolve reference-link forms against
+||| the document's RefDef blocks. Total; never fails on the current
+||| slice's input classes. Returns `Either` so future constructs can
 ||| produce located errors without changing the signature.
 public export
 parseDoc : String -> Either ParseError Doc
 parseDoc src =
-  let ls = lines src
-   in Right (MkDoc (map groupToBlock (groupLines ls)))
+  let ls    = lines src
+      raw   = map groupToBlock (groupLines ls)
+      table = collectRefDefs raw
+      resolved = resolveBlocks table raw
+   in Right (MkDoc resolved)

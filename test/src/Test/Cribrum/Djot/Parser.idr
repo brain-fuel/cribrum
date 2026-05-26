@@ -991,6 +991,111 @@ ext_table_non_dash_align_not_header = oneShot $
                    ]])
 
 --------------------------------------------------------------------------------
+-- Reference definitions + reference-style links.
+--------------------------------------------------------------------------------
+
+||| Standalone reference definition `[ref]: url` becomes a `RefDef`
+||| block (no title).
+export
+ext_refdef_url_only : Property
+ext_refdef_url_only = oneShot $
+  parseDoc "[home]: https://example.org"
+    === ok (doc [RefDef "home" "https://example.org" Nothing])
+
+||| Reference definition with a trailing double-quoted title.
+export
+ext_refdef_with_title : Property
+ext_refdef_with_title = oneShot $
+  parseDoc "[home]: https://example.org \"Home page\""
+    === ok (doc [RefDef "home" "https://example.org" (Just "Home page")])
+
+||| Full reference link `[text][ref]` is resolved against a RefDef
+||| later in the document: the `LinkReference` is rewritten to
+||| `LinkInline` carrying the defined URL.
+export
+ext_full_ref_link_resolved : Property
+ext_full_ref_link_resolved = oneShot $
+  parseDoc "see [home][h] please\n\n[h]: https://example.org"
+    === ok (doc
+              [ paraMulti
+                  [ InlText "see "
+                  , InlLink emptyAttrs
+                      (LinkInline "https://example.org" Nothing)
+                      [InlText "home"]
+                  , InlText " please"
+                  ]
+              , RefDef "h" "https://example.org" Nothing
+              ])
+
+||| Collapsed reference link `[text][]` uses the visible text as the
+||| label.
+export
+ext_collapsed_ref_link_resolved : Property
+ext_collapsed_ref_link_resolved = oneShot $
+  parseDoc "see [home][] please\n\n[home]: https://example.org"
+    === ok (doc
+              [ paraMulti
+                  [ InlText "see "
+                  , InlLink emptyAttrs
+                      (LinkInline "https://example.org" Nothing)
+                      [InlText "home"]
+                  , InlText " please"
+                  ]
+              , RefDef "home" "https://example.org" Nothing
+              ])
+
+||| Undefined reference label leaves the `LinkReference` intact (the
+||| elaborator renders it as a fallback anchor `<a href="#missing">`).
+export
+ext_undefined_ref_link_stays_reference : Property
+ext_undefined_ref_link_stays_reference = oneShot $
+  parseDoc "see [home][missing] please"
+    === ok (doc
+              [ paraMulti
+                  [ InlText "see "
+                  , InlLink emptyAttrs
+                      (LinkReference "missing")
+                      [InlText "home"]
+                  , InlText " please"
+                  ]
+              ])
+
+||| Reference defined BEFORE the link still resolves (the two-pass
+||| resolver doesn't care about source order).
+export
+ext_ref_defined_before_link_resolves : Property
+ext_ref_defined_before_link_resolves = oneShot $
+  parseDoc "[h]: https://example.org\n\nsee [home][h] please"
+    === ok (doc
+              [ RefDef "h" "https://example.org" Nothing
+              , paraMulti
+                  [ InlText "see "
+                  , InlLink emptyAttrs
+                      (LinkInline "https://example.org" Nothing)
+                      [InlText "home"]
+                  , InlText " please"
+                  ]
+              ])
+
+||| A `[ref]:` line with no URL is NOT a RefDef — falls through to
+||| paragraph (which then renders as a paragraph containing a
+||| reference-style link).
+export
+ext_refdef_empty_url_is_paragraph : Property
+ext_refdef_empty_url_is_paragraph = oneShot $
+  parseDoc "[h]: "
+    === ok (doc [paraMulti [InlText "[h]: "]])
+
+||| `[ref]:url` (no space after the colon) is NOT a RefDef — the
+||| `:` must be followed by a space. Pins the `(':' :: ' ' :: body)`
+||| split against being relaxed to `(':' :: body)`.
+export
+ext_refdef_requires_space_after_colon : Property
+ext_refdef_requires_space_after_colon = oneShot $
+  parseDoc "[h]:url"
+    === ok (doc [paraMulti [InlText "[h]:url"]])
+
+--------------------------------------------------------------------------------
 -- Unordered & ordered list parsing (Step-8 parser remainder).
 --------------------------------------------------------------------------------
 
@@ -1181,4 +1286,12 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_single_pipe_is_paragraph",             ext_single_pipe_is_paragraph)
   , ("ext_table_two_dash_align_not_header",      ext_table_two_dash_align_not_header)
   , ("ext_table_non_dash_align_not_header",      ext_table_non_dash_align_not_header)
+  , ("ext_refdef_url_only",                      ext_refdef_url_only)
+  , ("ext_refdef_with_title",                    ext_refdef_with_title)
+  , ("ext_full_ref_link_resolved",               ext_full_ref_link_resolved)
+  , ("ext_collapsed_ref_link_resolved",          ext_collapsed_ref_link_resolved)
+  , ("ext_undefined_ref_link_stays_reference",   ext_undefined_ref_link_stays_reference)
+  , ("ext_ref_defined_before_link_resolves",     ext_ref_defined_before_link_resolves)
+  , ("ext_refdef_empty_url_is_paragraph",        ext_refdef_empty_url_is_paragraph)
+  , ("ext_refdef_requires_space_after_colon",    ext_refdef_requires_space_after_colon)
   ]
