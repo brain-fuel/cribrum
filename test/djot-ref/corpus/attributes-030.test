@@ -1,0 +1,6 @@
+=== input ===
+text{a=x
+# non-heading
+=== expected ===
+<p>text{a=x
+# non-heading</p>

@@ -59,3 +59,24 @@ severity — the existing `Rule` shape. The ACT-rules JSON pull (the
 interpreter in `Cribrum.AA.Pass`) is the next slice; this scaffold
 puts the I/O shape in place so the upstream pull lands as a content
 change on `aa.ts` rather than a new pipeline.
+
+## djot-ref.ts
+
+Downloads the pinned `jgm/djot.lua` test corpus and rewrites each
+fenced test into the flat `=== input === / === expected ===` shape
+the djotref gate consumes. Replaces the seed corpus in
+`test/djot-ref/corpus/` wholesale.
+
+```
+cd ingest
+npm install
+npm run ingest:djotref     # re-download + regenerate corpus
+make djotref-update        # refresh baseline.txt with the new pass set
+```
+
+Bumping the upstream commit is a one-line edit to `PINNED_COMMIT` in
+`djot-ref.ts`. Annotated tests (`m`, `ap`, `f`, ...) request optional
+features Cribrum doesn't model (source positions, AST printing, Lua
+filters) and are skipped during ingestion; counts for both kept and
+skipped tests are printed.
+

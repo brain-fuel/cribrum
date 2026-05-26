@@ -1,0 +1,11 @@
+=== input ===
+> block
+
+> quote
+=== expected ===
+<blockquote>
+<p>block</p>
+</blockquote>
+<blockquote>
+<p>quote</p>
+</blockquote>

@@ -1,0 +1,10 @@
+=== input ===
+{#id}
+{key=val}
+{.foo .bar}
+{key=val2}
+{.baz}
+{#id2}
+Okay
+=== expected ===
+<p class="foo bar baz" id="id2" key="val2">Okay</p>

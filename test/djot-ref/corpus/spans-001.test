@@ -1,0 +1,6 @@
+=== input ===
+This is a [test of
+*color*]{.blue}.
+=== expected ===
+<p>This is a <span class="blue">test of
+<strong>color</strong></span>.</p>

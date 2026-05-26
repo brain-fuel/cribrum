@@ -1,0 +1,8 @@
+=== input ===
+> Lazy
+block _quote_.
+=== expected ===
+<blockquote>
+<p>Lazy
+block <em>quote</em>.</p>
+</blockquote>

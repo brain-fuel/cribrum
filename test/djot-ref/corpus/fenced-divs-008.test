@@ -1,0 +1,11 @@
+=== input ===
+::: outer
+```
+:::
+```
+:::
+=== expected ===
+<div class="outer">
+<pre><code>:::
+</code></pre>
+</div>

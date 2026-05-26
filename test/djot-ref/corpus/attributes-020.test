@@ -1,0 +1,8 @@
+=== input ===
+{highlight=3}
+``` ruby
+x = 3
+```
+=== expected ===
+<pre highlight="3"><code class="language-ruby">x = 3
+</code></pre>

@@ -1,0 +1,9 @@
+=== input ===
+| just two \| `|` | cells in this table |
+=== expected ===
+<table>
+<tr>
+<td>just two | <code>|</code></td>
+<td>cells in this table</td>
+</tr>
+</table>

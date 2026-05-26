@@ -1,0 +1,4 @@
+=== input ===
+mc^2^
+=== expected ===
+<p>mc<sup>2</sup></p>

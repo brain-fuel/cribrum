@@ -1,0 +1,6 @@
+=== input ===
+`<b>foo</b>`{=html #id}
+```
+=== expected ===
+<p><code>&lt;b&gt;foo&lt;/b&gt;</code>{=html #id}
+<code></code></p>

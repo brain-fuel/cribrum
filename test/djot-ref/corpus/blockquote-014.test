@@ -1,0 +1,6 @@
+=== input ===
+aaa
+> bbb
+=== expected ===
+<p>aaa
+&gt; bbb</p>

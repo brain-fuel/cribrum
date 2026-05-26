@@ -1,0 +1,12 @@
+=== input ===
+(IV) one
+(V) two
+=== expected ===
+<ol start="4" type="I">
+<li>
+one
+</li>
+<li>
+two
+</li>
+</ol>

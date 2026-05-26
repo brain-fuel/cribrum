@@ -1,0 +1,8 @@
+=== input ===
+# Heading
+# continued
+=== expected ===
+<section id="Heading-continued">
+<h1>Heading
+continued</h1>
+</section>

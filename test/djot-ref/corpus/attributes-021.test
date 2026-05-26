@@ -1,0 +1,13 @@
+=== input ===
+{.special}
+1. one
+2. two
+=== expected ===
+<ol class="special">
+<li>
+one
+</li>
+<li>
+two
+</li>
+</ol>

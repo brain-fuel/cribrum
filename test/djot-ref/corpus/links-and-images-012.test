@@ -1,0 +1,6 @@
+=== input ===
+[Link][]
+
+[link]: /url
+=== expected ===
+<p><a>Link</a></p>

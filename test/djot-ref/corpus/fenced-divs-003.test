@@ -1,0 +1,18 @@
+=== input ===
+{#bar .foo}
+::::
+Hi
+
+::: baz
+> A block quote.
+:::
+::::
+=== expected ===
+<div class="foo" id="bar">
+<p>Hi</p>
+<div class="baz">
+<blockquote>
+<p>A block quote.</p>
+</blockquote>
+</div>
+</div>

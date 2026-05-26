@@ -1,0 +1,6 @@
+=== input ===
+{% This is  a comment before a
+  block-level item. %}
+Paragraph.
+=== expected ===
+<p>Paragraph.</p>

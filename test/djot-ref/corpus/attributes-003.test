@@ -1,0 +1,4 @@
+=== input ===
+[some text]{.attr}
+=== expected ===
+<p><span class="attr">some text</span></p>

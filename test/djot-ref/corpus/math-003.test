@@ -1,0 +1,4 @@
+=== input ===
+$$`e=mc^2`
+=== expected ===
+<p><span class="math display">\[e=mc^2\]</span></p>

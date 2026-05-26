@@ -1,4 +1,0 @@
-=== input ===
-a _b_ c
-=== expected ===
-<p>a <em>b</em> c</p>

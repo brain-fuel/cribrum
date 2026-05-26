@@ -1,0 +1,4 @@
+=== input ===
+{+ Inserted text +}
+=== expected ===
+<p><ins> Inserted text </ins></p>

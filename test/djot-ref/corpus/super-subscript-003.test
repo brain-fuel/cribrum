@@ -1,0 +1,4 @@
+=== input ===
+test^of superscript ~with subscript~^
+=== expected ===
+<p>test<sup>of superscript <sub>with subscript</sub></sup></p>

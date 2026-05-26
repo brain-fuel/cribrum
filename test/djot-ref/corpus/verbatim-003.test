@@ -1,0 +1,4 @@
+=== input ===
+Special characters: `*hi*`
+=== expected ===
+<p>Special characters: <code>*hi*</code></p>

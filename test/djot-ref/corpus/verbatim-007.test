@@ -1,0 +1,6 @@
+=== input ===
+` a
+c
+=== expected ===
+<p><code> a
+c</code></p>

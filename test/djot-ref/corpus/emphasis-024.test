@@ -1,0 +1,4 @@
+=== input ===
+_\__
+=== expected ===
+<p><em>_</em></p>

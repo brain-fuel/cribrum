@@ -1,0 +1,4 @@
+=== input ===
+foo*bar*baz
+=== expected ===
+<p>foo<strong>bar</strong>baz</p>

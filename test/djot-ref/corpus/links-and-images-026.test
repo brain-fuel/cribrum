@@ -1,0 +1,4 @@
+=== input ===
+[x_y](x_y)
+=== expected ===
+<p><a href="x_y">x_y</a></p>

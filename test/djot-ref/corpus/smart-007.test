@@ -1,0 +1,4 @@
+=== input ===
+'tis the season to be 'jolly'
+=== expected ===
+<p>&rsquo;tis the season to be &lsquo;jolly&rsquo;</p>

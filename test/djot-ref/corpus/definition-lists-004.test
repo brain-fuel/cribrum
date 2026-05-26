@@ -1,0 +1,12 @@
+=== input ===
+: ```
+  ok
+  ```
+=== expected ===
+<dl>
+<dt></dt>
+<dd>
+<pre><code>ok
+</code></pre>
+</dd>
+</dl>

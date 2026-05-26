@@ -1,0 +1,4 @@
+=== input ===
+'We'll use Jane's boat and John's truck,' Jenna said.
+=== expected ===
+<p>&lsquo;We&rsquo;ll use Jane&rsquo;s boat and John&rsquo;s truck,&rsquo; Jenna said.</p>

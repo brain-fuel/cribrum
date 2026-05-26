@@ -1,0 +1,10 @@
+=== input ===
+[link][a and
+b]
+
+[a and
+b]: url
+=== expected ===
+<p><a>link</a></p>
+<p>[a and
+b]: url</p>

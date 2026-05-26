@@ -1,0 +1,7 @@
+=== input ===
+text{a=x
+
+hello
+=== expected ===
+<p>text{a=x</p>
+<p>hello</p>

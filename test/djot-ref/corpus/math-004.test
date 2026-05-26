@@ -1,0 +1,4 @@
+=== input ===
+My equation: $$`e=mc^2`
+=== expected ===
+<p>My equation: <span class="math display">\[e=mc^2\]</span></p>

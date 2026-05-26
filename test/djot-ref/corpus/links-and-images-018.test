@@ -1,0 +1,6 @@
+=== input ===
+[unclosed](hello *a
+b*
+=== expected ===
+<p>[unclosed](hello <strong>a
+b</strong></p>

@@ -1,0 +1,4 @@
+=== input ===
+``` not a code block
+=== expected ===
+<p><code> not a code block</code></p>

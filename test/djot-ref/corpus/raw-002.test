@@ -1,0 +1,6 @@
+=== input ===
+``` =html
+<table>
+```
+=== expected ===
+<table>

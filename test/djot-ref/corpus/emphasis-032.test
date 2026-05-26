@@ -1,0 +1,4 @@
+=== input ===
+_`a_`b
+=== expected ===
+<p>_<code>a_</code>b</p>

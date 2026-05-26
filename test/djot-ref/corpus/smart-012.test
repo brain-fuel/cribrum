@@ -1,0 +1,4 @@
+=== input ===
+''hi''
+=== expected ===
+<p>&lsquo;&lsquo;hi&rsquo;&rsquo;</p>

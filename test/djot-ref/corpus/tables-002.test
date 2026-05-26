@@ -1,0 +1,14 @@
+=== input ===
+|a|   *b*|
+|*c| d* |
+=== expected ===
+<table>
+<tr>
+<td>a</td>
+<td><strong>b</strong></td>
+</tr>
+<tr>
+<td>*c</td>
+<td>d*</td>
+</tr>
+</table>

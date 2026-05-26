@@ -1,0 +1,10 @@
+=== input ===
+Paragraph text
+::::
+Hi
+::::
+=== expected ===
+<p>Paragraph text
+::::
+Hi
+::::</p>

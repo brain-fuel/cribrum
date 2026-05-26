@@ -1,0 +1,7 @@
+=== input ===
+{title=foo}
+[ref]: /url
+
+[ref][]{title=bar}
+=== expected ===
+<p><a href="/url" title="bar">ref</a></p>

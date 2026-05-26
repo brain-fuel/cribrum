@@ -1,0 +1,4 @@
+=== input ===
+a *b{#id key="*"}o
+=== expected ===
+<p>a <span id="id" key="*">*b</span>o</p>

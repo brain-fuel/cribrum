@@ -1,0 +1,14 @@
+=== input ===
+- one
+lazy
+- two
+=== expected ===
+<ul>
+<li>
+one
+lazy
+</li>
+<li>
+two
+</li>
+</ul>

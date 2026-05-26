@@ -1,0 +1,23 @@
+=== input ===
+- a
+
+  - b
+  - c
+- d
+=== expected ===
+<ul>
+<li>
+a
+<ul>
+<li>
+b
+</li>
+<li>
+c
+</li>
+</ul>
+</li>
+<li>
+d
+</li>
+</ul>

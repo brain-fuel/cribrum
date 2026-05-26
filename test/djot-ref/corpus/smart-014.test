@@ -1,0 +1,12 @@
+=== input ===
+Some dashes:  em---em
+en--en
+em --- em
+en -- en
+2--3
+=== expected ===
+<p>Some dashes:  em&mdash;em
+en&ndash;en
+em &mdash; em
+en &ndash; en
+2&ndash;3</p>

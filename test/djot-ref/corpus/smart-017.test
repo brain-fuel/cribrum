@@ -1,0 +1,4 @@
+=== input ===
+Ellipses...and...and....
+=== expected ===
+<p>Ellipses&hellip;and&hellip;and&hellip;.</p>

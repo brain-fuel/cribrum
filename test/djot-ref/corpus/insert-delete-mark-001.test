@@ -1,0 +1,8 @@
+=== input ===
+This is {-deleted
+_text_-}. The braces are -required-.
+And they must be in the -}right order{-.
+=== expected ===
+<p>This is <del>deleted
+<em>text</em></del>. The braces are -required-.
+And they must be in the -}right order{-.</p>

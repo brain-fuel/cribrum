@@ -133,11 +133,16 @@ stripMain s =
    in stripped
 
 ||| Normalise whitespace: collapse any run of whitespace (spaces,
-||| tabs, newlines) into a single space, then trim. Sufficient to
-||| compare Cribrum's no-newline output against a reference renderer
-||| that emits one element per line.
+||| tabs, newlines) into a single space, then trim, then drop any
+||| whitespace adjacent to a tag boundary (`> ` -> `>` and ` <` -> `<`).
+||| Cribrum's renderer emits zero whitespace between tags; the
+||| reference renderer emits one element per line. After this
+||| normalisation, both shapes collapse to the same string.
+||| Whitespace inside textual content stays a single space, so
+||| `<p>hello world</p>` round-trips, but inter-tag indentation is
+||| ignored.
 normWhitespace : String -> String
-normWhitespace = pack . trimDup [] . unpack
+normWhitespace = pack . dropTagSpace . trimDup [] . unpack
   where
     -- Walk char-by-char; emit one space per run of whitespace.
     trimDup : List Char -> List Char -> List Char
@@ -148,6 +153,21 @@ normWhitespace = pack . trimDup [] . unpack
           (' ' :: _) => trimDup acc cs
           _          => trimDup (' ' :: acc) cs
         else trimDup (c :: acc) cs
+
+    -- After `trimDup`, every whitespace run is exactly one space.
+    -- Drop the space when it sits adjacent to a tag boundary:
+    --   `> `  -> `>`  (after a closing/opening tag delimiter)
+    --   ` <`  -> `<`  (before an opening tag delimiter)
+    -- This means a reference renderer's `<p>foo</p>\n<p>bar</p>`
+    -- and Cribrum's `<p>foo</p><p>bar</p>` collapse to the same
+    -- string, and `<li>\nfoo\n</li>` matches `<li>foo</li>`.
+    -- Whitespace inside text without adjacent tag chars stays put
+    -- (`<p>hello world</p>` round-trips).
+    dropTagSpace : List Char -> List Char
+    dropTagSpace []                = []
+    dropTagSpace ('>' :: ' ' :: cs) = '>' :: dropTagSpace cs
+    dropTagSpace (' ' :: '<' :: cs) = '<' :: dropTagSpace cs
+    dropTagSpace (c :: cs)          = c   :: dropTagSpace cs
 
 ||| Run a TestCase through the pipeline. Returns `Right body` on
 ||| success, `Left reason` on parse/elaborate failure.

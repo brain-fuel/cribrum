@@ -1,0 +1,8 @@
+=== input ===
+::::
+Hi
+::::
+=== expected ===
+<div>
+<p>Hi</p>
+</div>

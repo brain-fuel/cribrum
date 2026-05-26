@@ -1,0 +1,9 @@
+=== input ===
+~~~
+code
+  block
+~~~
+=== expected ===
+<pre><code>code
+  block
+</code></pre>

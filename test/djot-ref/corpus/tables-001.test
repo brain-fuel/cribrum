@@ -1,0 +1,8 @@
+=== input ===
+| a |
+=== expected ===
+<table>
+<tr>
+<td>a</td>
+</tr>
+</table>

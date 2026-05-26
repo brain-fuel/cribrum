@@ -1,0 +1,4 @@
+=== input ===
+*foo [link](url) `*`*
+=== expected ===
+<p><strong>foo <a href="url">link</a> <code>*</code></strong></p>

@@ -1,0 +1,9 @@
+=== input ===
+> :::: foo
+> Hi
+=== expected ===
+<blockquote>
+<div class="foo">
+<p>Hi</p>
+</div>
+</blockquote>

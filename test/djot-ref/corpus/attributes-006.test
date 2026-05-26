@@ -1,0 +1,4 @@
+=== input ===
+hi{key="{#hi"}
+=== expected ===
+<p><span key="{#hi">hi</span></p>

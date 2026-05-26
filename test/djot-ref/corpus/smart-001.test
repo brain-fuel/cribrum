@@ -1,0 +1,6 @@
+=== input ===
+"Hello," said the spider.
+"'Shelob' is my name."
+=== expected ===
+<p>&ldquo;Hello,&rdquo; said the spider.
+&ldquo;&lsquo;Shelob&rsquo; is my name.&rdquo;</p>

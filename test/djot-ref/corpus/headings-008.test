@@ -1,0 +1,15 @@
+=== input ===
+# Heading
+lazy
+# more
+lazy
+
+text
+=== expected ===
+<section id="Heading-lazy-more-lazy">
+<h1>Heading
+lazy
+more
+lazy</h1>
+<p>text</p>
+</section>

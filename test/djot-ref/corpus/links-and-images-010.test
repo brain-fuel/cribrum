@@ -1,0 +1,5 @@
+=== input ===
+[link][a and
+b]
+=== expected ===
+<p><a>link</a></p>

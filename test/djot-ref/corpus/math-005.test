@@ -1,0 +1,6 @@
+=== input ===
+$`e=
+mc^2`
+=== expected ===
+<p><span class="math inline">\(e=
+mc^2\)</span></p>

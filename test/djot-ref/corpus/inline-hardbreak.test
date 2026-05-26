@@ -1,5 +1,0 @@
-=== input ===
-alpha\
-bravo
-=== expected ===
-<p>alpha<br>bravo</p>

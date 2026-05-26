@@ -1,0 +1,4 @@
+=== input ===
+[[foo](bar)](baz)
+=== expected ===
+<p><a href="baz"><a href="bar">foo</a></a></p>

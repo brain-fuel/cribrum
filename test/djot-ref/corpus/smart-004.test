@@ -1,0 +1,4 @@
+=== input ===
+'He said, "I want to go."'
+=== expected ===
+<p>&lsquo;He said, &ldquo;I want to go.&rdquo;&rsquo;</p>

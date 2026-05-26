@@ -1,0 +1,7 @@
+=== input ===
+{#id}
+# Heading
+=== expected ===
+<section id="id">
+<h1>Heading</h1>
+</section>

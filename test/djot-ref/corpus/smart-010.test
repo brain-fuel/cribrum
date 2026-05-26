@@ -1,0 +1,4 @@
+=== input ===
+[a]'s b'
+=== expected ===
+<p>[a]&rsquo;s b&rsquo;</p>

@@ -1,0 +1,4 @@
+=== input ===
+` ``a`` `
+=== expected ===
+<p><code>``a``</code></p>

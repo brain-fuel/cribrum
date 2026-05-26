@@ -1,0 +1,9 @@
+=== input ===
+  ``` python
+  if true:
+    x = 3
+  ```
+=== expected ===
+<pre><code class="language-python">if true:
+  x = 3
+</code></pre>

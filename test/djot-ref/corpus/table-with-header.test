@@ -1,6 +1,0 @@
-=== input ===
-| h1 | h2 |
-|----|----|
-| a  | b  |
-=== expected ===
-<table><thead><tr><th>h1</th><th>h2</th></tr></thead><tbody><tr><td>a</td><td>b</td></tr></tbody></table>

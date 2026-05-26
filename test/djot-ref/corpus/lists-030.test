@@ -1,0 +1,6 @@
+=== input ===
+The civil war ended in
+1865. And this should not start a list.
+=== expected ===
+<p>The civil war ended in
+1865. And this should not start a list.</p>

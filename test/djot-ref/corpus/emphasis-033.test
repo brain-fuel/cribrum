@@ -1,0 +1,4 @@
+=== input ===
+_<http://example.com/a_b>
+=== expected ===
+<p>_<a href="http://example.com/a_b">http://example.com/a_b</a></p>

@@ -1,0 +1,4 @@
+=== input ===
+not a [span] {#id}.
+=== expected ===
+<p>not a [span] .</p>

@@ -10,7 +10,8 @@
     "ingest:html": "tsx html-model.ts",
     "ingest:html:check": "tsx html-model.ts --check",
     "ingest:aa": "tsx aa-catalog.ts",
-    "ingest:aa:check": "tsx aa-catalog.ts --check"
+    "ingest:aa:check": "tsx aa-catalog.ts --check",
+    "ingest:djotref": "tsx djot-ref.ts"
   },
   "devDependencies": {
     "@webref/elements": "2.6.0",

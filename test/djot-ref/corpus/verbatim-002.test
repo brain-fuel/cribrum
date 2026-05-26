@@ -1,0 +1,6 @@
+=== input ===
+Some `code
+with a line break`
+=== expected ===
+<p>Some <code>code
+with a line break</code></p>

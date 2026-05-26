@@ -1,0 +1,4 @@
+=== input ===
+\$$`a`
+=== expected ===
+<p>$<span class="math inline">\(a\)</span></p>

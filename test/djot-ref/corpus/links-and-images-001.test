@@ -1,0 +1,6 @@
+=== input ===
+[basic _link_][a_b_]
+
+[a_b_]: url
+=== expected ===
+<p><a href="url">basic <em>link</em></a></p>

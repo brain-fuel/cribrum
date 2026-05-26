@@ -1,0 +1,5 @@
+=== input ===
+hi{#id .class
+key="value"}
+=== expected ===
+<p><span class="class" id="id" key="value">hi</span></p>

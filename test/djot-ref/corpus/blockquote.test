@@ -1,4 +1,0 @@
-=== input ===
-> quoted
-=== expected ===
-<blockquote><p>quoted</p></blockquote>

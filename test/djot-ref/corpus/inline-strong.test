@@ -1,4 +1,0 @@
-=== input ===
-a *b* c
-=== expected ===
-<p>a <strong>b</strong> c</p>

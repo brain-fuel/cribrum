@@ -1,5 +1,0 @@
-=== input ===
-1. alpha
-2. bravo
-=== expected ===
-<ol><li><p>alpha</p></li><li><p>bravo</p></li></ol>

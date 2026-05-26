@@ -1,0 +1,4 @@
+=== input ===
+Escaped hyphens: \-- \-\-\-.
+=== expected ===
+<p>Escaped hyphens: -- ---.</p>

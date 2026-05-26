@@ -1,4 +1,0 @@
-=== input ===
-visit <https://example.org> today
-=== expected ===
-<p>visit <a href="https://example.org">https://example.org</a> today</p>

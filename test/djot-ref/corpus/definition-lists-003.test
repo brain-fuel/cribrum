@@ -1,0 +1,30 @@
+=== input ===
+: apple
+ fruit
+
+  Paragraph one
+
+  Paragraph two
+
+  - sub
+  - list
+
+: orange
+=== expected ===
+<dl>
+<dt>apple
+fruit</dt>
+<dd>
+<p>Paragraph one</p>
+<p>Paragraph two</p>
+<ul>
+<li>
+sub
+</li>
+<li>
+list
+</li>
+</ul>
+</dd>
+<dt>orange</dt>
+</dl>

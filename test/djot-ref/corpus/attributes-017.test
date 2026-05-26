@@ -1,0 +1,7 @@
+=== input ===
+{#id}
+> Block quote
+=== expected ===
+<blockquote id="id">
+<p>Block quote</p>
+</blockquote>

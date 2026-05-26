@@ -1,0 +1,7 @@
+=== input ===
+"A paragraph with no closing quote.
+
+"Second paragraph by same speaker, in fiction."
+=== expected ===
+<p>&ldquo;A paragraph with no closing quote.</p>
+<p>&ldquo;Second paragraph by same speaker, in fiction.&rdquo;</p>

@@ -1,0 +1,4 @@
+=== input ===
+![[link](url)](img)
+=== expected ===
+<p><img alt="link" src="img"></p>

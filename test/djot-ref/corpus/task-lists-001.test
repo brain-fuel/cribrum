@@ -1,0 +1,12 @@
+=== input ===
+- [ ] an unchecked task list item
+- [x] checked item
+=== expected ===
+<ul class="task-list">
+<li class="unchecked">
+an unchecked task list item
+</li>
+<li class="checked">
+checked item
+</li>
+</ul>

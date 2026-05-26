@@ -1,0 +1,8 @@
+=== input ===
+# Heading
+lazy
+=== expected ===
+<section id="Heading-lazy">
+<h1>Heading
+lazy</h1>
+</section>

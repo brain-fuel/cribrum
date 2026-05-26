@@ -1,0 +1,4 @@
+=== input ===
+'A', 'B', and 'C' are letters.
+=== expected ===
+<p>&lsquo;A&rsquo;, &lsquo;B&rsquo;, and &lsquo;C&rsquo; are letters.</p>

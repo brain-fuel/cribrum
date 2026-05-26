@@ -1,0 +1,4 @@
+=== input ===
+foo{#ident % this is a comment}
+=== expected ===
+<p><span id="ident">foo</span></p>

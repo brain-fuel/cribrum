@@ -1,0 +1,4 @@
+=== input ===
+aa_"bb"_cc
+=== expected ===
+<p>aa<em>&ldquo;bb&rdquo;</em>cc</p>

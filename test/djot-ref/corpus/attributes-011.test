@@ -1,0 +1,4 @@
+=== input ===
+{#id} at beginning
+=== expected ===
+<p> at beginning</p>

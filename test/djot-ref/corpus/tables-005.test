@@ -1,0 +1,31 @@
+=== input ===
+|a|b|
+|:-|---:|
+|c|d|
+|cc|dd|
+|-:|:-:|
+|e|f|
+|g|h|
+=== expected ===
+<table>
+<tr>
+<th style="text-align: left;">a</th>
+<th style="text-align: right;">b</th>
+</tr>
+<tr>
+<td style="text-align: left;">c</td>
+<td style="text-align: right;">d</td>
+</tr>
+<tr>
+<th style="text-align: right;">cc</th>
+<th style="text-align: center;">dd</th>
+</tr>
+<tr>
+<td style="text-align: right;">e</td>
+<td style="text-align: center;">f</td>
+</tr>
+<tr>
+<td style="text-align: right;">g</td>
+<td style="text-align: center;">h</td>
+</tr>
+</table>

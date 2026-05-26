@@ -1,0 +1,5 @@
+=== input ===
+[closed](hello *a
+b*)
+=== expected ===
+<p><a href="hello *ab*">closed</a></p>

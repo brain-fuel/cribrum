@@ -1,0 +1,4 @@
+=== input ===
+>> not blockquote
+=== expected ===
+<p>&gt;&gt; not blockquote</p>

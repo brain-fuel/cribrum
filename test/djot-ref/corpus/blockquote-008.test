@@ -1,0 +1,11 @@
+=== input ===
+> nested
+>
+> > more
+=== expected ===
+<blockquote>
+<p>nested</p>
+<blockquote>
+<p>more</p>
+</blockquote>
+</blockquote>

@@ -1,0 +1,4 @@
+=== input ===
+[nested [span]{.blue}]{#ident}
+=== expected ===
+<p><span id="ident">nested <span class="blue">span</span></span></p>

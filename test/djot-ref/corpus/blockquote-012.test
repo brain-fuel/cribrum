@@ -1,0 +1,6 @@
+=== input ===
+> # Heading
+=== expected ===
+<blockquote>
+<h1 id="Heading">Heading</h1>
+</blockquote>

@@ -1,0 +1,4 @@
+=== input ===
+foo привет{.ru}
+=== expected ===
+<p>foo <span class="ru">привет</span></p>

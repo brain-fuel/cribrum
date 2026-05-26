@@ -1,0 +1,6 @@
+=== input ===
+After {#id} space
+{.class}
+=== expected ===
+<p>After  space
+</p>

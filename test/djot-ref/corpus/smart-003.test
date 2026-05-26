@@ -1,0 +1,6 @@
+=== input ===
+'Oak,' 'elm,' and 'beech' are names of trees.
+So is 'pine.'
+=== expected ===
+<p>&lsquo;Oak,&rsquo; &lsquo;elm,&rsquo; and &lsquo;beech&rsquo; are names of trees.
+So is &lsquo;pine.&rsquo;</p>

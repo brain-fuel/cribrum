@@ -1,0 +1,4 @@
+=== input ===
+{#id .cla*ss*
+=== expected ===
+<p>{#id .cla<strong>ss</strong></p>

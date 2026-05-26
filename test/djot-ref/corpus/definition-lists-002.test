@@ -1,0 +1,19 @@
+=== input ===
+: apple
+
+  red fruit
+
+: banana
+
+  yellow fruit
+=== expected ===
+<dl>
+<dt>apple</dt>
+<dd>
+<p>red fruit</p>
+</dd>
+<dt>banana</dt>
+<dd>
+<p>yellow fruit</p>
+</dd>
+</dl>

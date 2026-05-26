@@ -1,0 +1,4 @@
+=== input ===
+_[bar_](url)
+=== expected ===
+<p><em>[bar</em>](url)</p>

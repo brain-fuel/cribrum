@@ -1,4 +1,0 @@
-=== input ===
-a---b
-=== expected ===
-<p>a—b</p>

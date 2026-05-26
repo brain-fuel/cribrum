@@ -1,0 +1,4 @@
+=== input ===
+Were you alive in the '70s?
+=== expected ===
+<p>Were you alive in the &rsquo;70s?</p>

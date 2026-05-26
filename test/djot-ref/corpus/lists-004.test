@@ -1,0 +1,25 @@
+=== input ===
+- one
+  and
+
+  another paragraph
+
+  - a list
+
+- two
+=== expected ===
+<ul>
+<li>
+<p>one
+and</p>
+<p>another paragraph</p>
+<ul>
+<li>
+a list
+</li>
+</ul>
+</li>
+<li>
+<p>two</p>
+</li>
+</ul>

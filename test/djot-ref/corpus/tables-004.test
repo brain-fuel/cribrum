@@ -1,0 +1,14 @@
+=== input ===
+| a | b |
+
+^ With a _caption_
+and another line.
+=== expected ===
+<table>
+<caption>With a <em>caption</em>
+and another line.</caption>
+<tr>
+<td>a</td>
+<td>b</td>
+</tr>
+</table>

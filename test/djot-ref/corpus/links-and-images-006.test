@@ -1,0 +1,5 @@
+=== input ===
+[link](url
+andurl)
+=== expected ===
+<p><a href="urlandurl">link</a></p>

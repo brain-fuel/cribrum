@@ -1,0 +1,4 @@
+=== input ===
+\_[bar_](url)
+=== expected ===
+<p>_<a href="url">bar_</a></p>

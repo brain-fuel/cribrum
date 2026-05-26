@@ -1,0 +1,9 @@
+=== input ===
+aaa
+
+> bbb
+=== expected ===
+<p>aaa</p>
+<blockquote>
+<p>bbb</p>
+</blockquote>

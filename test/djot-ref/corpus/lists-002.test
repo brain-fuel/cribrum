@@ -1,0 +1,12 @@
+=== input ===
+- one
+ - two
+  - three
+=== expected ===
+<ul>
+<li>
+one
+- two
+- three
+</li>
+</ul>

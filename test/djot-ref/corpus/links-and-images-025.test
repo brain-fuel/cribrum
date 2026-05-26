@@ -1,0 +1,6 @@
+=== input ===
+<http://example.com/foo>
+<me@example.com>
+=== expected ===
+<p><a href="http://example.com/foo">http://example.com/foo</a>
+<a href="mailto:me@example.com">me@example.com</a></p>

@@ -1,0 +1,4 @@
+=== input ===
+hi{}
+=== expected ===
+<p>hi</p>

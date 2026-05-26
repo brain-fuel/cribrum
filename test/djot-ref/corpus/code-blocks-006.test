@@ -1,0 +1,12 @@
+=== input ===
+```
+hi
+```
+```
+two
+```
+=== expected ===
+<pre><code>hi
+</code></pre>
+<pre><code>two
+</code></pre>

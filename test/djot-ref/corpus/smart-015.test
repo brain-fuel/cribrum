@@ -1,0 +1,22 @@
+=== input ===
+one-
+two--
+three---
+four----
+five-----
+six------
+seven-------
+eight--------
+nine---------
+thirteen-------------.
+=== expected ===
+<p>one-
+two&ndash;
+three&mdash;
+four&ndash;&ndash;
+five&mdash;&ndash;
+six&mdash;&mdash;
+seven&mdash;&ndash;&ndash;
+eight&ndash;&ndash;&ndash;&ndash;
+nine&mdash;&mdash;&mdash;
+thirteen&mdash;&mdash;&mdash;&ndash;&ndash;.</p>

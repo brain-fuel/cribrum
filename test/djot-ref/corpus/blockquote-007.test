@@ -1,0 +1,12 @@
+=== input ===
+> > > nested
+> lazy
+=== expected ===
+<blockquote>
+<blockquote>
+<blockquote>
+<p>nested
+lazy</p>
+</blockquote>
+</blockquote>
+</blockquote>

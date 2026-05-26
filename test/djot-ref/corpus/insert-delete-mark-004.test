@@ -1,0 +1,4 @@
+=== input ===
+This is {=marked *text*=}.
+=== expected ===
+<p>This is <mark>marked <strong>text</strong></mark>.</p>

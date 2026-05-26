@@ -1,0 +1,7 @@
+=== input ===
+{.foo}
+``` =html
+<table>
+```
+=== expected ===
+<table>

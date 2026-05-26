@@ -1,0 +1,4 @@
+=== input ===
+[x_y]{.bar_}
+=== expected ===
+<p><span class="bar_">x_y</span></p>

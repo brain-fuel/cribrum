@@ -1,0 +1,6 @@
+=== input ===
+{#id .class
+  style="color:red"}
+A paragraph
+=== expected ===
+<p class="class" id="id" style="color:red">A paragraph</p>

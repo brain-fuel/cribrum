@@ -1,0 +1,4 @@
+=== input ===
+*foo`*`
+=== expected ===
+<p>*foo<code>*</code></p>

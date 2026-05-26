@@ -1,0 +1,11 @@
+=== input ===
+See [Introduction][].
+
+# Introduction
+
+[Introduction]: #bar
+=== expected ===
+<p>See <a href="#bar">Introduction</a>.</p>
+<section id="Introduction">
+<h1>Introduction</h1>
+</section>

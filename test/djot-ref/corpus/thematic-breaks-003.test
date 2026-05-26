@@ -1,0 +1,10 @@
+=== input ===
+hello
+
+   *-*-*-*
+
+there
+=== expected ===
+<p>hello</p>
+<hr>
+<p>there</p>
