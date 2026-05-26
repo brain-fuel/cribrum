@@ -34,3 +34,8 @@ ipkg = "render-docsnav.ipkg"
 type = "local"
 path = "tools/run-djotref"
 ipkg = "run-djotref.ipkg"
+
+[custom.all.oracle-emit]
+type = "local"
+path = "tools/oracle-emit"
+ipkg = "oracle-emit.ipkg"

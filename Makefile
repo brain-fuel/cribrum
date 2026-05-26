@@ -1,4 +1,4 @@
-.PHONY: test test-fast test-cribrum test-teaweb djotref djotref-update djotref-ingest mutation ingest ingest-check build clean readme docsnav help
+.PHONY: test test-fast test-cribrum test-teaweb djotref djotref-update djotref-ingest oracle mutation ingest ingest-check build clean readme docsnav help
 
 help:
 	@echo "Targets:"
@@ -9,6 +9,7 @@ help:
 	@echo "  djotref        Djot reference-suite gate (regresses on baseline break)"
 	@echo "  djotref-update Refresh test/djot-ref/baseline.txt with current pass set"
 	@echo "  djotref-ingest Re-download jgm/djot.lua reference corpus into test/djot-ref/corpus/"
+	@echo "  oracle         Cross-check Cribrum's decideHtml against vnu.jar (W3C HTML validator)"
 	@echo "  mutation       Mutation gate (changed-file scope; MUTATION_BASE=ALL for full)"
 	@echo "  ingest         Regenerate Cribrum.Html.Model.Generated + Cribrum.AA.Catalog.Generated"
 	@echo "  ingest-check   Fail if either generated module drifts from its ingest source"
@@ -35,6 +36,14 @@ djotref-update:
 
 djotref-ingest:
 	cd ingest && npm install --silent && npm run ingest:djotref
+
+# P2.4 oracle: oracle-emit emits the JSONL corpus on stdout (with a
+# diagnostic line on stderr), oracle.ts validates each HTML against
+# vnu.jar and reports any (cribrum, expected, vnu) divergence.
+oracle:
+	cd ingest && npm install --silent
+	pack -q run tools/oracle-emit/oracle-emit.ipkg \
+	  | (cd ingest && npx tsx oracle.ts)
 
 mutation:
 	test/mutation/run.sh

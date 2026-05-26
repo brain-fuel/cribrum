@@ -1,0 +1,14 @@
+package oracle-emit
+version = 0.1.0
+authors = "Matthew Laine"
+brief   = "Emit a JSONL corpus of Cribrum HExpr cases (rendered HTML + decideHtml verdict) for cross-checking against an external validator (vnu / validator.js) per plan.dj §P2.4."
+
+sourcedir = "src"
+depends   = base
+          , contrib
+          , cribrum
+
+main       = Main
+executable = "oracle-emit"
+
+modules = Main

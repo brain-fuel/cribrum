@@ -80,3 +80,22 @@ features Cribrum doesn't model (source positions, AST printing, Lua
 filters) and are skipped during ingestion; counts for both kept and
 skipped tests are printed.
 
+## oracle.ts
+
+Cribrum's side of the plan §P2.4 oracle. Reads the JSONL corpus
+emitted by `tools/oracle-emit/` (one row per `(name, html, decided,
+expected)` curated case) and validates each `html` against the W3C
+Nu Html Checker (`vnu.jar`, shipped via the `vnu-jar` npm package).
+Reports divergence across three sources: curator's expected verdict,
+Cribrum's `decideHtml`, and vnu's verdict — all three must agree.
+
+```
+make oracle
+# or, equivalently:
+pack -q run tools/oracle-emit/oracle-emit.ipkg | npx tsx oracle.ts
+```
+
+vnu needs Java on `$PATH`. If either Java or the vnu shim is missing
+the script prints an actionable skip message and exits 0. Set
+`CRIBRUM_ORACLE_REQUIRE_VNU=1` to turn a missing dependency into a
+hard failure (CI uses this).
