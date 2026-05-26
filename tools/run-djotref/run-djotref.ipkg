@@ -1,0 +1,14 @@
+package run-djotref
+version = 0.1.0
+authors = "Matthew Laine"
+brief   = "Run Cribrum's Djot pipeline against a corpus of reference test files and report pass/fail per case."
+
+sourcedir = "src"
+depends   = base
+          , contrib
+          , cribrum
+
+main       = Main
+executable = "run-djotref"
+
+modules = Main

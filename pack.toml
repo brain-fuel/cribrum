@@ -29,3 +29,8 @@ ipkg = "render-doc.ipkg"
 type = "local"
 path = "tools/render-docsnav"
 ipkg = "render-docsnav.ipkg"
+
+[custom.all.run-djotref]
+type = "local"
+path = "tools/run-djotref"
+ipkg = "run-djotref.ipkg"

@@ -1,0 +1,4 @@
+=== input ===
+![cat](/cat.png)
+=== expected ===
+<p><img alt="cat" src="/cat.png"></p>

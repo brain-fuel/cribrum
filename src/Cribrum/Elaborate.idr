@@ -349,12 +349,24 @@ elaborateBlock (FootnoteDef _ l _) =
 -- Top-level elaborate.
 --------------------------------------------------------------------------------
 
+||| `True` for blocks that contribute *no* visible output in the
+||| rendered document. Reference and footnote definitions are
+||| structural markers consumed by the inline-link resolver — the
+||| reference Djot renderer emits nothing for them, and so does
+||| Cribrum (the elaborator otherwise injects HTML comments which
+||| would break exact-match conformance against the reference suite).
+isInvisibleBlock : Block -> Bool
+isInvisibleBlock (RefDef _ _ _)      = True
+isInvisibleBlock (FootnoteDef _ _ _) = True
+isInvisibleBlock _                   = False
+
 ||| Wrap the elaborated blocks in a single `<main>` landmark — a minimal
 ||| semantic root that satisfies the no-`div`-soup commitment. As Phase 1b
 ||| matures the wrapper will be inferred from heading structure.
 public export
 elaborateDoc : Doc -> HExpr
-elaborateDoc (MkDoc bs) = Element "main" [] (map elaborateBlock bs)
+elaborateDoc (MkDoc bs) =
+  Element "main" [] (map elaborateBlock (filter (not . isInvisibleBlock) bs))
 
 ||| Strict elaboration: returns the HExpr together with proofs of validity
 ||| and structural accessibility. Per plan.dj §Governing principle, callers

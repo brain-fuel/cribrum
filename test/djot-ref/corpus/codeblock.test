@@ -1,0 +1,6 @@
+=== input ===
+```
+code body
+```
+=== expected ===
+<pre><code>code body</code></pre>

@@ -302,6 +302,39 @@ ext_table_round_trip_strict = oneShot $
       Right _ => success
       Left  e => failWith Nothing ("elaborate: " ++ show e)
 
+--------------------------------------------------------------------------------
+-- Invisible blocks (RefDef + FootnoteDef).
+--------------------------------------------------------------------------------
+
+||| Reference-definition blocks contribute no visible output. The
+||| reference Djot renderer emits nothing for them; Cribrum's
+||| elaborator drops them via `isInvisibleBlock` at `elaborateDoc`.
+||| Pins the filter so an inadvertent comment doesn't sneak back in.
+export
+ext_refdef_invisible : Property
+ext_refdef_invisible = oneShot $
+  elaborateDoc (MkDoc [RefDef "h" "https://example.org" Nothing])
+    === Element "main" [] []
+
+||| Footnote-definition blocks are equally invisible (full footnote
+||| rendering arrives with the footnote slice).
+export
+ext_footnotedef_invisible : Property
+ext_footnotedef_invisible = oneShot $
+  elaborateDoc (MkDoc [FootnoteDef emptyAttrs "n" []])
+    === Element "main" [] []
+
+||| A document with both a paragraph and a RefDef elaborates to a
+||| `<main>` containing only the paragraph — the RefDef contributes
+||| nothing.
+export
+ext_paragraph_with_refdef_only_emits_paragraph : Property
+ext_paragraph_with_refdef_only_emits_paragraph = oneShot $
+  elaborateDoc (MkDoc [ para "hi"
+                      , RefDef "h" "https://example.org" Nothing
+                      ])
+    === Element "main" [] [Element "p" [] [Text "hi"]]
+
 export
 pddt_inline_mapping : Property
 pddt_inline_mapping = withTests 1 . property $ do
@@ -425,6 +458,10 @@ group = MkGroup "Cribrum.Elaborate"
   , ("ext_table_with_header_and_alignment_emit",
         ext_table_with_header_and_alignment_emit)
   , ("ext_table_round_trip_strict",            ext_table_round_trip_strict)
+  , ("ext_refdef_invisible",                   ext_refdef_invisible)
+  , ("ext_footnotedef_invisible",              ext_footnotedef_invisible)
+  , ("ext_paragraph_with_refdef_only_emits_paragraph",
+        ext_paragraph_with_refdef_only_emits_paragraph)
   , ("pbt_strict_elaboration_total_on_simple_docs",
         pbt_strict_elaboration_total_on_simple_docs)
   , ("pbt_elaborated_doc_isValidHtml",         pbt_elaborated_doc_isValidHtml)

@@ -1,6 +1,6 @@
 # Cribrum — Current Status
 
-> 434 tests across 18 groups, all green. Phase 4 typed-by-construction
+> 472 tests across 18 groups, all green. Phase 4 typed-by-construction
 > view constructors landed (`TEAWeb.Html.Typed` — Step 4). AA catalog
 > grew from 12 → 19 rules (Step 5 partial): area-alt, link-empty-href,
 > meta-no-refresh, summary-not-empty, track-kind (all Structural, all
@@ -41,9 +41,29 @@
 > the real `README.dj` + `plan.dj` files** at test time (in
 > `test/src/Main.idr`) rather than embedded slices — the previous
 > stale-fixture hazard is gone, and the integration suite gains a
-> determinism check on the full pipeline. Tables, definition + task
-> lists, footnotes, reference defs, attribute blocks, and smart-
-> punctuation still ahead.
+> determinism check on the full pipeline. **Step 10 parser slice**:
+> smart punctuation (`--`/`---`/`...` and orientation-aware curly
+> quotes), pipe tables with optional alignment row + header detection
+> (elaborator emits a real `<table>`/`<thead>`/`<tbody>` tree with
+> `style="text-align:..."` per-cell when alignments are declared),
+> reference links + definitions (`[text][ref]`, `[text][]`, and
+> `[ref]: url "title"` definitions; a post-parse resolver rewrites
+> `LinkReference` to `LinkInline` when the label is defined and
+> leaves unresolved references intact). `Cribrum.Elaborate` gained an
+> `isInvisibleBlock` filter so RefDef / FootnoteDef blocks contribute
+> no rendered output (the previous placeholder `<!-- comment -->`
+> would have broken byte-equal conformance against the reference
+> renderer). **Djot reference-suite gate** (`make djotref`): new
+> `tools/run-djotref/` walks `test/djot-ref/corpus/*.test` files
+> (one test per file, `=== input ===` / `=== expected ===` markers),
+> runs each through Cribrum's parse + elaborate + render pipeline,
+> normalises whitespace + strips the `<main>` wrapper, and compares
+> against the expected reference output. A baseline file
+> (`test/djot-ref/baseline.txt`) lists currently-passing tests;
+> regressions fail the gate, additions are tracked. 20 / 20
+> hand-curated tests pass at the baseline — the full `jgm/djot`
+> corpus arrives once the ingest hookup lands. Definition + task
+> lists, footnotes, attribute blocks still ahead.
 
 > Snapshot of what's built. Authoritative narrative is `plan.dj`; the
 > convention catalog is `docs/conventions.md`.
@@ -54,7 +74,7 @@
 |---------------------------|-------|--------|
 | `Cribrum.Node`            | core  | HExpr IR (Element/Text/Comment, HAttr w/ handler-capable AttrValue, traversal). |
 | `Cribrum.Djot.Surface`    | 1a    | Faithful Djot AST — full construct inventory representable. |
-| `Cribrum.Djot.Parser`     | 1a    | **Slice**: paragraph, ATX heading (1-6), thematic break, block quote (recursive), fenced code block, unordered lists (`-`/`*`/`+` markers), ordered lists (decimal `<n>.` markers), inline emphasis (`_em_`), strong (`*strong*`), verbatim (`` `code` ``), inline links (`[text](url)`), inline images (`![alt](src)`), autolinks (`<url>` / `<email>`, guarded by a non-empty + no-whitespace + has-`:`-or-`@` heuristic; literal `<foo>` falls through to plain text), hard breaks (trailing `\` on a non-last paragraph line). Inline tokenizer uses a plain-character accumulator so unpaired/empty markers fold back into the surrounding text without fragmenting `InlText` runs. Tables, definition + task lists, footnotes, reference defs, attribute blocks, and smart-punctuation → deferred. |
+| `Cribrum.Djot.Parser`     | 1a    | **Slice**: paragraph, ATX heading (1-6), thematic break, block quote (recursive), fenced code block, unordered + ordered lists, pipe tables (with alignment row + header detection), inline emphasis (`_em_`), strong (`*strong*`), verbatim (`` `code` ``), inline links (`[text](url)`), reference links (`[text][ref]` + collapsed `[text][]`), reference definitions (`[ref]: url ["title"]` — top-level only), inline images (`![alt](src)`), autolinks (`<url>` / `<email>` with non-empty + no-whitespace + has-`:`-or-`@` heuristic), hard breaks (trailing `\` on a non-last paragraph line), smart punctuation (`--`/`---`/`...` + orientation-aware curly quotes). Top-level `parseDoc` is two-pass: raw parse, then walk-and-resolve `LinkReference` against the document's `RefDef` table. Inline tokenizer uses a plain-character accumulator so unpaired/empty markers fold back into the surrounding text without fragmenting `InlText` runs. Definition + task lists, footnotes, attribute blocks → deferred. |
 | `Cribrum.Html.Category`   | 2     | Content-category enum (Metadata/Flow/Sectioning/Heading/Phrasing/Embedded/Interactive/Palpable/ScriptSupporting/FormAssociated). |
 | `Cribrum.Html.Model`      | 2     | Public surface (types + lookups + attribute-name permission). Element catalog (114 elements) lives in `Cribrum.Html.Model.Generated`, ingested from `ingest/content-model.ts` by `ingest/html-model.ts` with `@webref/elements@2.6.0` cross-validation (invariant I8). `Cribrum.Html.Model.Types` carries `ElementSpec` / `ChildPolicy` (extracted to break the Model ↔ Generated cycle). `Cribrum.Html.Model.Invariants` lifts the TS-side tag-closure check (I2) to a decidable Idris proposition (`AllChildTagsExist` + `decAllChildTagsExist`); the test suite asserts the real catalog satisfies it. Drift gate `make ingest-check` fails on `@webref` bump, `content-model.ts` edit, or hand-edit to `Generated.idr` and pinpoints which input drifted. |
 | `Cribrum.Html.Valid`      | 2     | `IsValidHtml = IsKnownTag × All AttrAllowedIn × All ChildAllowedIn × All IsValidHtml`. Total `decideHtml : (h : HExpr) -> Dec (IsValidHtml h)`. Located rejection (`decideHtmlLocated`) returns path-into-tree + `RejectionClass` (UnknownTag / DisallowedAttr / IllegalChild / BlockInPhrasing / MalformedTable / TextNotAllowedIn / CommentNotAllowedIn). |
@@ -82,13 +102,14 @@ $ make test-fast        # cribrum + teaweb suites
 $ make test             # adds ingest drift gate + mutation gate
 ```
 
-Counts per group: 18 Node + 16 Surface + 88 Parser + 20 Model + 39 Valid
-+ 20 Elaborate + 17 Render.Html + 1 Render.Dom + 56 AA.Pass + 88 AA.Typed
+Counts per group: 18 Node + 16 Surface + 116 Parser + 20 Model + 39 Valid
++ 26 Elaborate + 17 Render.Html + 1 Render.Dom + 56 AA.Pass + 88 AA.Typed
 + 5 AA.Partition + 16 Pipeline.Anchor + 6 Integration (real README.dj +
-plan.dj read at test time, plus pipeline determinism check) = 390 Cribrum.
+plan.dj read at test time, plus pipeline determinism check) = 424 Cribrum.
 10 TEAWeb.Html + 9 TEAWeb.Html.Typed + 10 TEAWeb.Event + 6 TEAWeb.Cmd
-+ 9 TEAWeb.Program = 44 TEAWeb.
-**Total: 434 tests across 18 groups.**
++ 9 TEAWeb.Program = 44 TEAWeb. Plus 20 djot-ref corpus tests in
+`tools/run-djotref/` (separate harness, gated against baseline).
+**Total: 468 in-suite tests across 18 groups, plus 20 djot-ref tests.**
 
 Each module has:
 - **EXTs** (example tests) — canonical cases for each behaviour.
@@ -97,7 +118,7 @@ Each module has:
 - **PBTs** (property-based tests via hedgehog) — invariants over generated
   inputs.
 
-## Mutation gate (146 mutants, 0 surviving)
+## Mutation gate (190 mutants, 0 surviving)
 
 ```
 $ test/mutation/run.sh                # changed-file scope (default)

@@ -1,0 +1,4 @@
+=== input ===
+hello world
+=== expected ===
+<p>hello world</p>

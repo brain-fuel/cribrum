@@ -27,7 +27,7 @@ src/Cribrum/Elaborate.idr	  Element "hr" [] []	  Element "br" [] []	elaborate: t
 src/Cribrum/Elaborate.idr	elaborateInline InlSoftBreak       = Text " "	elaborateInline InlSoftBreak       = Text ""	elaborate: softbreak -> empty
 src/Cribrum/Elaborate.idr	elaborateInline InlHardBreak       = Element "br" [] []	elaborateInline InlHardBreak       = Element "hr" [] []	elaborate: hardbreak -> hr
 src/Cribrum/Elaborate.idr	Element "em" [] (assert_total	Element "strong" [] (assert_total	elaborate: em -> strong
-src/Cribrum/Elaborate.idr	elaborateDoc (MkDoc bs) = Element "main" []	elaborateDoc (MkDoc bs) = Element "section" []	elaborate: doc wrapper main -> section
+src/Cribrum/Elaborate.idr	Element "main" [] (map elaborateBlock (filter (not . isInvisibleBlock) bs))	Element "section" [] (map elaborateBlock (filter (not . isInvisibleBlock) bs))	elaborate: doc wrapper main -> section
 src/Cribrum/Render/Html.idr	escapeChar '&'  = "&amp;"	escapeChar '&'  = "&"	render: skip & escape
 src/Cribrum/Render/Html.idr	escapeChar '<'  = "&lt;"	escapeChar '<'  = "<"	render: skip < escape
 src/Cribrum/Render/Html.idr	escapeChar '>'  = "&gt;"	escapeChar '>'  = ">"	render: skip > escape
@@ -184,3 +184,7 @@ src/Cribrum/Djot/Parser.idr	  refDefsFromBlock (RefDef l u _)      = [(l, u)]	  
 src/Cribrum/Djot/Parser.idr	    InlLink a (LinkReference l) xs => case lookup l tab of	    InlLink a (LinkReference l) xs => case Nothing of	parser: ref resolution always misses
 src/Cribrum/Djot/Parser.idr	      Just url => InlLink a (LinkInline url Nothing)	      Just url => InlLink a (LinkReference l)	parser: ref resolution keeps reference instead of resolving
 src/Cribrum/Djot/Parser.idr	      table = collectRefDefs raw	      table = []	parser: ref table never populated
+src/Cribrum/Elaborate.idr	isInvisibleBlock (RefDef _ _ _)      = True	isInvisibleBlock (RefDef _ _ _)      = False	elaborate: RefDef becomes visible (re-emits unwanted comment)
+src/Cribrum/Elaborate.idr	isInvisibleBlock (FootnoteDef _ _ _) = True	isInvisibleBlock (FootnoteDef _ _ _) = False	elaborate: FootnoteDef becomes visible
+src/Cribrum/Elaborate.idr	isInvisibleBlock _                   = False	isInvisibleBlock _                   = True	elaborate: every block becomes invisible (renders empty)
+src/Cribrum/Elaborate.idr	Element "main" [] (map elaborateBlock (filter (not . isInvisibleBlock) bs))	Element "main" [] (map elaborateBlock bs)	elaborate: doc skips invisibility filter (RefDef emits)

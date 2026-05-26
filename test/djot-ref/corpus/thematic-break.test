@@ -1,0 +1,8 @@
+=== input ===
+before
+
+---
+
+after
+=== expected ===
+<p>before</p><hr><p>after</p>

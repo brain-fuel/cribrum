@@ -1,20 +1,22 @@
-.PHONY: test test-fast test-cribrum test-teaweb mutation ingest ingest-check build clean readme docsnav help
+.PHONY: test test-fast test-cribrum test-teaweb djotref djotref-update mutation ingest ingest-check build clean readme docsnav help
 
 help:
 	@echo "Targets:"
-	@echo "  test         Run ingest-check + cribrum + teaweb suites + mutation gate"
-	@echo "  test-fast    Run cribrum + teaweb suites (skip mutation)"
-	@echo "  test-cribrum Cribrum suite only"
-	@echo "  test-teaweb  TEAWeb suite only"
-	@echo "  mutation     Mutation gate (changed-file scope; MUTATION_BASE=ALL for full)"
-	@echo "  ingest       Regenerate Cribrum.Html.Model.Generated + Cribrum.AA.Catalog.Generated"
-	@echo "  ingest-check Fail if either generated module drifts from its ingest source"
-	@echo "  build        Typecheck cribrum + teaweb libraries"
-	@echo "  readme       Render README.dj -> README.html via the actual Cribrum pipeline"
-	@echo "  docsnav      Regenerate examples/teaweb/docsnav/{index.html,src/Generated.idr} from README.dj, then JS-build the island"
-	@echo "  clean        Remove build artifacts"
+	@echo "  test           Run ingest-check + cribrum + teaweb suites + djotref + mutation gate"
+	@echo "  test-fast      Run cribrum + teaweb suites (skip djotref + mutation)"
+	@echo "  test-cribrum   Cribrum suite only"
+	@echo "  test-teaweb    TEAWeb suite only"
+	@echo "  djotref        Djot reference-suite gate (regresses on baseline break)"
+	@echo "  djotref-update Refresh test/djot-ref/baseline.txt with current pass set"
+	@echo "  mutation       Mutation gate (changed-file scope; MUTATION_BASE=ALL for full)"
+	@echo "  ingest         Regenerate Cribrum.Html.Model.Generated + Cribrum.AA.Catalog.Generated"
+	@echo "  ingest-check   Fail if either generated module drifts from its ingest source"
+	@echo "  build          Typecheck cribrum + teaweb libraries"
+	@echo "  readme         Render README.dj -> README.html via the actual Cribrum pipeline"
+	@echo "  docsnav        Regenerate examples/teaweb/docsnav/{index.html,src/Generated.idr} from README.dj, then JS-build the island"
+	@echo "  clean          Remove build artifacts"
 
-test: ingest-check test-cribrum test-teaweb mutation
+test: ingest-check test-cribrum test-teaweb djotref mutation
 
 test-fast: test-cribrum test-teaweb
 
@@ -23,6 +25,12 @@ test-cribrum:
 
 test-teaweb:
 	pack test teaweb_test
+
+djotref:
+	pack -q run tools/run-djotref/run-djotref.ipkg
+
+djotref-update:
+	pack -q run tools/run-djotref/run-djotref.ipkg --update
 
 mutation:
 	test/mutation/run.sh
@@ -48,4 +56,4 @@ docsnav:
 	pack --cg javascript build examples/teaweb/docsnav/docsnav.ipkg
 
 clean:
-	rm -rf build test/build test/teaweb/build tools/render-doc/build tools/render-docsnav/build examples/teaweb/docsnav/build
+	rm -rf build test/build test/teaweb/build tools/render-doc/build tools/render-docsnav/build tools/run-djotref/build examples/teaweb/docsnav/build

@@ -1,0 +1,4 @@
+=== input ===
+ping <me@example.org>
+=== expected ===
+<p>ping <a href="me@example.org">me@example.org</a></p>

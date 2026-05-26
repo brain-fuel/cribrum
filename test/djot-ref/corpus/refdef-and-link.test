@@ -1,0 +1,6 @@
+=== input ===
+see [home][h]
+
+[h]: https://example.org
+=== expected ===
+<p>see <a href="https://example.org">home</a></p>
