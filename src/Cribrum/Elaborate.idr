@@ -336,8 +336,12 @@ elaborateBlock (BlockQuote a bs) =
 elaborateBlock (Div a bs) =
   Element "div" (attrsToHAttrs a)
     (assert_total (map elaborateBlock bs))
-elaborateBlock (CodeBlock a _ body) =
-  Element "pre" (attrsToHAttrs a) [Element "code" [] [Text body]]
+elaborateBlock (CodeBlock a info body) =
+  let codeAttrs : List HAttr
+      codeAttrs = case info of
+        "" => []
+        i  => [MkHAttr "class" (Str ("language-" ++ i))]
+   in Element "pre" (attrsToHAttrs a) [Element "code" codeAttrs [Text body]]
 elaborateBlock (RawBlock _ body) = Text body
 elaborateBlock (ListBlock _ style _ tight items) =
   let tag = case style of

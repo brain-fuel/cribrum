@@ -76,7 +76,10 @@ decAttrAllowed tag (MkHAttr name _) = decSo (isAllowedAttrName tag name)
 ||| element `parent` under `parent`'s content-model entry.
 |||
 ||| * `NoChildren`        — nothing fits.
-||| * `TextOnly`          — only `Text` / `Comment`.
+||| * `TextOnly`          — only `Text` / `Comment`; raw-text parents
+|||                         (`<script>`, `<style>`, `<title>`, `<textarea>`)
+|||                         additionally reject `Comment` — `<!--` inside
+|||                         raw-text is character data, not a comment node.
 ||| * `AnyContent`        — anything (transparent / spec gap).
 ||| * `OnlyTags ts at`    — `Element t` iff `t ∈ ts`; `Text` iff `at`; comments OK.
 ||| * `OnlyCategories cs` — `Element t` iff `t`'s catalog categories overlap `cs`;
@@ -87,7 +90,7 @@ childAllowedBool parent c = case childPolicyOf parent of
   NoChildren            => False
   TextOnly              => case c of
     Text _                => True
-    Comment _             => True
+    Comment _             => not (isRawTextOf parent)
     Element _ _ _         => False
   AnyContent            => True
   OnlyTags ts allowText => case c of
@@ -225,15 +228,50 @@ data RejectionClass : Type where
   ||| (the void-element set: `<br>`, `<img>`, `<hr>`, ...).
   CommentNotAllowedIn : (parent : String) -> RejectionClass
 
+  ||| A comment appears directly inside a raw-text element (`<script>`,
+  ||| `<style>`, `<title>`, `<textarea>`). `<!--` in those contexts is
+  ||| character data, not an HTML comment, so an `HExpr` `Comment` node
+  ||| there cannot be serialised as one. (Spec: raw-text / escapable-
+  ||| raw-text content models.)
+  CommentInRawText    : (parent : String) -> RejectionClass
+
+  ||| Interactive-content element appears as a descendant of an
+  ||| interactive ancestor that forbids them. Concretely:
+  |||   * `<a>` content model: "no interactive content descendant and no
+  |||     `a` element descendant".
+  |||   * `<button>` content model: "no interactive content descendant".
+  ||| Path locates the offending descendant; `ancestor` names the
+  ||| restricting context and `child` the descendant tag.
+  InteractiveInInteractive : (ancestor : String) -> (child : String) -> RejectionClass
+
+  ||| A `<form>` element appears as a descendant of another `<form>`.
+  ||| (Spec: form's content model is "flow content, but with no form
+  ||| element descendants".)
+  FormInForm          : RejectionClass
+
+  ||| An `<li>` element appears outside an `<ol>` / `<ul>` / `<menu>`
+  ||| parent. (Spec: li's element-context requirement.)
+  OrphanLi            : RejectionClass
+
+  ||| A `<dt>` or `<dd>` element appears outside a `<dl>` (optionally
+  ||| wrapped in a `<div>`). `childTag` is `"dt"` or `"dd"`.
+  OrphanDtDd          : (childTag : String) -> RejectionClass
+
 public export
 Show RejectionClass where
-  show (UnknownTag t)             = "UnknownTag " ++ show t
-  show (DisallowedAttr t a)       = "DisallowedAttr " ++ show t ++ " " ++ show a
-  show (IllegalChild p c)         = "IllegalChild " ++ show p ++ " " ++ show c
-  show (BlockInPhrasing p c)      = "BlockInPhrasing " ++ show p ++ " " ++ show c
-  show (MalformedTable p c)       = "MalformedTable " ++ show p ++ " " ++ show c
-  show (TextNotAllowedIn p)       = "TextNotAllowedIn " ++ show p
-  show (CommentNotAllowedIn p)    = "CommentNotAllowedIn " ++ show p
+  show (UnknownTag t)               = "UnknownTag " ++ show t
+  show (DisallowedAttr t a)         = "DisallowedAttr " ++ show t ++ " " ++ show a
+  show (IllegalChild p c)           = "IllegalChild " ++ show p ++ " " ++ show c
+  show (BlockInPhrasing p c)        = "BlockInPhrasing " ++ show p ++ " " ++ show c
+  show (MalformedTable p c)         = "MalformedTable " ++ show p ++ " " ++ show c
+  show (TextNotAllowedIn p)         = "TextNotAllowedIn " ++ show p
+  show (CommentNotAllowedIn p)      = "CommentNotAllowedIn " ++ show p
+  show (CommentInRawText p)         = "CommentInRawText " ++ show p
+  show (InteractiveInInteractive a c) =
+    "InteractiveInInteractive " ++ show a ++ " " ++ show c
+  show FormInForm                   = "FormInForm"
+  show OrphanLi                     = "OrphanLi"
+  show (OrphanDtDd t)               = "OrphanDtDd " ++ show t
 
 ||| A located rejection: the 0-indexed path into the tree at which the
 ||| first violation was found, plus the rejection class.
@@ -263,6 +301,9 @@ classifyChildRejection parent (Text _) = case childPolicyOf parent of
   _                     => TextNotAllowedIn parent
 classifyChildRejection parent (Comment _) = case childPolicyOf parent of
   NoChildren            => CommentNotAllowedIn parent
+  TextOnly              => if isRawTextOf parent
+                             then CommentInRawText parent
+                             else CommentNotAllowedIn parent
   _                     => CommentNotAllowedIn parent
 classifyChildRejection parent (Element ct _ _) = case childPolicyOf parent of
   NoChildren            => IllegalChild parent ct
@@ -331,15 +372,114 @@ mutual
     Just lr => Just lr
     Nothing => locateChildren path (S idx) cs
 
+--------------------------------------------------------------------------------
+-- Ancestor-context checks.
+--
+-- A second located walk that enforces the rules `IsValidHtml`'s local
+-- parent-child predicates cannot express on their own:
+--
+--   * Interactive-in-interactive — `<a>` and `<button>` forbid
+--     interactive-content descendants (and `<a>` additionally forbids
+--     `<a>` descendants).
+--   * Form-in-form — `<form>` forbids `<form>` descendants.
+--   * Orphan `<li>` — `<li>` must live under `<ol>` / `<ul>` / `<menu>`.
+--   * Orphan `<dt>` / `<dd>` — must live under `<dl>` (optionally wrapped
+--     in `<div>`).
+--
+-- The witness type `IsValidHtml h` does NOT capture these (each rule
+-- depends on ancestor state, not the local subtree). The ancestor pass
+-- therefore runs as a side check inside `decideHtmlLocated`: a tree
+-- that fails ancestor context is rejected with the appropriate
+-- `RejectionClass`, even when `decideHtml h = Yes`. The structural
+-- `IsValidHtml h` witness for such trees is correct as a structural
+-- proof but never reaches the caller (oracle / elaborator), preserving
+-- the contract that "decided" reports the full HTML5 verdict.
+--
+-- This mirrors the layering used for `StructuralAA`: a sibling
+-- proposition / decision pass conjoined at the boundary, not folded
+-- into the core IR proof.
+--------------------------------------------------------------------------------
+
+||| Ancestor state accumulated while walking the tree. Tracks the
+||| subset of ancestor element kinds that gate descendant placement.
+record AncestorCtx where
+  constructor MkAncestorCtx
+  ||| Inside an `<a>` ancestor — forbids interactive descendants.
+  inAnchor     : Bool
+  ||| Inside a `<button>` ancestor — forbids interactive descendants.
+  inButton     : Bool
+  ||| Inside a `<form>` ancestor — forbids `<form>` descendants.
+  inForm       : Bool
+  ||| Inside a `<ul>` / `<ol>` / `<menu>` ancestor — required for `<li>`.
+  inListParent : Bool
+  ||| Inside a `<dl>` ancestor — required for `<dt>` / `<dd>`.
+  ||| (`<div>` wrappers under `<dl>` keep this flag true so a `<dt>`
+  ||| nested through a div still counts; modelled here by leaving
+  ||| `inDl` untouched on `<div>` entry.)
+  inDl         : Bool
+
+rootCtx : AncestorCtx
+rootCtx = MkAncestorCtx False False False False False
+
+isListParent : String -> Bool
+isListParent t = t == "ul" || t == "ol" || t == "menu"
+
+isInteractiveTag : String -> Bool
+isInteractiveTag t = elem Interactive (categoriesOf t)
+
+||| Update the ancestor context when entering element `tag`. Only the
+||| flagged ancestor kinds toggle; everything else passes through.
+enterCtx : AncestorCtx -> (tag : String) -> AncestorCtx
+enterCtx ctx tag =
+  let ctx1 = if tag == "a"          then { inAnchor     := True } ctx  else ctx
+      ctx2 = if tag == "button"     then { inButton     := True } ctx1 else ctx1
+      ctx3 = if tag == "form"       then { inForm       := True } ctx2 else ctx2
+      ctx4 = if isListParent tag    then { inListParent := True } ctx3 else ctx3
+      ctx5 = if tag == "dl"         then { inDl         := True } ctx4 else ctx4
+   in ctx5
+
+||| Classify the ancestor-context violation for visiting element `tag`
+||| under context `ctx`, or `Nothing` if there is no violation.
+selfAncestorReject : AncestorCtx -> (tag : String) -> Maybe RejectionClass
+selfAncestorReject ctx tag =
+  if tag == "form" && inForm ctx then Just FormInForm
+  else if tag == "li" && not (inListParent ctx) then Just OrphanLi
+  else if (tag == "dt" || tag == "dd") && not (inDl ctx) then Just (OrphanDtDd tag)
+  else if (inAnchor ctx || inButton ctx) && isInteractiveTag tag then
+    Just (InteractiveInInteractive
+            (if inAnchor ctx then "a" else "button")
+            tag)
+  else Nothing
+
+mutual
+  locateAncestor : AncestorCtx -> List Nat -> HExpr -> Maybe LocatedReject
+  locateAncestor _   _    (Text _)           = Nothing
+  locateAncestor _   _    (Comment _)        = Nothing
+  locateAncestor ctx path (Element t _ cs) = case selfAncestorReject ctx t of
+    Just rc => Just (MkLocatedReject path rc)
+    Nothing =>
+      let ctx' = enterCtx ctx t
+       in locateAncestorList ctx' path 0 cs
+
+  locateAncestorList : AncestorCtx -> List Nat -> Nat -> List HExpr
+                    -> Maybe LocatedReject
+  locateAncestorList _   _    _   []        = Nothing
+  locateAncestorList ctx path idx (c :: cs) =
+    case locateAncestor ctx (path ++ [idx]) c of
+      Just lr => Just lr
+      Nothing => locateAncestorList ctx path (S idx) cs
+
 ||| Decide validity *and* produce a located rejection when invalid.
-||| If `decideHtml` returns `Yes p`, this returns `Right p`. Otherwise
-||| `locate` runs and surfaces the first violation; we use a synthetic
-||| fallback `LocatedReject` if the locator and the decider disagree
-||| (impossible by construction — both interpret the same predicates).
+||| If `decideHtml` returns `Yes p`, this returns `Right p` *only when*
+||| the ancestor-context pass also passes. Ancestor failure produces a
+||| `Left` even though the structural proof exists — see the section
+||| comment above.
 public export
 decideHtmlLocated : (h : HExpr) -> Either LocatedReject (IsValidHtml h)
 decideHtmlLocated h = case decideHtml h of
-  Yes p => Right p
+  Yes p => case locateAncestor rootCtx [] h of
+    Just lr => Left lr
+    Nothing => Right p
   No  _ => case locate [] h of
     Just lr => Left lr
     Nothing => Left (MkLocatedReject [] (UnknownTag "<internal: located/dec disagree>"))
@@ -348,11 +488,25 @@ decideHtmlLocated h = case decideHtml h of
 -- Convenience.
 --------------------------------------------------------------------------------
 
-||| `True` iff `h` is structurally valid HTML. Use `decideHtml` directly
-||| when you need to *carry* the proof (the whole point of the indexed
-||| proposition).
+||| `True` iff `h` passes the *local* structural content-model check
+||| (`decideHtml`). Does NOT include the ancestor-context pass — a tree
+||| like `<a><button>` will report `True` here even though
+||| `decideHtmlLocated` rejects it. Use `isValidHtmlLocated` (or
+||| `decideHtmlLocated` directly) when the full HTML5 verdict is
+||| required.
 public export
 isValidHtml : HExpr -> Bool
 isValidHtml h = case decideHtml h of
   Yes _ => True
   No  _ => False
+
+||| `True` iff `h` passes both the structural content-model check and
+||| the ancestor-context pass. This is the verdict the oracle and the
+||| strict elaborator consume; callers that need to *carry* a proof
+||| should still go through `decideHtmlLocated` (the structural witness
+||| comes with the `Right`).
+public export
+isValidHtmlLocated : HExpr -> Bool
+isValidHtmlLocated h = case decideHtmlLocated h of
+  Right _ => True
+  Left  _ => False

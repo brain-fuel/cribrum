@@ -367,19 +367,19 @@ ext_two_backticks_is_paragraph = oneShot $
   parseDoc "``" === ok (doc [para "``"])
 
 ||| Backticks INSIDE the opener's info string disqualify (Djot rule).
-||| Under the rule: opener line is rejected; the line becomes paragraph
-||| content; only the standalone ``` line at the end opens a real (empty)
-||| code block. Note the inline parser now extracts the trailing
-||| `` ` ` `` as a verbatim span — Djot verbatim semantics apply even
-||| inside a rejected-fence paragraph.
+||| Under the rule: opener line is rejected as a fence (info string
+||| contains backticks); the line becomes paragraph content. The inline
+||| parser then sees the four leading backticks as a verbatim opener of
+||| length 4; no matching 4-backtick closer exists on the line, so per
+||| Djot's "unclosed verbatim runs to end of inline content" rule the
+||| remainder of the line is verbatim. The trailing standalone ```
+||| line still opens a real (empty) code block.
 export
 ext_info_with_backticks_is_not_fence : Property
 ext_info_with_backticks_is_not_fence = oneShot $
   parseDoc "```` ` `\nbody\n```"
     === ok (doc [ paraMulti
-                    [ InlText "```"
-                    , InlVerbatim emptyAttrs " "
-                    , InlText " `"
+                    [ InlVerbatim emptyAttrs " ` `"
                     , InlSoftBreak
                     , InlText "body"
                     ]

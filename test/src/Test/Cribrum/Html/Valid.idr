@@ -286,6 +286,156 @@ ext_located_text_in_ul = oneShot $
       r => failWith Nothing ("expected TextNotAllowedIn ul, got " ++ show r)
 
 --------------------------------------------------------------------------------
+-- Ancestor-context rejection EXTs.
+--------------------------------------------------------------------------------
+
+||| `<a>` contains `<button>` → InteractiveInInteractive "a" "button".
+export
+ext_located_interactive_in_anchor : Property
+ext_located_interactive_in_anchor = oneShot $
+  case decideHtmlLocated
+         (Element "a" [MkHAttr "href" (Str "/x")]
+            [Element "button" [] [Text "click"]]) of
+    Right _ => failWith Nothing "expected rejection"
+    Left lr => case reason lr of
+      InteractiveInInteractive "a" "button" => path lr === [0]
+      r => failWith Nothing ("expected InteractiveInInteractive a button, got " ++ show r)
+
+||| `<a>` contains `<a>` → InteractiveInInteractive "a" "a".
+export
+ext_located_anchor_in_anchor : Property
+ext_located_anchor_in_anchor = oneShot $
+  case decideHtmlLocated
+         (Element "a" [MkHAttr "href" (Str "/outer")]
+            [Element "a" [MkHAttr "href" (Str "/inner")] [Text "nope"]]) of
+    Right _ => failWith Nothing "expected rejection"
+    Left lr => case reason lr of
+      InteractiveInInteractive "a" "a" => path lr === [0]
+      r => failWith Nothing ("expected InteractiveInInteractive a a, got " ++ show r)
+
+||| `<button>` contains `<input>` → InteractiveInInteractive "button" "input".
+export
+ext_located_interactive_in_button : Property
+ext_located_interactive_in_button = oneShot $
+  case decideHtmlLocated
+         (Element "button" []
+            [Element "input" [MkHAttr "type" (Str "text")] []]) of
+    Right _ => failWith Nothing "expected rejection"
+    Left lr => case reason lr of
+      InteractiveInInteractive "button" "input" => path lr === [0]
+      r => failWith Nothing ("expected InteractiveInInteractive button input, got " ++ show r)
+
+||| `<form>` contains `<form>` → FormInForm.
+export
+ext_located_form_in_form : Property
+ext_located_form_in_form = oneShot $
+  case decideHtmlLocated
+         (Element "form" []
+            [Element "form" [] [Element "input" [] []]]) of
+    Right _ => failWith Nothing "expected rejection"
+    Left lr => case reason lr of
+      FormInForm => path lr === [0]
+      r => failWith Nothing ("expected FormInForm, got " ++ show r)
+
+||| `<script>` contains an HTML `Comment` → CommentInRawText "script".
+export
+ext_located_comment_in_script : Property
+ext_located_comment_in_script = oneShot $
+  case decideHtmlLocated
+         (Element "script" [] [Comment "hide me"]) of
+    Right _ => failWith Nothing "expected rejection"
+    Left lr => case reason lr of
+      CommentInRawText "script" => path lr === [0]
+      r => failWith Nothing ("expected CommentInRawText script, got " ++ show r)
+
+||| `<style>` contains a `Comment` → CommentInRawText "style".
+export
+ext_located_comment_in_style : Property
+ext_located_comment_in_style = oneShot $
+  case decideHtmlLocated
+         (Element "style" [] [Comment "/* x */"]) of
+    Right _ => failWith Nothing "expected rejection"
+    Left lr => case reason lr of
+      CommentInRawText "style" => path lr === [0]
+      r => failWith Nothing ("expected CommentInRawText style, got " ++ show r)
+
+||| Bare `<li>` at the root → OrphanLi.
+export
+ext_located_orphan_li_root : Property
+ext_located_orphan_li_root = oneShot $
+  case decideHtmlLocated (Element "li" [] [Text "stray"]) of
+    Right _ => failWith Nothing "expected rejection"
+    Left lr => case reason lr of
+      OrphanLi => path lr === []
+      r => failWith Nothing ("expected OrphanLi, got " ++ show r)
+
+||| `<li>` under an AnyContent parent (`<ins>`) → OrphanLi. The
+||| structural locator passes (`ins` accepts anything); the ancestor
+||| pass is what catches the missing list parent. Non-AnyContent
+||| parents like `<div>`/`<section>` already reject `<li>` structurally
+||| (`IllegalChild`), so this case is the canonical ancestor-only
+||| failure.
+export
+ext_located_orphan_li_under_ins : Property
+ext_located_orphan_li_under_ins = oneShot $
+  case decideHtmlLocated
+         (Element "ins" [] [Element "li" [] [Text "x"]]) of
+    Right _ => failWith Nothing "expected rejection"
+    Left lr => case reason lr of
+      OrphanLi => path lr === [0]
+      r => failWith Nothing ("expected OrphanLi, got " ++ show r)
+
+||| Bare `<dt>` at the root → OrphanDtDd "dt".
+export
+ext_located_orphan_dt_root : Property
+ext_located_orphan_dt_root = oneShot $
+  case decideHtmlLocated (Element "dt" [] [Text "term"]) of
+    Right _ => failWith Nothing "expected rejection"
+    Left lr => case reason lr of
+      OrphanDtDd "dt" => path lr === []
+      r => failWith Nothing ("expected OrphanDtDd dt, got " ++ show r)
+
+||| Bare `<dd>` under an AnyContent parent (`<ins>`) → OrphanDtDd "dd".
+||| Same rationale as the `<li>` ancestor-only case above.
+export
+ext_located_orphan_dd_under_ins : Property
+ext_located_orphan_dd_under_ins = oneShot $
+  case decideHtmlLocated
+         (Element "ins" [] [Element "dd" [] [Text "def"]]) of
+    Right _ => failWith Nothing "expected rejection"
+    Left lr => case reason lr of
+      OrphanDtDd "dd" => path lr === [0]
+      r => failWith Nothing ("expected OrphanDtDd dd, got " ++ show r)
+
+||| Sanity: `<dl><dt>…<dd>…</dl>` validates (regression guard for the
+||| orphan-dt/dd ancestor pass — it must accept `dl` parents).
+export
+ext_dl_with_dt_dd_validates : Property
+ext_dl_with_dt_dd_validates = oneShot $
+  isValidHtmlLocated
+    (Element "dl" []
+       [ Element "dt" [] [Text "term"]
+       , Element "dd" [] [Text "def"]
+       ]) === True
+
+||| Sanity: `<ul><li>` validates.
+export
+ext_ul_with_li_passes_ancestor : Property
+ext_ul_with_li_passes_ancestor = oneShot $
+  isValidHtmlLocated
+    (Element "ul" [] [Element "li" [] [Text "x"]]) === True
+
+||| Sanity: `<form>` with non-form children validates.
+export
+ext_form_with_input_validates : Property
+ext_form_with_input_validates = oneShot $
+  isValidHtmlLocated
+    (Element "form" []
+       [ Element "input" [MkHAttr "type" (Str "text")] []
+       , Element "button" [MkHAttr "type" (Str "submit")] [Text "Go"]
+       ]) === True
+
+--------------------------------------------------------------------------------
 -- PDDTs.
 --------------------------------------------------------------------------------
 
@@ -359,17 +509,18 @@ pbt_unknown_root_tag_invalidates = property $ do
   tag <- forAll unknownTagsGen
   isValidHtml (Element tag [] cs) === False
 
-||| `decideHtmlLocated` agrees with `decideHtml`: a tree validates under
-||| `decideHtml` iff it returns `Right` under `decideHtmlLocated`.
+||| `decideHtmlLocated` is at least as strict as `decideHtml`: every
+||| tree it accepts also satisfies the structural decision. The reverse
+||| direction does *not* hold — the ancestor-context pass inside
+||| `decideHtmlLocated` rejects trees the local content-model accepts
+||| (`<a><button>`, `<form><form>`, orphan `<li>`, ...).
 export
-pbt_located_agrees_with_dec : Property
-pbt_located_agrees_with_dec = property $ do
+pbt_located_implies_dec : Property
+pbt_located_implies_dec = property $ do
   h <- forAll hexpr
-  let validDec  = isValidHtml h
-      validLoc  = case decideHtmlLocated h of
-        Right _ => True
-        Left _  => False
-  validDec === validLoc
+  case decideHtmlLocated h of
+    Right _ => isValidHtml h === True
+    Left _  => success
 
 ||| Phrasing-content soundness: phrasing trees fit inside `<p>`.
 export
@@ -418,6 +569,19 @@ group = MkGroup "Cribrum.Html.Valid"
   , ("pbt_dec_total",                           pbt_dec_total)
   , ("pbt_constructed_valid_trees_validate",    pbt_constructed_valid_trees_validate)
   , ("pbt_unknown_root_tag_invalidates",        pbt_unknown_root_tag_invalidates)
-  , ("pbt_located_agrees_with_dec",             pbt_located_agrees_with_dec)
+  , ("ext_located_interactive_in_anchor",       ext_located_interactive_in_anchor)
+  , ("ext_located_anchor_in_anchor",            ext_located_anchor_in_anchor)
+  , ("ext_located_interactive_in_button",       ext_located_interactive_in_button)
+  , ("ext_located_form_in_form",                ext_located_form_in_form)
+  , ("ext_located_comment_in_script",           ext_located_comment_in_script)
+  , ("ext_located_comment_in_style",            ext_located_comment_in_style)
+  , ("ext_located_orphan_li_root",              ext_located_orphan_li_root)
+  , ("ext_located_orphan_li_under_ins",         ext_located_orphan_li_under_ins)
+  , ("ext_located_orphan_dt_root",              ext_located_orphan_dt_root)
+  , ("ext_located_orphan_dd_under_ins",         ext_located_orphan_dd_under_ins)
+  , ("ext_dl_with_dt_dd_validates",             ext_dl_with_dt_dd_validates)
+  , ("ext_ul_with_li_passes_ancestor",          ext_ul_with_li_passes_ancestor)
+  , ("ext_form_with_input_validates",           ext_form_with_input_validates)
+  , ("pbt_located_implies_dec",                 pbt_located_implies_dec)
   , ("pbt_phrasing_fits_in_p",                  pbt_phrasing_fits_in_p)
   ]

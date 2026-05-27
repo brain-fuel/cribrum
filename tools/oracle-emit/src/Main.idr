@@ -346,19 +346,61 @@ corpus =
   , MkCase "invalid/text-in-table" False $
       Element "table" [] [Text "stray text"]
 
-  -- NOTE: The following classes are known HTML5 violations that the
-  -- current Phase-2 validator does NOT yet catch. Each is a backlog
-  -- entry — once the validator grows the relevant ancestor-excluded
-  -- check, the matching case should be re-introduced here:
-  --
-  --   - anchor-in-anchor / interactive-in-interactive
-  --   - form-in-form (form excluded from its own descendants)
-  --   - comment-in-script / comment-in-style (raw-text content)
-  --   - li / dt / dd outside of a list parent
-  --
-  -- They were trialled in the corpus and Cribrum reported them valid,
-  -- so they were dropped to keep the oracle gate clean. Re-add them
-  -- in lockstep with the validator slice that detects each class.
+  -- ============================================================
+  -- Ancestor-context rejections — re-introduced once the Phase-2
+  -- ancestor pass in `Cribrum.Html.Valid.locateAncestor` landed
+  -- (rejection classes `InteractiveInInteractive`, `FormInForm`,
+  -- `CommentInRawText`, `OrphanLi`, `OrphanDtDd`).
+  -- ============================================================
+
+  -- Invalid: interactive-in-interactive. `<a>` content model forbids
+  -- interactive content descendants — including `<button>`.
+  , MkCase "invalid/interactive-in-anchor" False $
+      Element "a" [MkHAttr "href" (Str "/x")]
+        [Element "button" [MkHAttr "type" (Str "button")] [Text "x"]]
+
+  -- Invalid: anchor-in-anchor (a strict-er case of interactive-in-
+  -- interactive — `<a>` also forbids `<a>` descendants).
+  , MkCase "invalid/anchor-in-anchor" False $
+      Element "a" [MkHAttr "href" (Str "/outer")]
+        [Element "a" [MkHAttr "href" (Str "/inner")] [Text "x"]]
+
+  -- Invalid: interactive descendant of `<button>` — `<button>` forbids
+  -- interactive content descendants per HTML5.
+  , MkCase "invalid/interactive-in-button" False $
+      Element "button" [MkHAttr "type" (Str "button")]
+        [Element "input" [MkHAttr "type" (Str "text")] []]
+
+  -- Invalid: nested forms — `<form>` content model is "flow content
+  -- but with no form element descendants".
+  , MkCase "invalid/form-in-form" False $
+      Element "form" []
+        [Element "form" []
+          [Element "input" [MkHAttr "type" (Str "text")] []]]
+
+  -- Invalid: comment inside `<style>` — raw-text content model
+  -- admits text only; `<!--` is character data, not an HTML comment.
+  -- (The corresponding `<script>` variant was elided from this corpus:
+  -- vnu accepts `<script><!-- … --></script>` because the browser
+  -- model parses `<!-- … -->` as script source, masking the IR-level
+  -- violation. Cribrum still rejects it via `CommentInRawText`; the
+  -- gap is internal-only, not vnu-cross-checkable.)
+  , MkCase "invalid/comment-in-style" False $
+      Element "style" [] [Comment "/* x */"]
+
+  -- Invalid: orphan `<li>` under an AnyContent parent (`<ins>`).
+  -- Structural parents like `<div>` already reject `<li>` via
+  -- IllegalChild (li's categories are empty, so the structural
+  -- locator fires first); under AnyContent the ancestor pass is the
+  -- only line of defence.
+  , MkCase "invalid/orphan-li-under-ins" False $
+      Element "ins" []
+        [Element "li" [] [Text "stray"]]
+
+  -- Invalid: orphan `<dd>` under an AnyContent parent (`<ins>`).
+  , MkCase "invalid/orphan-dd-under-ins" False $
+      Element "ins" []
+        [Element "dd" [] [Text "definition"]]
   ]
 
 --------------------------------------------------------------------------------
@@ -393,9 +435,7 @@ emitRow c d h =
 --------------------------------------------------------------------------------
 
 decideBool : HExpr -> Bool
-decideBool h = case decideHtml h of
-  Yes _ => True
-  No  _ => False
+decideBool = isValidHtmlLocated
 
 ||| Run one case: emit JSONL + report disagreement with curated
 ||| expected verdict. Returns `True` iff Cribrum agrees with the

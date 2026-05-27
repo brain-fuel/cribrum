@@ -100,6 +100,19 @@ findClose c (x :: xs) =
       Just (ins, rest) => Just (x :: ins, rest)
       Nothing          => Nothing
 
+||| Scan `cs` for the first occurrence of the two-character closer
+||| `c1 c2` (in order). Returns body before the closer and the rest
+||| after it. Used by `{+...+}` / `{-...-}` / `{=...=}` spans.
+findClose2 : Char -> Char -> List Char -> Maybe (List Char, List Char)
+findClose2 _  _  []                = Nothing
+findClose2 c1 c2 (x :: y :: rest)  =
+  if x == c1 && y == c2
+    then Just ([], rest)
+    else case findClose2 c1 c2 (y :: rest) of
+      Just (ins, after) => Just (x :: ins, after)
+      Nothing           => Nothing
+findClose2 _  _  _                 = Nothing
+
 ||| Flush an accumulator of plain characters to an `InlText` (singleton
 ||| or empty). The accumulator is held in reverse order; flushing
 ||| reverses + packs.
@@ -133,6 +146,67 @@ closerBlocked : List Char -> Bool
 closerBlocked inner = case reverse inner of
   []        => True
   (c :: _)  => isSpace c
+
+--------------------------------------------------------------------------------
+-- Inline verbatim helpers.
+--
+-- Djot spec (`<doc/syntax.html>` §Verbatim): an inline verbatim span
+-- opens with N backticks (any N ≥ 1) and closes with the next run of
+-- EXACTLY N backticks. Runs of any other length inside the span are
+-- literal. If the body both begins and ends with a space (but is not
+-- entirely whitespace), one space is stripped from each end so authors
+-- can write `` ` ``a`` ` `` to produce ``a`` inside <code>.
+-- An unclosed opener consumes the rest of the inline content.
+--------------------------------------------------------------------------------
+
+||| Walk a leading run of backticks in `cs`, returning `(run, rest)`.
+takeBacktickRun : List Char -> (List Char, List Char)
+takeBacktickRun ('`' :: cs) =
+  let (more, rest) = takeBacktickRun cs in ('`' :: more, rest)
+takeBacktickRun xs          = ([], xs)
+
+||| Locate a closing run of EXACTLY `n` backticks. Returns the body
+||| before the closer and the input after it. `Nothing` means no
+||| matching closer exists in the input (caller treats as
+||| "run-to-end-of-inline").
+findVerbatimClose : (n : Nat) -> List Char -> Maybe (List Char, List Char)
+findVerbatimClose n = go []
+  where
+    go : List Char -> List Char -> Maybe (List Char, List Char)
+    go _   []                = Nothing
+    go acc xs@('`' :: _)     =
+      let (ticks, after) = takeBacktickRun xs in
+      if length ticks == n
+        then Just (reverse acc, after)
+        else assert_total (go (reverse ticks ++ acc) after)
+    go acc (c :: cs)         = assert_total (go (c :: acc) cs)
+
+||| `True` iff `c` is ASCII punctuation per Djot (`!"#$%&'()*+,-./:;<=>?@[\]^_\`{|}~`).
+||| Djot backslash escapes consume punctuation; non-punctuation chars
+||| keep the backslash literal.
+isAsciiPunct : Char -> Bool
+isAsciiPunct c =
+     c == '!' || c == '"' || c == '#' || c == '$' || c == '%'
+  || c == '&' || c == '\'' || c == '(' || c == ')' || c == '*'
+  || c == '+' || c == ',' || c == '-' || c == '.' || c == '/'
+  || c == ':' || c == ';' || c == '<' || c == '=' || c == '>'
+  || c == '?' || c == '@' || c == '[' || c == '\\' || c == ']'
+  || c == '^' || c == '_' || c == '`' || c == '{' || c == '|'
+  || c == '}' || c == '~'
+
+||| Strip one leading + one trailing space from `body` iff the body
+||| both begins and ends with a space AND is not entirely whitespace.
+verbatimStrip : List Char -> List Char
+verbatimStrip body = case body of
+  (' ' :: _) => case reverse body of
+    (' ' :: _) =>
+      if all (== ' ') body
+        then body
+        else case body of
+          (_ :: rest) => reverse (drop 1 (reverse rest))
+          []          => body
+    _          => body
+  _          => body
 
 ||| `True` iff the angle-bracketed body is a plausible Djot autolink:
 ||| non-empty, contains no whitespace, and looks like a URL (contains a
@@ -240,14 +314,64 @@ mutual
             ++ [InlStrong (assert_total (parseInlinesAcc [] inner))]
             ++ assert_total (parseInlinesAcc [] after)
       Nothing => assert_total (parseInlinesAcc ('*' :: acc) cs)
-    '`' => case findClose '`' cs of
-      Just (inner, after) =>
-        if inner == []
-          then assert_total (parseInlinesAcc ('`' :: acc) cs)
-          else flushAcc acc
-            ++ [InlVerbatim emptyAttrs (pack inner)]
-            ++ assert_total (parseInlinesAcc [] after)
-      Nothing => assert_total (parseInlinesAcc ('`' :: acc) cs)
+    -- Djot decorator spans: `{+ … +}` (insert), `{- … -}` (delete),
+    -- `{= … =}` (highlight / mark). Each takes inline content between
+    -- the open and close markers and elaborates to the matching HTML
+    -- element. Empty body falls back to literal `{x`.
+    '{' => case cs of
+      ('+' :: rest) => case findClose2 '+' '}' rest of
+        Just (inner, after) =>
+          if inner == []
+            then assert_total (parseInlinesAcc ('{' :: acc) cs)
+            else flushAcc acc
+              ++ [InlInsert (assert_total (parseInlines inner))]
+              ++ assert_total (parseInlinesAcc [] after)
+        Nothing => assert_total (parseInlinesAcc ('{' :: acc) cs)
+      ('-' :: rest) => case findClose2 '-' '}' rest of
+        Just (inner, after) =>
+          if inner == []
+            then assert_total (parseInlinesAcc ('{' :: acc) cs)
+            else flushAcc acc
+              ++ [InlDelete (assert_total (parseInlines inner))]
+              ++ assert_total (parseInlinesAcc [] after)
+        Nothing => assert_total (parseInlinesAcc ('{' :: acc) cs)
+      ('=' :: rest) => case findClose2 '=' '}' rest of
+        Just (inner, after) =>
+          if inner == []
+            then assert_total (parseInlinesAcc ('{' :: acc) cs)
+            else flushAcc acc
+              ++ [InlHighlight (assert_total (parseInlines inner))]
+              ++ assert_total (parseInlinesAcc [] after)
+        Nothing => assert_total (parseInlinesAcc ('{' :: acc) cs)
+      _ => assert_total (parseInlinesAcc ('{' :: acc) cs)
+    -- Djot backslash escape: `\<punct>` -> literal punct (drop the `\`).
+    -- `\<non-punct>` keeps both characters literal. A trailing `\` with
+    -- nothing after stays literal too.
+    '\\' => case cs of
+      (n :: rest) =>
+        if isAsciiPunct n
+          then assert_total (parseInlinesAcc (n :: acc) rest)
+          else assert_total (parseInlinesAcc ('\\' :: acc) cs)
+      []          => assert_total (parseInlinesAcc ('\\' :: acc) cs)
+    '`' =>
+      let (more, afterOpen) = takeBacktickRun cs
+          openerLen         = S (length more)
+       in case findVerbatimClose openerLen afterOpen of
+            Just (inner, after) =>
+              if inner == []
+                then assert_total (parseInlinesAcc ('`' :: acc) cs)
+                else flushAcc acc
+                  ++ [InlVerbatim emptyAttrs (pack (verbatimStrip inner))]
+                  ++ assert_total (parseInlinesAcc [] after)
+            Nothing =>
+              -- Unclosed opener: per spec, consumes the rest of the
+              -- inline content. (The inline parser runs per line, so
+              -- "rest" here is line-bounded; multi-line verbatim still
+              -- requires the paragraph-spanning lift.)
+              if afterOpen == []
+                then assert_total (parseInlinesAcc ('`' :: acc) cs)
+                else flushAcc acc
+                  ++ [InlVerbatim emptyAttrs (pack (verbatimStrip afterOpen))]
     '[' => case cs of
       -- Footnote reference `[^label]` — `^` immediately after `[` and a
       -- non-empty label terminated by `]`. Falls back to literal `[` if
@@ -320,30 +444,32 @@ parseInlineLine : String -> List Inline
 parseInlineLine "" = []
 parseInlineLine s  = parseInlines (unpack s)
 
-||| `True` iff `s` ends with a single backslash. Djot uses a trailing
-||| backslash on a paragraph line as the hard-break marker — the line
-||| break in the rendered output is a real `<br>`, not a soft break that
-||| can be collapsed. Only meaningful between lines of the *same*
-||| paragraph; at end-of-paragraph the backslash is left literal.
+||| `True` iff `s` ends with a backslash possibly followed by trailing
+||| whitespace (spaces or tabs). Djot uses such a trailing backslash on
+||| a paragraph line as the hard-break marker — the line break in the
+||| rendered output is a real `<br>`, not a soft break that can be
+||| collapsed. Only meaningful between lines of the *same* paragraph;
+||| at end-of-paragraph the backslash is left literal.
 endsWithBackslash : String -> Bool
-endsWithBackslash s = case unsnoc (unpack s) of
-  Just (_, '\\') => True
-  _              => False
+endsWithBackslash s = go (reverse (unpack s))
   where
-    unsnoc : List Char -> Maybe (List Char, Char)
-    unsnoc []        = Nothing
-    unsnoc [x]       = Just ([], x)
-    unsnoc (x :: xs) = case unsnoc xs of
-      Just (init, last) => Just (x :: init, last)
-      Nothing           => Nothing
+    go : List Char -> Bool
+    go []        = False
+    go ('\\' :: _) = True
+    go (c :: rest) =
+      if c == ' ' || c == '\t' then go rest else False
 
-||| Drop the trailing character (assumed `\\` per `endsWithBackslash`).
-||| Returns the line without its terminating backslash. If the input is
-||| empty, returns empty.
+||| Drop the trailing backslash + any whitespace after it. The caller
+||| has already confirmed `endsWithBackslash s = True`; if not, the
+||| function falls back to the original string.
 dropTrailingChar : String -> String
-dropTrailingChar s = case reverse (unpack s) of
-  []        => ""
-  (_ :: rs) => pack (reverse rs)
+dropTrailingChar s = pack (reverse (drop' (reverse (unpack s))))
+  where
+    drop' : List Char -> List Char
+    drop' []           = []
+    drop' ('\\' :: rs) = rs
+    drop' (c :: rs)    =
+      if c == ' ' || c == '\t' then drop' rs else (c :: rs)
 
 ||| Parse a paragraph body: consecutive non-blank lines joined by
 ||| `InlSoftBreak`, OR by `InlHardBreak` when the preceding line ends
@@ -408,34 +534,55 @@ isQuotePrefixed s = case unpack s of
   ['>']             => True
   _                 => False
 
-||| Count leading backticks in a string.
-countBackticks : String -> Nat
-countBackticks = go 0 . unpack
+||| Count leading occurrences of `ch` in a string.
+countFenceChars : Char -> String -> Nat
+countFenceChars ch = go 0 . unpack
   where
     go : Nat -> List Char -> Nat
-    go n ('`' :: cs) = go (S n) cs
-    go n _           = n
+    go n (c :: cs) = if c == ch then go (S n) cs else n
+    go n _         = n
 
-||| If `s` is a fenced code-block opening line — `\`\`\`` (3+) optionally
-||| followed by an info string with NO further backticks — return
-||| `Just (fenceLen, info)`. Otherwise `Nothing`.
+||| Legacy alias retained so existing callers keep working — Djot's
+||| backtick fence count.
+countBackticks : String -> Nat
+countBackticks = countFenceChars '`'
+
+||| If `s` is a fenced code-block opening line — 3+ of the same fence
+||| character (`` ` `` or `~`) optionally followed by an info string —
+||| return `Just (fenceChar, fenceLen, info)`. Otherwise `Nothing`.
 |||
-||| Djot spec: opener is 3+ backticks; info string is the rest of the line
-||| (trimmed); info must not contain backticks.
-parseCodeFenceOpen : String -> Maybe (Nat, String)
+||| Djot spec: opener is 3+ of either backtick or tilde; the info
+||| string is the rest of the line, trimmed. For backtick fences the
+||| info string must NOT contain further backticks (so an inline
+||| verbatim run on the same line — `` ``` x ``` `` — doesn't open a
+||| code block). Tilde fences impose no such restriction. Up to 3
+||| leading spaces of indentation are tolerated on the opener.
+parseCodeFenceOpen : String -> Maybe (Char, Nat, String)
 parseCodeFenceOpen s =
-  let n     = countBackticks s
-      after = pack (drop n (unpack s))
-   in if n >= 3 && not (any (== '`') (unpack after))
-        then Just (n, trim after)
-        else Nothing
+  let stripped = pack (dropLeadingSpaceN 3 (unpack s))
+      tickN    = countFenceChars '`' stripped
+      tildeN   = countFenceChars '~' stripped
+   in if tickN >= 3
+        then let after = pack (drop tickN (unpack stripped)) in
+             if not (any (== '`') (unpack after))
+               then Just ('`', tickN, trim after)
+               else Nothing
+        else if tildeN >= 3
+          then let after = pack (drop tildeN (unpack stripped)) in
+               Just ('~', tildeN, trim after)
+          else Nothing
+  where
+    dropLeadingSpaceN : Nat -> List Char -> List Char
+    dropLeadingSpaceN Z     xs            = xs
+    dropLeadingSpaceN (S k) (' ' :: rest) = dropLeadingSpaceN k rest
+    dropLeadingSpaceN _     xs            = xs
 
-||| `True` if `s` is a CLOSING fence of length `n`: exactly `n` backticks
-||| (and only whitespace afterwards).
-isCodeFenceClose : Nat -> String -> Bool
-isCodeFenceClose n s =
+||| `True` if `s` is a CLOSING fence of length `n` using fence character
+||| `ch`: exactly `n` of `ch` (and only whitespace afterwards).
+isCodeFenceClose : (ch : Char) -> (n : Nat) -> String -> Bool
+isCodeFenceClose ch n s =
   let trimmed = trim s
-      bs      = countBackticks trimmed
+      bs      = countFenceChars ch trimmed
    in bs == n && length (unpack trimmed) == n
 
 ||| `True` iff `s` is a plausible pipe-table row: trimmed line begins
@@ -605,14 +752,27 @@ parseAttrBody body =
 ||| Returns the parsed Attrs on success. A line that opens `{` but
 ||| never closes, or that contains stray content after `}`, is NOT an
 ||| attribute line (and falls through to paragraph).
+|||
+||| Decorator spans (`{+ … +}`, `{- … -}`, `{= … =}`) share the brace
+||| syntax but are inline content, not block attributes. They are
+||| disambiguated by the first non-whitespace character inside the
+||| braces: `+`, `-`, `=` rule out the attribute interpretation so the
+||| line falls through to the paragraph and the inline parser handles
+||| the decorator.
 parseAttrBlockLine : String -> Maybe Attrs
 parseAttrBlockLine s =
   let chars = unpack (trim s)
    in case chars of
         ('{' :: rest) => case reverse rest of
           ('}' :: revBody) =>
-            let body = pack (reverse revBody)
-             in Just (parseAttrBody body)
+            let bodyChars = reverse revBody
+                body      = pack bodyChars
+                firstNon  = dropWhile (\c => c == ' ' || c == '\t') bodyChars
+             in case firstNon of
+                  ('+' :: _) => Nothing
+                  ('-' :: _) => Nothing
+                  ('=' :: _) => Nothing
+                  _          => Just (parseAttrBody body)
           _ => Nothing
         _ => Nothing
 
@@ -676,15 +836,16 @@ groupLines xs = go [] [] xs
 
     -- Consume body lines until the closing fence; return (body, rest).
     collectCodeBody :
-         (fenceLen : Nat)
+         (fenceChar : Char)
+      -> (fenceLen : Nat)
       -> (body : List String)
       -> (rest : List String)
       -> (List String, List String)
-    collectCodeBody _ body [] = (reverse body, [])
-    collectCodeBody n body (l :: ls) =
-      if isCodeFenceClose n l
+    collectCodeBody _  _ body [] = (reverse body, [])
+    collectCodeBody ch n body (l :: ls) =
+      if isCodeFenceClose ch n l
         then (reverse body, ls)
-        else collectCodeBody n (l :: body) ls
+        else collectCodeBody ch n (l :: body) ls
 
     -- Greedily collect def-list continuation lines from `xs`.
     -- Returns `(continuation, rest-after-group)`. A trailing run of
@@ -752,8 +913,8 @@ groupLines xs = go [] [] xs
       else if isBlankLine x
         then go [] (flushNormal (reverse cur) acc) xs
         else case parseCodeFenceOpen x of
-          Just (n, info) =>
-            let (body, rest) = collectCodeBody n [] xs
+          Just (ch, n, info) =>
+            let (body, rest) = collectCodeBody ch n [] xs
                 acc'         = flushNormal (reverse cur) acc
                 code         =
                   CodeGroup info (concat (intersperse "\n" body))

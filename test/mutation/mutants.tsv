@@ -58,11 +58,11 @@ src/Cribrum/Djot/Parser.idr	['>']             => True	['>']             => False
 src/Cribrum/Djot/Parser.idr	('>' :: ' ' :: rest) => pack rest	('>' :: ' ' :: rest) => pack ('>' :: rest)	parser: stripQuotePrefix leaves ">" in
 src/Cribrum/Djot/Parser.idr	in assert_total (go [] (quoted :: acc') rest)	in assert_total (go [] acc' rest)	parser: quote group dropped from output
 src/Cribrum/Djot/Parser.idr	BlockQuote emptyAttrs (assert_total (groupsToBlocks gs))	BlockQuote emptyAttrs []	parser: blockquote emits empty body
-src/Cribrum/Djot/Parser.idr	if n >= 3 && not (any (== '`') (unpack after))	if n >= 2 && not (any (== '`') (unpack after))	parser: code fence accepts 2 backticks
-src/Cribrum/Djot/Parser.idr	if n >= 3 && not (any (== '`') (unpack after))	if n >= 4 && not (any (== '`') (unpack after))	parser: code fence requires 4 backticks
-src/Cribrum/Djot/Parser.idr	if n >= 3 && not (any (== '`') (unpack after))	if n >= 3	parser: code fence info allows backticks
+src/Cribrum/Djot/Parser.idr	if tickN >= 3	if tickN >= 2	parser: code fence accepts 2 backticks
+src/Cribrum/Djot/Parser.idr	if tickN >= 3	if tickN >= 4	parser: code fence requires 4 backticks
+src/Cribrum/Djot/Parser.idr	if not (any (== '`') (unpack after))	if True	parser: code fence info allows backticks
 src/Cribrum/Djot/Parser.idr	bs == n && length (unpack trimmed) == n	bs >= n	parser: close fence length relaxed
-src/Cribrum/Djot/Parser.idr	collectCodeBody _ body [] = (reverse body, [])	collectCodeBody _ body [] = ([], [])	parser: unclosed code block drops body
+src/Cribrum/Djot/Parser.idr	collectCodeBody _  _ body [] = (reverse body, [])	collectCodeBody _  _ body [] = ([], [])	parser: unclosed code block drops body
 src/Cribrum/Djot/Parser.idr	CodeGroup info (concat (intersperse "\n" body))	CodeGroup info ""	parser: code body always empty
 src/Cribrum/Djot/Parser.idr	CodeBlock emptyAttrs info b	CodeBlock emptyAttrs "" b	parser: code block strips info
 
@@ -133,17 +133,17 @@ src/Cribrum/Djot/Parser.idr	noWhite && (hasColon || hasAt)	noWhite	parser: autol
 src/Cribrum/Djot/Parser.idr	noWhite && (hasColon || hasAt)	hasColon || hasAt	parser: autolink heuristic drops whitespace guard
 src/Cribrum/Djot/Parser.idr	noWhite && (hasColon || hasAt)	noWhite && hasColon	parser: autolink heuristic drops email branch
 src/Cribrum/Djot/Parser.idr	noWhite && (hasColon || hasAt)	noWhite && hasAt	parser: autolink heuristic drops url branch
-src/Cribrum/Djot/Parser.idr	[InlLink emptyAttrs (LinkAuto url) [InlText url]]	[InlLink emptyAttrs (LinkAuto url) []]	parser: autolink emits empty label
-src/Cribrum/Djot/Parser.idr	      Just (img, after) =>	      Just (_, after) =>	parser: image body discards parsed image
+src/Cribrum/Djot/Parser.idr	++ [InlLink emptyAttrs (LinkAuto url) [InlText url]]	++ [InlLink emptyAttrs (LinkAuto url) []]	parser: autolink emits empty label
+src/Cribrum/Djot/Parser.idr	        Just (img, after) =>	        Just (_, after) =>	parser: image body discards parsed image
 src/Cribrum/Djot/Parser.idr	parseImageBody chars = case findClose ']' chars of	parseImageBody chars = Nothing	parser: image parsing disabled
 src/Cribrum/Djot/Parser.idr	InlImage emptyAttrs	InlLink emptyAttrs	parser: image emits as link
 src/Cribrum/Djot/Parser.idr	    '!' => case cs of	    '!' => case [] of	parser: image trigger never matches
-src/Cribrum/Djot/Parser.idr	endsWithBackslash s = case unsnoc (unpack s) of	endsWithBackslash s = False	parser: hardbreak detection disabled
-src/Cribrum/Djot/Parser.idr	  Just (_, '\\') => True	  Just (_, '\\') => False	parser: hardbreak trailing backslash inverted
+src/Cribrum/Djot/Parser.idr	endsWithBackslash s = go (reverse (unpack s))	endsWithBackslash s = False	parser: hardbreak detection disabled
+src/Cribrum/Djot/Parser.idr	    go ('\\' :: _) = True	    go ('\\' :: _) = False	parser: hardbreak trailing backslash inverted
 src/Cribrum/Djot/Parser.idr	      if endsWithBackslash cur	      if False	parser: hardbreak branch never taken
 src/Cribrum/Djot/Parser.idr	      if endsWithBackslash cur	      if True	parser: hardbreak branch always taken
 src/Cribrum/Djot/Parser.idr	              ++ (InlHardBreak :: go next more)	              ++ (InlSoftBreak :: go next more)	parser: hardbreak downgraded to softbreak
-src/Cribrum/Djot/Parser.idr	dropTrailingChar s = case reverse (unpack s) of	dropTrailingChar s = s	parser: hardbreak drops nothing (backslash leaks into text)
+src/Cribrum/Djot/Parser.idr	dropTrailingChar s = pack (reverse (drop' (reverse (unpack s))))	dropTrailingChar s = s	parser: hardbreak drops nothing (backslash leaks into text)
 src/Cribrum/Elaborate.idr	   in Element "img" [ MkHAttr "alt" (Str alt)	   in Element "img" [ MkHAttr "src" (Str alt)	elaborate: image alt attribute renamed to src
 src/Cribrum/Elaborate.idr	                    , MkHAttr "src" (Str url)	                    , MkHAttr "alt" (Str url)	elaborate: image src attribute renamed to alt
 src/Cribrum/Elaborate.idr	   in Element "img" [ MkHAttr "alt" (Str alt)	   in Element "img" [	elaborate: image emits without alt (would break img-alt)

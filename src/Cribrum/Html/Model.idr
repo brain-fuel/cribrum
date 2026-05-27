@@ -98,6 +98,17 @@ isVoidTag t = case lookupSpec t of
   Just s  => isVoid s
   Nothing => False
 
+||| `True` iff `tag` is a raw-text or escapable-raw-text element per the
+||| catalog (`<script>`, `<style>`, `<title>`, `<textarea>`). Raw-text
+||| elements admit no comments — `<!--` inside `<script>` is character
+||| data, not a comment node — so the validator rejects HTML `Comment`
+||| children under raw-text parents.
+public export
+isRawTextOf : String -> Bool
+isRawTextOf t = case lookupSpec t of
+  Just s  => isRawText s
+  Nothing => False
+
 --------------------------------------------------------------------------------
 -- Attribute name permission.
 --

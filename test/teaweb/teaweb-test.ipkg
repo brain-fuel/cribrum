@@ -16,5 +16,6 @@ modules = Test.TEAWeb.Html
         , Test.TEAWeb.HtmlTyped
         , Test.TEAWeb.Event
         , Test.TEAWeb.Cmd
+        , Test.TEAWeb.Sub
         , Test.TEAWeb.Program
         , Main
