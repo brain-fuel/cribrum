@@ -119,6 +119,21 @@ isOpenContext []        = True
 isOpenContext (c :: _)  =
   isSpace c || c == '(' || c == '[' || c == '{'
 
+||| Emphasis opener (`*`/`_`) is blocked when the next character is
+||| whitespace or end-of-input. `cs` is the character list after the
+||| marker.
+openerBlocked : List Char -> Bool
+openerBlocked []       = True
+openerBlocked (c :: _) = isSpace c
+
+||| Emphasis closer (`*`/`_`) is blocked when the character immediately
+||| before it (the last character of `inner`) is whitespace. `inner` is
+||| the body between opener and closer.
+closerBlocked : List Char -> Bool
+closerBlocked inner = case reverse inner of
+  []        => True
+  (c :: _)  => isSpace c
+
 ||| `True` iff the angle-bracketed body is a plausible Djot autolink:
 ||| non-empty, contains no whitespace, and looks like a URL (contains a
 ||| `:` scheme separator) OR an email (contains `@`). Stock Djot is more
@@ -202,9 +217,16 @@ mutual
   parseInlinesAcc : List Char -> List Char -> List Inline
   parseInlinesAcc acc [] = flushAcc acc
   parseInlinesAcc acc (c :: cs) = case c of
+    -- Emphasis / strong flanking rule (Djot): the marker is emphasised
+    -- iff the opener and closer agree on their adjacent-whitespace
+    -- status. Both have inside-whitespace (`_ a _`) → emphasis; both
+    -- have non-whitespace inside (`_a_`) → emphasis; asymmetric
+    -- (`_ a_` or `_a _`) → marker stays literal. Empty body always
+    -- fails. On any rule failure the marker joins the plain-text
+    -- accumulator and parsing continues.
     '_' => case findClose '_' cs of
       Just (inner, after) =>
-        if inner == []
+        if inner == [] || openerBlocked cs /= closerBlocked inner
           then assert_total (parseInlinesAcc ('_' :: acc) cs)
           else flushAcc acc
             ++ [InlEmph (assert_total (parseInlinesAcc [] inner))]
@@ -212,7 +234,7 @@ mutual
       Nothing => assert_total (parseInlinesAcc ('_' :: acc) cs)
     '*' => case findClose '*' cs of
       Just (inner, after) =>
-        if inner == []
+        if inner == [] || openerBlocked cs /= closerBlocked inner
           then assert_total (parseInlinesAcc ('*' :: acc) cs)
           else flushAcc acc
             ++ [InlStrong (assert_total (parseInlinesAcc [] inner))]
@@ -226,11 +248,23 @@ mutual
             ++ [InlVerbatim emptyAttrs (pack inner)]
             ++ assert_total (parseInlinesAcc [] after)
       Nothing => assert_total (parseInlinesAcc ('`' :: acc) cs)
-    '[' => case parseLinkBody cs of
-      Just (link, after) =>
-        flushAcc acc ++ [link]
-          ++ assert_total (parseInlinesAcc [] after)
-      Nothing => assert_total (parseInlinesAcc ('[' :: acc) cs)
+    '[' => case cs of
+      -- Footnote reference `[^label]` — `^` immediately after `[` and a
+      -- non-empty label terminated by `]`. Falls back to literal `[` if
+      -- the label is empty or no `]` is found.
+      ('^' :: rest) => case findClose ']' rest of
+        Just (label, after) =>
+          if label == []
+            then assert_total (parseInlinesAcc ('[' :: acc) cs)
+            else flushAcc acc
+                   ++ [InlFootnoteRef (pack label)]
+                   ++ assert_total (parseInlinesAcc [] after)
+        Nothing => assert_total (parseInlinesAcc ('[' :: acc) cs)
+      _ => case parseLinkBody cs of
+        Just (link, after) =>
+          flushAcc acc ++ [link]
+            ++ assert_total (parseInlinesAcc [] after)
+        Nothing => assert_total (parseInlinesAcc ('[' :: acc) cs)
     '!' => case cs of
       ('[' :: rest) => case parseImageBody rest of
         Just (img, after) =>
@@ -355,6 +389,16 @@ data LineGroup : Type where
   ||| the def-list parser can split items, identify terms, and parse
   ||| each item's body as nested blocks.
   DefListGroup : List1 String       -> LineGroup
+  ||| A footnote definition: `[^label]:` opener plus indented body lines
+  ||| (continuations can span blank lines, like def-lists). The label
+  ||| is parsed out at group time; `body` is the rest of the opener
+  ||| line + dedented continuation lines, ready for recursive block
+  ||| parsing.
+  FootnoteGroup : (label : String) -> (body : List String) -> LineGroup
+  ||| A block-level attribute prefix line `{...}` that attaches its
+  ||| parsed Attrs to the next non-attribute block. Multiple
+  ||| consecutive attribute lines stack via `mergeAttrs`.
+  AttrPrefixGroup : Attrs -> LineGroup
 
 ||| `True` iff the line starts with `>` followed by space, OR is exactly `>`
 ||| (an empty quote line — Djot allows this).
@@ -419,6 +463,182 @@ isIndentedLine : String -> Bool
 isIndentedLine s = case unpack s of
   (' ' :: _) => True
   _          => False
+
+||| `True` iff `s` starts (after optional whitespace) with the Djot
+||| block-comment opener `{%`.
+isBlockCommentStart : String -> Bool
+isBlockCommentStart s = case unpack (trim s) of
+  ('{' :: '%' :: _) => True
+  _                 => False
+
+||| `True` iff `s` contains the Djot block-comment closer `%}` at any
+||| position. Used to consume the trailing line of a multi-line
+||| comment block.
+hasBlockCommentEnd : String -> Bool
+hasBlockCommentEnd s = go (unpack s)
+  where
+    go : List Char -> Bool
+    go []              = False
+    go ('%' :: '}' :: _) = True
+    go (_ :: xs)       = go xs
+
+||| Recognise a footnote-definition opener: `[^label]:` optionally
+||| followed by a space and inline text. Returns `(label, rest)` where
+||| `rest` is the rest of the opener line after the `:` (with one
+||| leading space dropped). `Nothing` if not a footnote opener.
+parseFootnoteOpener : String -> Maybe (String, String)
+parseFootnoteOpener s = case unpack s of
+  ('[' :: '^' :: more) => case findCloseRBracket more of
+    Just (label, ':' :: rest) =>
+      if label == []
+        then Nothing
+        else
+          let restStr = case rest of
+                          (' ' :: r) => pack r
+                          _          => pack rest
+           in Just (pack label, restStr)
+    _ => Nothing
+  _ => Nothing
+  where
+    findCloseRBracket : List Char -> Maybe (List Char, List Char)
+    findCloseRBracket []           = Nothing
+    findCloseRBracket (']' :: xs)  = Just ([], xs)
+    findCloseRBracket (x   :: xs)  = case findCloseRBracket xs of
+      Just (ins, rest) => Just (x :: ins, rest)
+      Nothing          => Nothing
+
+||| `True` iff `s` opens a footnote definition.
+isFootnoteOpener : String -> Bool
+isFootnoteOpener s = case parseFootnoteOpener s of
+  Just _  => True
+  Nothing => False
+
+||| Strip up to `n` leading space characters from `s`. Tabs are not
+||| expanded; lines indented with `\t` are passed through unchanged.
+||| Hoisted ahead of `groupLines` so the footnote branch can use it
+||| (def-list parsing further down also references this).
+dropLeadingSpaces : Nat -> String -> String
+dropLeadingSpaces n s = pack (drop' n (unpack s))
+  where
+    drop' : Nat -> List Char -> List Char
+    drop' Z     xs               = xs
+    drop' (S _) []               = []
+    drop' (S k) (' ' :: xs)      = drop' k xs
+    drop' (S _) xs               = xs
+
+||| Tokenise the body of a `{...}` block into whitespace-separated
+||| chunks. A `key="quoted value"` chunk is kept intact (whitespace
+||| inside the double-quotes does not split the token). Returns the
+||| tokens in source order.
+|||
+||| The implementation walks char-by-char with a reversed accumulator
+||| of the current token. The outer recursion structurally shrinks the
+||| input list. The quoted-value branch is gated by `assert_total`
+||| because the totality checker can't see that `consumeQuoted` always
+||| shrinks the remainder (it either stops at the closing `"` or
+||| consumes the entire tail).
+splitAttrTokens : List Char -> List String
+splitAttrTokens = go []
+  where
+    consumeQuoted : List Char -> (List Char, List Char)
+    consumeQuoted []           = ([], [])
+    consumeQuoted ('"' :: rs)  = ([], rs)
+    consumeQuoted (c   :: rs)  =
+      let (inner, rest) = consumeQuoted rs in (c :: inner, rest)
+
+    go : List Char -> List Char -> List String
+    go acc []          = if null acc then [] else [pack (reverse acc)]
+    go acc (c :: cs)   =
+      if isSpace c
+        then if null acc
+               then go [] cs
+               else pack (reverse acc) :: go [] cs
+        else case c of
+          '"' =>
+            let (q, rest) = consumeQuoted cs
+                accQ      = reverse (unpack ("\"" ++ pack q ++ "\""))
+                              ++ acc
+             in assert_total (go accQ rest)
+          _   => go (c :: acc) cs
+
+||| Parse a single attribute token into an Attrs delta. `#x` -> id `x`;
+||| `.x` -> class `x`; `key=val` -> pair (val with surrounding `"`
+||| stripped). Unrecognised tokens become a (key, "") pair so the
+||| pre-pass at least preserves something — but a malformed `{...}`
+||| line should never reach this; the recognizer rejects it first.
+tokenToAttrs : String -> Attrs
+tokenToAttrs s = case unpack s of
+  ('#' :: rest) => MkAttrs (Just (pack rest)) [] []
+  ('.' :: rest) => MkAttrs Nothing [pack rest] []
+  cs            => case break (== '=') cs of
+    (key, '=' :: val) =>
+      let v = case val of
+                ('"' :: r) => case reverse r of
+                                ('"' :: rs) => pack (reverse rs)
+                                _           => pack val
+                _          => pack val
+       in MkAttrs Nothing [] [(pack key, v)]
+    _ => MkAttrs Nothing [] [(s, "")]
+
+||| Merge two Attrs: later id/key=val wins; classes append.
+mergeAttrs : Attrs -> Attrs -> Attrs
+mergeAttrs (MkAttrs i1 c1 p1) (MkAttrs i2 c2 p2) =
+  let i = case i2 of Just _ => i2; Nothing => i1
+      c = c1 ++ c2
+      p = p1 ++ p2  -- last wins by virtue of `lookup` returning first;
+                    -- but for attribute serialisation the later pair
+                    -- should override. We keep both and let the
+                    -- elaborator's first-wins lookup find the LAST
+                    -- emission by reversing on emit — handled in the
+                    -- elaborator.
+   in MkAttrs i c p
+
+||| Parse the inside of a `{...}` line into Attrs by splitting on
+||| whitespace and merging per-token attrs.
+parseAttrBody : String -> Attrs
+parseAttrBody body =
+  let toks = splitAttrTokens (unpack body)
+   in foldl mergeAttrs emptyAttrs (map tokenToAttrs toks)
+
+||| Recognise a block-level attribute prefix line: `{...}` containing
+||| only attribute tokens, optionally surrounded by whitespace.
+||| Returns the parsed Attrs on success. A line that opens `{` but
+||| never closes, or that contains stray content after `}`, is NOT an
+||| attribute line (and falls through to paragraph).
+parseAttrBlockLine : String -> Maybe Attrs
+parseAttrBlockLine s =
+  let chars = unpack (trim s)
+   in case chars of
+        ('{' :: rest) => case reverse rest of
+          ('}' :: revBody) =>
+            let body = pack (reverse revBody)
+             in Just (parseAttrBody body)
+          _ => Nothing
+        _ => Nothing
+
+||| `True` iff `s` is an attribute-prefix line.
+isAttrBlockLine : String -> Bool
+isAttrBlockLine s = case parseAttrBlockLine s of
+  Just _  => True
+  Nothing => False
+
+||| Apply pending Attrs to a Block, replacing its existing attrs by
+||| merging the pending ones on top of whatever the block already
+||| carried (which is `emptyAttrs` for newly-parsed blocks). For the
+||| handful of blocks that don't carry their own Attrs field (e.g.
+||| `RawBlock`, `RefDef`) the call is a no-op.
+applyAttrsToBlock : Attrs -> Block -> Block
+applyAttrsToBlock a b = case b of
+  Paragraph existing is        => Paragraph    (mergeAttrs existing a) is
+  Heading   existing lvl is    => Heading      (mergeAttrs existing a) lvl is
+  BlockQuote existing bs       => BlockQuote   (mergeAttrs existing a) bs
+  ListBlock existing s st t is => ListBlock    (mergeAttrs existing a) s st t is
+  CodeBlock existing info body => CodeBlock    (mergeAttrs existing a) info body
+  ThematicBreak existing       => ThematicBreak (mergeAttrs existing a)
+  Div existing bs              => Div          (mergeAttrs existing a) bs
+  Table existing cap rs        => Table        (mergeAttrs existing a) cap rs
+  FootnoteDef existing l bs    => FootnoteDef  (mergeAttrs existing a) l bs
+  other                        => other
 
 ||| Strip the leading `> ` (or just `>`) prefix, returning the inner line.
 stripQuotePrefix : String -> String
@@ -487,11 +707,49 @@ groupLines xs = go [] [] xs
                 in (l :: more, rest)
           else ([], l :: ls)
 
+    -- Footnote body collection: same shape as `collectDefList`, but
+    -- continuations are *only* indented lines (the body cannot contain
+    -- another footnote opener at column 0 — that opens a new
+    -- definition). A blank line is consumed as long as the *next*
+    -- non-blank line stays indented.
+    collectFootnoteBody : List String -> (List String, List String)
+    collectFootnoteBody []        = ([], [])
+    collectFootnoteBody (l :: ls) =
+      if isBlankLine l
+        then case ls of
+          [] => ([], [])
+          (l' :: _) =>
+            if isIndentedLine l'
+              then let (more, rest) = collectFootnoteBody ls
+                    in (l :: more, rest)
+              else ([], l :: ls)
+        else if isIndentedLine l
+          then let (more, rest) = collectFootnoteBody ls
+                in (l :: more, rest)
+          else ([], l :: ls)
+
+    -- Consume a block-comment run starting at line `x` (already
+    -- known to satisfy `isBlockCommentStart`). The run extends to the
+    -- first line containing `%}` (inclusive). Returns the input list
+    -- with the comment lines stripped.
+    skipBlockComment : (x : String) -> (xs : List String) -> List String
+    skipBlockComment x xs =
+      if hasBlockCommentEnd x
+        then xs
+        else case xs of
+          []          => []
+          (y :: rest) => skipBlockComment y rest
+
     go : (cur : List String) -> (acc : List LineGroup)
        -> List String -> List LineGroup
     go cur acc []        = reverse (flushNormal (reverse cur) acc)
     go cur acc (x :: xs) =
-      if isBlankLine x
+      if isBlockCommentStart x
+        then
+          let rest = skipBlockComment x xs
+              acc' = flushNormal (reverse cur) acc
+           in assert_total (go [] acc' rest)
+      else if isBlankLine x
         then go [] (flushNormal (reverse cur) acc) xs
         else case parseCodeFenceOpen x of
           Just (n, info) =>
@@ -518,19 +776,30 @@ groupLines xs = go [] [] xs
                         (r :: rs)  =>
                           TableGroup (r ::: rs) :: acc'
                    in assert_total (go [] table rest)
-                else if isDefListOpener x
-                  then
-                    -- Def-list runs span blank lines (a loose item's
-                    -- body is a paragraph at indent ≥ 2 separated from
-                    -- the term line by a blank). Collect all immediate
-                    -- continuation lines (blank, indented, or another
-                    -- `:` opener); stop on the first non-blank,
-                    -- non-indented, non-opener line.
-                    let (rest, rs) = collectDefList xs
-                        acc'       = flushNormal (reverse cur) acc
-                        defList    = DefListGroup (x ::: rest)
-                     in assert_total (go [] (defList :: acc') rs)
-                  else go (x :: cur) acc xs
+                else if isAttrBlockLine x
+                  then case parseAttrBlockLine x of
+                    Just attrs =>
+                      let acc' = flushNormal (reverse cur) acc
+                       in assert_total
+                            (go [] (AttrPrefixGroup attrs :: acc') xs)
+                    Nothing => go (x :: cur) acc xs  -- impossible
+                  else if isFootnoteOpener x
+                    then
+                      let (rest, rs) = collectFootnoteBody xs
+                          acc'       = flushNormal (reverse cur) acc
+                          (label, openerRest) = case parseFootnoteOpener x of
+                            Just (l, r) => (l, r)
+                            Nothing     => ("", "")
+                          body       = openerRest :: map (dropLeadingSpaces 2) rest
+                          fn         = FootnoteGroup label body
+                       in assert_total (go [] (fn :: acc') rs)
+                    else if isDefListOpener x
+                      then
+                        let (rest, rs) = collectDefList xs
+                            acc'       = flushNormal (reverse cur) acc
+                            defList    = DefListGroup (x ::: rest)
+                         in assert_total (go [] (defList :: acc') rs)
+                      else go (x :: cur) acc xs
 
 --------------------------------------------------------------------------------
 -- Group -> Block.
@@ -547,8 +816,8 @@ isThematicBreak s =
         []        => False
         (c :: cs) =>
           (c == '-' || c == '*')
-            && length (c :: cs) >= 3
-            && all (== c) cs
+            && let marks = filter (not . isSpace) (c :: cs)
+                in length marks >= 3 && all (== c) marks
 
 --------------------------------------------------------------------------------
 -- List parsing. The slice covers unordered lists with `-`, `*`, `+`
@@ -804,17 +1073,6 @@ makeRow header aligns line =
 -- Definition-list group processing.
 --------------------------------------------------------------------------------
 
-||| Strip up to `n` leading space characters from `s`. Tabs are not
-||| expanded; lines indented with `\t` are passed through unchanged.
-dropLeadingSpaces : Nat -> String -> String
-dropLeadingSpaces n s = pack (drop' n (unpack s))
-  where
-    drop' : Nat -> List Char -> List Char
-    drop' Z     xs               = xs
-    drop' (S _) []               = []
-    drop' (S k) (' ' :: xs)      = drop' k xs
-    drop' (S _) xs               = xs
-
 ||| Strip a def-list opener prefix from a line. `: foo` -> `foo`,
 ||| `:` -> `""`, anything else -> the input verbatim.
 stripDefOpener : String -> String
@@ -891,7 +1149,7 @@ mutual
       mkItem run =
         let (termLs, bodyLs) = splitTermBody run
             termSoft         = parseTermLines termLs
-            bodyBlocks       = parseBodyBlocks bodyLs
+            bodyBlocks       = assert_total (parseBodyBlocks bodyLs)
          in MkLI emptyAttrs Nothing (Just termSoft) bodyBlocks
 
   ||| Inline-parse the term paragraph: each line through
@@ -906,18 +1164,54 @@ mutual
   ||| running the block grouper + group→block conversion.
   parseBodyBlocks : List String -> List Block
   parseBodyBlocks ls =
-    assert_total (map groupToBlock (groupLines ls))
+    assert_total (groupsToBlocks (groupLines ls))
+
+  ||| Build a `FootnoteDef` from a `FootnoteGroup`. The carried body
+  ||| (rest-of-opener + dedented continuation lines) is parsed
+  ||| recursively as a nested block sequence.
+  footnoteGroupToBlock : (label : String) -> List String -> Block
+  footnoteGroupToBlock label body =
+    let trimmed = case body of
+                    (""    :: rest) => rest  -- empty opener-rest
+                    bs              => bs
+        blocks  = assert_total (groupsToBlocks (groupLines trimmed))
+     in FootnoteDef emptyAttrs label blocks
 
   ||| Convert a LineGroup into a Block. Quote groups recurse.
+  ||| `AttrPrefixGroup` is a marker handled by `groupsToBlocks`; reaching
+  ||| this case directly means a trailing attribute line with no
+  ||| following block — emit as paragraph text so the source survives.
   public export
   groupToBlock : LineGroup -> Block
   groupToBlock (NormalGroup g)    = normalGroupToBlock g
   groupToBlock (QuoteGroup  gs)   =
-    BlockQuote emptyAttrs (assert_total (map groupToBlock gs))
+    BlockQuote emptyAttrs (assert_total (groupsToBlocks gs))
   groupToBlock (CodeGroup info b) =
     CodeBlock emptyAttrs info b
   groupToBlock (TableGroup rows)  = tableGroupToBlock rows
   groupToBlock (DefListGroup rs)  = defListGroupToBlock rs
+  groupToBlock (FootnoteGroup l body) = footnoteGroupToBlock l body
+  groupToBlock (AttrPrefixGroup _) = Paragraph emptyAttrs []
+
+  ||| Convert a list of LineGroups into Blocks, threading
+  ||| `AttrPrefixGroup`s into the Attrs of the next non-attribute block.
+  ||| Trailing attribute prefixes are dropped (no block to attach to).
+  public export
+  groupsToBlocks : List LineGroup -> List Block
+  groupsToBlocks = go emptyAttrs
+    where
+      isEmpty : Attrs -> Bool
+      isEmpty (MkAttrs Nothing [] []) = True
+      isEmpty _                       = False
+
+      go : Attrs -> List LineGroup -> List Block
+      go _      []                            = []
+      go pend (AttrPrefixGroup a :: gs)       =
+        go (mergeAttrs pend a) gs
+      go pend (g :: gs)                       =
+        let b = assert_total (groupToBlock g)
+         in (if isEmpty pend then b else applyAttrsToBlock pend b)
+            :: assert_total (go emptyAttrs gs)
 
 -- ============================================================
 -- Reference-link resolution (two-pass).
@@ -1021,7 +1315,7 @@ public export
 parseDoc : String -> Either ParseError Doc
 parseDoc src =
   let ls    = lines src
-      raw   = map groupToBlock (groupLines ls)
+      raw   = groupsToBlocks (groupLines ls)
       table = collectRefDefs raw
       resolved = resolveBlocks table raw
    in Right (MkDoc resolved)

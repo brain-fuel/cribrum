@@ -275,22 +275,71 @@ headingTag 5 = "h5"
 headingTag 6 = "h6"
 headingTag _ = "h1"
 
+||| Convert a Djot `Attrs` into the HTML attribute list. Emission
+||| order (matching the reference Djot renderer):
+|||
+|||   class=... (joined by spaces, in source order, no dedupe)
+|||   id=...    (if present)
+|||   <other pairs in source order, last-value-wins per key>
+|||
+||| `class` / `id` keys appearing in `pairs` are folded into the
+||| structured `classes` / `identifier` fields rather than emitted
+||| twice.
+public export
+attrsToHAttrs : Attrs -> List HAttr
+attrsToHAttrs (MkAttrs ident classes pairs) =
+  let classAttr : List HAttr
+      classAttr = case classes of
+        [] => []
+        cs => [MkHAttr "class" (Str (joinWith " " cs))]
+      idAttr : List HAttr
+      idAttr = case ident of
+        Just i  => [MkHAttr "id" (Str i)]
+        Nothing => []
+      others : List HAttr
+      others = map mkPairAttr (dedupeLastWins pairs)
+   in classAttr ++ idAttr ++ others
+  where
+    joinWith : String -> List String -> String
+    joinWith _   []        = ""
+    joinWith _   [x]       = x
+    joinWith sep (x :: xs) = x ++ sep ++ joinWith sep xs
+
+    mkPairAttr : (String, String) -> HAttr
+    mkPairAttr (k, v) = MkHAttr k (Str v)
+
+    -- Keep the LAST occurrence of each key, preserving the original
+    -- relative order of distinct keys (first-seen position).
+    dedupeLastWins : List (String, String) -> List (String, String)
+    dedupeLastWins ps =
+      let keys = nub (map fst ps)
+       in mapMaybe (\k => map (\v => (k, v)) (lookupLast k ps)) keys
+    where
+      lookupLast : String -> List (String, String) -> Maybe String
+      lookupLast _ []                = Nothing
+      lookupLast k ((k', v) :: rest) =
+        case lookupLast k rest of
+          Just v' => Just v'
+          Nothing => if k == k' then Just v else Nothing
+
 public export
 elaborateBlock : Block -> HExpr
-elaborateBlock (Paragraph _ inlines) =
-  Element "p" [] (map elaborateInline inlines)
-elaborateBlock (Heading _ lvl inlines) =
-  Element (headingTag lvl) [] (map elaborateInline inlines)
-elaborateBlock (ThematicBreak _) =
-  Element "hr" [] []
-elaborateBlock (BlockQuote _ bs) =
-  Element "blockquote" [] (assert_total (map elaborateBlock bs))
-elaborateBlock (Div _ bs) =
-  Element "div" [] (assert_total (map elaborateBlock bs))
-elaborateBlock (CodeBlock _ _ body) =
-  Element "pre" [] [Element "code" [] [Text body]]
+elaborateBlock (Paragraph a inlines) =
+  Element "p" (attrsToHAttrs a) (map elaborateInline inlines)
+elaborateBlock (Heading a lvl inlines) =
+  Element (headingTag lvl) (attrsToHAttrs a) (map elaborateInline inlines)
+elaborateBlock (ThematicBreak a) =
+  Element "hr" (attrsToHAttrs a) []
+elaborateBlock (BlockQuote a bs) =
+  Element "blockquote" (attrsToHAttrs a)
+    (assert_total (map elaborateBlock bs))
+elaborateBlock (Div a bs) =
+  Element "div" (attrsToHAttrs a)
+    (assert_total (map elaborateBlock bs))
+elaborateBlock (CodeBlock a _ body) =
+  Element "pre" (attrsToHAttrs a) [Element "code" [] [Text body]]
 elaborateBlock (RawBlock _ body) = Text body
-elaborateBlock (ListBlock _ style _ _ items) =
+elaborateBlock (ListBlock _ style _ tight items) =
   let tag = case style of
               OrderedDecimal     => "ol"
               OrderedRomanLower  => "ol"
@@ -302,10 +351,11 @@ elaborateBlock (ListBlock _ style _ _ items) =
               UnorderedPlus      => "ul"
               TaskList           => "ul"
               Definition         => "dl"
-      -- For TaskList items the reference Djot renderer emits inline
-      -- content directly inside `<li>` (no `<p>` wrap); collapse a
-      -- single-`Paragraph` body to its inline children so the gate
-      -- matches without the `<p>` wrapper.
+      -- Tight list collapse: when the list is tight AND an item body is
+      -- exactly one `Paragraph`, drop the `<p>` wrap so the gate matches
+      -- the reference renderer (which emits inline content directly in
+      -- `<li>` for tight items). TaskList is always treated as tight by
+      -- the reference renderer. Loose items keep their `<p>` wrap.
       unwrapTight : List Block -> List HExpr
       unwrapTight [Paragraph _ inls] = map elaborateInline inls
       unwrapTight bs                 =
@@ -320,8 +370,11 @@ elaborateBlock (ListBlock _ style _ _ items) =
       taskLiAttrs Nothing      = []
 
       elabItem : ListItem -> HExpr
-      elabItem i = Element "li" []
-                     (assert_total (map elaborateBlock (content i)))
+      elabItem i =
+        if tight
+          then Element "li" [] (unwrapTight (content i))
+          else Element "li" []
+                 (assert_total (map elaborateBlock (content i)))
 
       elabTaskItem : ListItem -> HExpr
       elabTaskItem i =

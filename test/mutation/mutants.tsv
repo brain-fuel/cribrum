@@ -12,18 +12,18 @@ src/Cribrum/Djot/Surface.idr	blockSize (Paragraph _ _)         = 1	blockSize (Pa
 src/Cribrum/Djot/Surface.idr	blockSize (Heading _ _ _)         = 1	blockSize (Heading _ _ _)         = 0	heading size off-by-one
 src/Cribrum/Node.idr	size (Text _)            = 1	size (Text _)            = 0	text node size off-by-one
 src/Cribrum/Node.idr	walk h@(Element _ _ cs) = h :: assert_total (concatMap walk cs)	walk h@(Element _ _ cs) = assert_total (concatMap walk cs)	walk drops the root
-src/Cribrum/Djot/Parser.idr	length (c :: cs) >= 3	length (c :: cs) >= 2	thematic break: 3 -> 2 chars accepted
-src/Cribrum/Djot/Parser.idr	length (c :: cs) >= 3	length (c :: cs) >= 4	thematic break: 3 -> 4 chars required
+src/Cribrum/Djot/Parser.idr	length marks >= 3	length marks >= 2	thematic break: 3 -> 2 chars accepted
+src/Cribrum/Djot/Parser.idr	length marks >= 3	length marks >= 4	thematic break: 3 -> 4 chars required
 src/Cribrum/Djot/Parser.idr	(c == '-' || c == '*')	(c == '-')	thematic break: drop '*' marker
-src/Cribrum/Djot/Parser.idr	&& all (== c) cs	&& True	thematic break: drop homogeneity check
+src/Cribrum/Djot/Parser.idr	all (== c) marks	all (\_ => True) marks	thematic break: drop homogeneity check
 src/Cribrum/Djot/Parser.idr	if isNil ls && isThematicBreak l	if isNil ls	thematic break: any single-line group becomes thematic
 src/Cribrum/Djot/Parser.idr	if isNil ls && isThematicBreak l	if isThematicBreak l	thematic break: multi-line groups starting --- become thematic
 src/Cribrum/Html/Valid.idr	  Yes _ => True	  Yes _ => False	isValidHtml: Yes branch returns False (inversion)
 src/Cribrum/Html/Valid.idr	  No  _ => False	  No  _ => True	isValidHtml: No branch returns True (inversion)
 src/Cribrum/Elaborate.idr	headingTag 3 = "h3"	headingTag 3 = "h1"	elaborate: h3 collapsed to h1
 src/Cribrum/Elaborate.idr	headingTag 6 = "h6"	headingTag 6 = "h1"	elaborate: h6 collapsed to h1
-src/Cribrum/Elaborate.idr	  Element "p" [] (map elaborateInline inlines)	  Element "div" [] (map elaborateInline inlines)	elaborate: paragraph -> div
-src/Cribrum/Elaborate.idr	  Element "hr" [] []	  Element "br" [] []	elaborate: thematic break emits br instead of hr
+src/Cribrum/Elaborate.idr	  Element "p" (attrsToHAttrs a) (map elaborateInline inlines)	  Element "div" (attrsToHAttrs a) (map elaborateInline inlines)	elaborate: paragraph -> div
+src/Cribrum/Elaborate.idr	  Element "hr" (attrsToHAttrs a) []	  Element "br" (attrsToHAttrs a) []	elaborate: thematic break emits br instead of hr
 src/Cribrum/Elaborate.idr	elaborateInline InlSoftBreak       = Text " "	elaborateInline InlSoftBreak       = Text ""	elaborate: softbreak -> empty
 src/Cribrum/Elaborate.idr	elaborateInline InlHardBreak       = Element "br" [] []	elaborateInline InlHardBreak       = Element "hr" [] []	elaborate: hardbreak -> hr
 src/Cribrum/Elaborate.idr	Element "em" [] (assert_total	Element "strong" [] (assert_total	elaborate: em -> strong
@@ -57,7 +57,7 @@ src/Cribrum/Djot/Parser.idr	('>' :: ' ' :: _) => True	('>' :: ' ' :: _) => False
 src/Cribrum/Djot/Parser.idr	['>']             => True	['>']             => False	parser: bare ">" no longer recognised as quote
 src/Cribrum/Djot/Parser.idr	('>' :: ' ' :: rest) => pack rest	('>' :: ' ' :: rest) => pack ('>' :: rest)	parser: stripQuotePrefix leaves ">" in
 src/Cribrum/Djot/Parser.idr	in assert_total (go [] (quoted :: acc') rest)	in assert_total (go [] acc' rest)	parser: quote group dropped from output
-src/Cribrum/Djot/Parser.idr	BlockQuote emptyAttrs (assert_total (map groupToBlock gs))	BlockQuote emptyAttrs []	parser: blockquote emits empty body
+src/Cribrum/Djot/Parser.idr	BlockQuote emptyAttrs (assert_total (groupsToBlocks gs))	BlockQuote emptyAttrs []	parser: blockquote emits empty body
 src/Cribrum/Djot/Parser.idr	if n >= 3 && not (any (== '`') (unpack after))	if n >= 2 && not (any (== '`') (unpack after))	parser: code fence accepts 2 backticks
 src/Cribrum/Djot/Parser.idr	if n >= 3 && not (any (== '`') (unpack after))	if n >= 4 && not (any (== '`') (unpack after))	parser: code fence requires 4 backticks
 src/Cribrum/Djot/Parser.idr	if n >= 3 && not (any (== '`') (unpack after))	if n >= 3	parser: code fence info allows backticks
@@ -188,3 +188,22 @@ src/Cribrum/Elaborate.idr	isInvisibleBlock (RefDef _ _ _)      = True	isInvisibl
 src/Cribrum/Elaborate.idr	isInvisibleBlock (FootnoteDef _ _ _) = True	isInvisibleBlock (FootnoteDef _ _ _) = False	elaborate: FootnoteDef becomes visible
 src/Cribrum/Elaborate.idr	isInvisibleBlock _                   = False	isInvisibleBlock _                   = True	elaborate: every block becomes invisible (renders empty)
 src/Cribrum/Elaborate.idr	Element "main" [] (map elaborateBlock (filter (not . isInvisibleBlock) bs))	Element "main" [] (map elaborateBlock bs)	elaborate: doc skips invisibility filter (RefDef emits)
+src/Cribrum/Djot/Parser.idr	      ('^' :: rest) => case findClose ']' rest of	      ('^' :: rest) => Nothing	parser: footnote-ref inline `[^label]` disabled
+src/Cribrum/Djot/Parser.idr	            then assert_total (parseInlinesAcc ('[' :: acc) cs)	            then flushAcc acc ++ [InlFootnoteRef ""] ++ assert_total (parseInlinesAcc [] after)	parser: empty-label footnote ref still emitted
+src/Cribrum/Djot/Parser.idr	parseFootnoteOpener s = case unpack s of	parseFootnoteOpener s = Nothing	parser: footnote-def opener recognition disabled
+src/Cribrum/Djot/Parser.idr	    Just (label, ':' :: rest) =>	    Just (label, rest) =>	parser: footnote opener no longer requires `:`
+src/Cribrum/Djot/Parser.idr	      if label == []	      if label /= []	parser: footnote opener accepts empty label only
+src/Cribrum/Djot/Parser.idr	isFootnoteOpener s = case parseFootnoteOpener s of	isFootnoteOpener s = True	parser: every line treated as footnote opener
+src/Cribrum/Djot/Parser.idr	parseAttrBlockLine s =	parseAttrBlockLine s = Nothing	parser: attribute-block line recognition disabled
+src/Cribrum/Djot/Parser.idr	  ('#' :: rest) => MkAttrs (Just (pack rest)) [] []	  ('#' :: rest) => MkAttrs Nothing [pack rest] []	parser: attr id token recorded as class
+src/Cribrum/Djot/Parser.idr	  ('.' :: rest) => MkAttrs Nothing [pack rest] []	  ('.' :: rest) => MkAttrs (Just (pack rest)) [] []	parser: attr class token recorded as id
+src/Cribrum/Djot/Parser.idr	mergeAttrs (MkAttrs i1 c1 p1) (MkAttrs i2 c2 p2) =	mergeAttrs (MkAttrs i1 c1 p1) (MkAttrs i2 c2 p2) = MkAttrs i1 c1 p1	parser: mergeAttrs always keeps left operand (drops new attrs)
+src/Cribrum/Djot/Parser.idr	  let i = case i2 of Just _ => i2; Nothing => i1	  let i = i1	parser: mergeAttrs id never updated by right operand
+src/Cribrum/Djot/Parser.idr	      c = c1 ++ c2	      c = c1	parser: mergeAttrs class list never appends right
+src/Cribrum/Djot/Parser.idr	      go pend (g :: gs)                       =	      go _ (g :: gs)                       =	parser: attr prefix never applied (pend discarded each step)
+src/Cribrum/Elaborate.idr	attrsToHAttrs (MkAttrs ident classes pairs) =	attrsToHAttrs (MkAttrs ident classes pairs) = []	elaborate: Attrs always render as empty attribute list
+src/Cribrum/Elaborate.idr	   in classAttr ++ idAttr ++ others	   in idAttr ++ classAttr ++ others	elaborate: attribute emission order id-before-class (regresses gate)
+src/Cribrum/Elaborate.idr	      classAttr = case classes of	      classAttr = []	elaborate: classes never emitted in attrsToHAttrs
+src/Cribrum/Elaborate.idr	      idAttr = case ident of	      idAttr = []	elaborate: id never emitted in attrsToHAttrs
+src/Cribrum/Elaborate.idr	if tight	if False	elaborate: tight-list collapse never fires (always wraps in <p>)
+src/Cribrum/Elaborate.idr	if tight	if True	elaborate: tight-list collapse always fires (drops <p> on loose lists)

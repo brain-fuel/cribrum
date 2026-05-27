@@ -1,6 +1,6 @@
 # Cribrum — Current Status
 
-> 472 tests across 18 groups, all green. Phase 4 typed-by-construction
+> 485 tests across 18 groups, all green. Phase 4 typed-by-construction
 > view constructors landed (`TEAWeb.Html.Typed` — Step 4). AA catalog
 > grew from 12 → 19 rules (Step 5 partial): area-alt, link-empty-href,
 > meta-no-refresh, summary-not-empty, track-kind (all Structural, all
@@ -60,10 +60,38 @@
 > normalises whitespace + strips the `<main>` wrapper, and compares
 > against the expected reference output. A baseline file
 > (`test/djot-ref/baseline.txt`) lists currently-passing tests;
-> regressions fail the gate, additions are tracked. 20 / 20
-> hand-curated tests pass at the baseline — the full `jgm/djot`
-> corpus arrives once the ingest hookup lands. Definition + task
-> lists, footnotes, attribute blocks still ahead.
+> regressions fail the gate, additions are tracked. 64 / 246
+> upstream-ingested tests now pass at the baseline (full `jgm/djot`
+> corpus ingestion shipped). **Step 11 parser remainder** (P5.4
+> remainder): tight ul/ol list collapse (single-`Paragraph` items
+> drop their `<p>` wrap in `<li>` for tight lists, matching the
+> reference renderer); footnote refs (`[^label]` parses to
+> `InlFootnoteRef`) + footnote-def blocks (`[^label]:` opener +
+> indented continuation lines emit `FootnoteDef`); block-level
+> attribute prefixes (`{#id .cls key=val}` on a line of its own
+> attach Attrs to the following block, with consecutive prefixes
+> stacking via `mergeAttrs` — id/key=val take last value, classes
+> append). Elaborator gained `attrsToHAttrs` so Attrs reach the
+> rendered HTML attribute list (class first, id second, key/val
+> last-wins in source order). Thematic-break detection relaxed to
+> accept internal whitespace (`- - - - -` is now `<hr>` per Djot —
+> previously a one-item list). Emphasis / strong flank rule now
+> matches Djot: marker pair is emphasised iff the opener and closer
+> agree on inside-whitespace status (both `_ a _` and `_a_` are
+> emphasis; asymmetric `_ a_` / `_a _` stay literal). Block-level
+> Djot comments (`{% ... %}` spanning multiple lines) are
+> recognised at the `groupLines` boundary and dropped.
+> **Oracle corpus expansion** (P2.4):
+> grew from 12 → 33 curated `(name, HExpr, expectedValid)` triples
+> covering void elements, form controls under fieldset/legend,
+> sectioning landmarks, details/summary, dl/dt/dd, ARIA labels +
+> describedby, picture/source/img, time/mark, pre/code, progress/
+> meter, blockquote-with-cite, nested lists, img with dims, and
+> checkbox/radio inputs; 0 vnu-cross-check divergences. Backlog
+> classes that exposed validator gaps (interactive-in-interactive,
+> form-in-form, comment-in-script, orphan `<li>`/`<dt>`) are
+> documented in the corpus comment for re-introduction once the
+> matching validator slice lands.
 
 > Snapshot of what's built. Authoritative narrative is `plan.dj`; the
 > convention catalog is `docs/conventions.md`.
@@ -95,7 +123,7 @@
 | `TEAWeb.Runtime`          | T3+T4 | **Spike**: `mount` + tail-recursive interpreter loop in Idris; `installDispatch` installs single global `window.__cribrumDispatch`; `runCmd` interprets Focus/Blur via FFI; reconcile after each update keeps state ref + handler table in lockstep. JS-backend execution only. |
 | `TEAWeb.Ports`            | T5    | Not started. Typed JSON FFI boundary for app-specific JS. |
 
-## Tests (415 total, all green)
+## Tests (485 total, all green)
 
 ```
 $ make test-fast        # cribrum + teaweb suites
@@ -118,7 +146,7 @@ Each module has:
 - **PBTs** (property-based tests via hedgehog) — invariants over generated
   inputs.
 
-## Mutation gate (190 mutants, 0 surviving)
+## Mutation gate (209 mutants, 0 surviving)
 
 ```
 $ test/mutation/run.sh                # changed-file scope (default)

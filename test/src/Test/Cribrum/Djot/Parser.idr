@@ -1096,6 +1096,91 @@ ext_refdef_requires_space_after_colon = oneShot $
     === ok (doc [paraMulti [InlText "[h]:url"]])
 
 --------------------------------------------------------------------------------
+-- Footnote definitions + references (parser remainder).
+--------------------------------------------------------------------------------
+
+||| `[^lbl]` becomes an `InlFootnoteRef` in a paragraph.
+export
+ext_footnote_ref_inline : Property
+ext_footnote_ref_inline = oneShot $
+  parseDoc "see[^a]"
+    === ok (doc [paraMulti [InlText "see", InlFootnoteRef "a"]])
+
+||| `[^]` (empty label between `[^` and `]`) is NOT a footnote
+||| reference — the label is required. The `[^` falls back to
+||| literal text. Kills the mutant that would emit an empty-label
+||| `InlFootnoteRef`.
+export
+ext_footnote_empty_inline_ref_is_literal : Property
+ext_footnote_empty_inline_ref_is_literal = oneShot $
+  parseDoc "see[^]"
+    === ok (doc [paraMulti [InlText "see[^]"]])
+
+||| `[^lbl]: body` becomes a `FootnoteDef` block, with the body inline-
+||| parsed as a single paragraph.
+export
+ext_footnote_def_single_line : Property
+ext_footnote_def_single_line = oneShot $
+  parseDoc "[^a]: note body"
+    === ok (doc [FootnoteDef emptyAttrs "a"
+                   [paraMulti [InlText "note body"]]])
+
+||| Indented continuation line joins the opener via `InlSoftBreak`.
+export
+ext_footnote_def_continuation : Property
+ext_footnote_def_continuation = oneShot $
+  parseDoc "[^a]: first\n  second"
+    === ok (doc [FootnoteDef emptyAttrs "a"
+                   [paraMulti
+                     [InlText "first", InlSoftBreak, InlText "second"]]])
+
+||| Footnote body can contain multiple paragraphs separated by a
+||| blank line; the indented continuation pattern keeps them inside the
+||| same `FootnoteDef`.
+export
+ext_footnote_def_two_paragraphs : Property
+ext_footnote_def_two_paragraphs = oneShot $
+  parseDoc "[^a]: first\n\n  second"
+    === ok (doc [FootnoteDef emptyAttrs "a"
+                   [paraMulti [InlText "first"]
+                   , paraMulti [InlText "second"]]])
+
+||| `{#id .cls}\nfoo` attaches Attrs to the following paragraph.
+export
+ext_attr_block_prefixes_paragraph : Property
+ext_attr_block_prefixes_paragraph = oneShot $
+  parseDoc "{#id .cls}\nfoo"
+    === ok (doc [Paragraph (MkAttrs (Just "id") ["cls"] [])
+                            [InlText "foo"]])
+
+||| Multiple consecutive `{...}` lines stack — classes append; id /
+||| key=val take last value.
+export
+ext_attr_blocks_stack : Property
+ext_attr_blocks_stack = oneShot $
+  parseDoc "{#id}\n{.foo .bar}\n{#id2}\nOkay"
+    === ok (doc [Paragraph (MkAttrs (Just "id2") ["foo","bar"] [])
+                            [InlText "Okay"]])
+
+||| Trailing attribute prefix with no following block is dropped.
+export
+ext_trailing_attr_block_dropped : Property
+ext_trailing_attr_block_dropped = oneShot $
+  parseDoc "para\n\n{#id}"
+    === ok (doc [Paragraph emptyAttrs [InlText "para"]])
+
+||| Empty-label `[^]:` is NOT a footnote opener — `parseFootnoteOpener`
+||| requires a non-empty label. The line then falls through to the
+||| normal ref-def path, which accepts `^` as a label. (Documents this
+||| split; not a deep design commitment — the elaborator never emits
+||| a useful link for label `^`.)
+export
+ext_footnote_empty_label_is_refdef : Property
+ext_footnote_empty_label_is_refdef = oneShot $
+  parseDoc "[^]: ignored"
+    === ok (doc [RefDef "^" "ignored" Nothing])
+
+--------------------------------------------------------------------------------
 -- Unordered & ordered list parsing (Step-8 parser remainder).
 --------------------------------------------------------------------------------
 
@@ -1129,9 +1214,13 @@ ext_unordered_list_then_paragraph = oneShot $
 export
 ext_unordered_list_dash_dash_dash : Property
 ext_unordered_list_dash_dash_dash = oneShot $
-  -- "- - -" is a single list item whose content is "- -".
+  -- "- - -" is a thematic break per Djot (3+ dash marks separated
+  -- by optional whitespace, alone on the line). Pins the parser
+  -- against regressing the loose-dash thematic-break form to a
+  -- one-item list (the prior behaviour, before the
+  -- `filter (not . isSpace)` relaxation in `isThematicBreak`).
   parseDoc "- - -"
-    === ok (doc [ulList ["- -"]])
+    === ok (doc [ThematicBreak emptyAttrs])
 
 export
 ext_mixed_markers_break_list : Property
@@ -1347,4 +1436,13 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_ref_defined_before_link_resolves",     ext_ref_defined_before_link_resolves)
   , ("ext_refdef_empty_url_is_paragraph",        ext_refdef_empty_url_is_paragraph)
   , ("ext_refdef_requires_space_after_colon",    ext_refdef_requires_space_after_colon)
+  , ("ext_footnote_ref_inline",                  ext_footnote_ref_inline)
+  , ("ext_footnote_empty_inline_ref_is_literal", ext_footnote_empty_inline_ref_is_literal)
+  , ("ext_footnote_def_single_line",             ext_footnote_def_single_line)
+  , ("ext_footnote_def_continuation",            ext_footnote_def_continuation)
+  , ("ext_footnote_def_two_paragraphs",          ext_footnote_def_two_paragraphs)
+  , ("ext_footnote_empty_label_is_refdef",       ext_footnote_empty_label_is_refdef)
+  , ("ext_attr_block_prefixes_paragraph",        ext_attr_block_prefixes_paragraph)
+  , ("ext_attr_blocks_stack",                    ext_attr_blocks_stack)
+  , ("ext_trailing_attr_block_dropped",          ext_trailing_attr_block_dropped)
   ]

@@ -474,6 +474,59 @@ ext_definition_list_emits_dl_dt_dd = oneShot $
               , Element "dt" [] [Text "orange"]
               ]]
 
+||| A tight unordered list with single-`Paragraph` items emits each
+||| item's inline content directly inside `<li>` (no `<p>` wrap). Pins
+||| the `if tight` branch of `elabItem` so the collapse can't be
+||| disabled or always-on without the test catching it.
+export
+ext_tight_ul_collapses_paragraph_wrap : Property
+ext_tight_ul_collapses_paragraph_wrap = oneShot $
+  elaborateDoc
+    (doc [ListBlock emptyAttrs UnorderedDash Nothing True
+            [ MkLI emptyAttrs Nothing Nothing
+                [Paragraph emptyAttrs [InlText "one"]]
+            , MkLI emptyAttrs Nothing Nothing
+                [Paragraph emptyAttrs [InlText "two"]]
+            ]])
+    === Element "main" []
+          [ Element "ul" []
+              [ Element "li" [] [Text "one"]
+              , Element "li" [] [Text "two"]
+              ]]
+
+||| A loose unordered list keeps the `<p>` wrap around each item's
+||| paragraph. Pins the False branch of `if tight` — without this
+||| test, a mutant that always collapses would still pass the suite.
+export
+ext_loose_ul_keeps_paragraph_wrap : Property
+ext_loose_ul_keeps_paragraph_wrap = oneShot $
+  elaborateDoc
+    (doc [ListBlock emptyAttrs UnorderedDash Nothing False
+            [ MkLI emptyAttrs Nothing Nothing
+                [Paragraph emptyAttrs [InlText "one"]]
+            ]])
+    === Element "main" []
+          [ Element "ul" []
+              [ Element "li" [] [Element "p" [] [Text "one"]]
+              ]]
+
+||| Attribute emission order is class first, then id, then key=val
+||| pairs. Pins `attrsToHAttrs`' concatenation order so a mutant
+||| flipping `classAttr ++ idAttr ++ others` to `idAttr ++ classAttr`
+||| breaks the test.
+export
+ext_attrs_emit_class_before_id : Property
+ext_attrs_emit_class_before_id = oneShot $
+  elaborateDoc
+    (doc [Paragraph (MkAttrs (Just "i") ["c"] [])
+                    [InlText "x"]])
+    === Element "main" []
+          [ Element "p"
+              [ MkHAttr "class" (Str "c")
+              , MkHAttr "id"    (Str "i")
+              ]
+              [Text "x"]]
+
 export
 group : Group
 group = MkGroup "Cribrum.Elaborate"
@@ -510,4 +563,7 @@ group = MkGroup "Cribrum.Elaborate"
   , ("pbt_parse_elaborate_round_trip",         pbt_parse_elaborate_round_trip)
   , ("ext_task_list_emits_class_attrs",        ext_task_list_emits_class_attrs)
   , ("ext_definition_list_emits_dl_dt_dd",     ext_definition_list_emits_dl_dt_dd)
+  , ("ext_tight_ul_collapses_paragraph_wrap",  ext_tight_ul_collapses_paragraph_wrap)
+  , ("ext_loose_ul_keeps_paragraph_wrap",      ext_loose_ul_keeps_paragraph_wrap)
+  , ("ext_attrs_emit_class_before_id",         ext_attrs_emit_class_before_id)
   ]

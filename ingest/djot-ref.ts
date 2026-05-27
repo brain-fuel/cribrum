@@ -41,10 +41,31 @@ const __dirname  = dirname(__filename);
 const PINNED_COMMIT = "cbd34858ee7d5d076663d3e39362fb080b55c1df";
 const SOURCE_REPO   = "jgm/djot.lua";
 
-// Files that contain executable tests. `sourcepos.test` is intentionally
-// excluded — every fixture in that file requests the `m` source-position
-// mode Cribrum doesn't model. `filters.test` is excluded for the same
-// reason (Lua-filter-only).
+// Files that contain executable tests. The full upstream `test/`
+// directory has 26 files; we ingest 24. The two excluded files are:
+//
+//   - sourcepos.test — every fixture requests the `m` source-position
+//     mode Cribrum does not emit. Source-position reporting is out of
+//     scope for the current parser surface.
+//   - filters.test   — fixtures request the `f` Lua-filter mode
+//     specific to djot.lua's filter API; Cribrum has no equivalent.
+//
+// In addition to the two-file exclusion, individual fixtures inside
+// otherwise-ingested files are skipped per-test when the opening
+// fence carries an annotation (`a` for AST-print, `m` for sourcepos,
+// `p` for AST-with-pos, `f` for filter). At the pinned commit the
+// skipped fixtures are:
+//
+//   - attributes.test : 2 fixtures (AST-print)
+//   - regression.test : 1 fixture  (sourcepos)
+//   - symbol.test     : 2 fixtures (AST-print) — every fixture in
+//                       symbol.test is annotated, so the topic
+//                       produces zero corpus files at present.
+//
+// Total: 5 annotated fixtures skipped. None depend on a behaviour
+// Cribrum could match without first growing the optional surface
+// (AST-print / source-pos / filters); see the comment in the
+// extraction loop for the per-test reasoning.
 const TEST_FILES = [
   "attributes",
   "blockquote",
