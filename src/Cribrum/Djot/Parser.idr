@@ -520,6 +520,11 @@ data LineGroup : Type where
   ||| parsed Attrs to the next non-attribute block. Multiple
   ||| consecutive attribute lines stack via `mergeAttrs`.
   AttrPrefixGroup : Attrs -> LineGroup
+  ||| A fenced div (`::: cls`/`::: cls1 cls2`/bare `:::`) with its
+  ||| recursively-grouped interior. Classes harvested at open time
+  ||| land in `attrs`; the body is everything between opener and the
+  ||| matching close (or EOF if unclosed), regrouped via `groupLines`.
+  DivGroup    : Attrs -> List LineGroup -> LineGroup
 
 ||| `True` iff the line starts with `>` followed by space, OR is exactly `>`
 ||| (an empty quote line — Djot allows this).
@@ -579,6 +584,42 @@ isCodeFenceClose ch n s =
   let trimmed = trim s
       bs      = countFenceChars ch trimmed
    in bs == n && length (unpack trimmed) == n
+
+||| If `s` is a fenced-div opening line — 3+ colons optionally followed
+||| by class-name token(s) — return `Just (colonCount, attrs)` with
+||| classes harvested from the trailing token list. Up to 3 leading
+||| spaces of indentation are tolerated on the opener.
+|||
+||| Djot syntax: `::: cls`, `:::: cls1 cls2`, or bare `:::` (no class).
+||| Class tokens are whitespace-separated identifiers; an empty trailing
+||| run yields an attrs-less opener.
+parseFencedDivOpen : String -> Maybe (Nat, Attrs)
+parseFencedDivOpen s =
+  let stripped = pack (dropLeadingSpaceN 3 (unpack s))
+      n        = countFenceChars ':' stripped
+   in if n >= 3
+        then let after = pack (drop n (unpack stripped))
+                 rest  = trim after
+              in if rest == ""
+                   then Just (n, emptyAttrs)
+                   else
+                     let toks = filter (/= "") (words rest)
+                         attrs = MkAttrs Nothing toks []
+                      in Just (n, attrs)
+        else Nothing
+  where
+    dropLeadingSpaceN : Nat -> List Char -> List Char
+    dropLeadingSpaceN Z     xs            = xs
+    dropLeadingSpaceN (S k) (' ' :: rest) = dropLeadingSpaceN k rest
+    dropLeadingSpaceN _     xs            = xs
+
+||| `True` iff `s` is a fenced-div CLOSING line of length ≥ `n`: a run
+||| of at least `n` colons alone on the line (only whitespace after).
+isFencedDivClose : (n : Nat) -> String -> Bool
+isFencedDivClose n s =
+  let trimmed = trim s
+      cs      = countFenceChars ':' trimmed
+   in cs >= n && length (unpack trimmed) == cs
 
 ||| `True` iff `s` is a plausible pipe-table row: trimmed line begins
 ||| with `|` and contains at least one further `|` (so it has at least
@@ -842,6 +883,31 @@ groupLines xs = go [] [] xs
         then (reverse body, ls)
         else collectCodeBody ch n (l :: body) ls
 
+    -- Consume fenced-div body lines until the matching close.
+    -- Tracks an active code-block fence so `:::` lines inside a code
+    -- block don't terminate the div (matches the Djot reference's
+    -- "fenced divs span block boundaries; embedded code blocks are
+    -- inert" behaviour). Auto-closes at EOF.
+    collectDivBody :
+         (openerN : Nat)
+      -> (inCode : Maybe (Char, Nat))
+      -> (body : List String)
+      -> (rest : List String)
+      -> (List String, List String)
+    collectDivBody _ _       body [] = (reverse body, [])
+    collectDivBody n Nothing body (l :: ls) =
+      if isFencedDivClose n l
+        then (reverse body, ls)
+        else case parseCodeFenceOpen l of
+          Just (ch, m, _) =>
+            collectDivBody n (Just (ch, m)) (l :: body) ls
+          Nothing         =>
+            collectDivBody n Nothing (l :: body) ls
+    collectDivBody n (Just (ch, m)) body (l :: ls) =
+      if isCodeFenceClose ch m l
+        then collectDivBody n Nothing (l :: body) ls
+        else collectDivBody n (Just (ch, m)) (l :: body) ls
+
     -- Greedily collect def-list continuation lines from `xs`.
     -- Returns `(continuation, rest-after-group)`. A trailing run of
     -- blanks at the end of the file is consumed (they are stripped
@@ -914,8 +980,15 @@ groupLines xs = go [] [] xs
                 code         =
                   CodeGroup info (concat (intersperse "\n" body))
              in assert_total (go [] (code :: acc') rest)
-          Nothing =>
-            if isQuotePrefixed x
+          Nothing => case (cur, parseFencedDivOpen x) of
+            ([], Just (n, attrs)) =>
+              let (body, rest) = collectDivBody n Nothing [] xs
+                  inner         = assert_total (groupLines body)
+                  acc'          = flushNormal (reverse cur) acc
+                  divGroup      = DivGroup attrs inner
+               in assert_total (go [] (divGroup :: acc') rest)
+            _ =>
+              if isQuotePrefixed x
               then
                 let (quoteLines, rest) =
                       spanList isQuotePrefixed (x :: xs)
@@ -1348,6 +1421,8 @@ mutual
   groupToBlock (DefListGroup rs)  = defListGroupToBlock rs
   groupToBlock (FootnoteGroup l body) = footnoteGroupToBlock l body
   groupToBlock (AttrPrefixGroup _) = Paragraph emptyAttrs []
+  groupToBlock (DivGroup attrs gs) =
+    Div attrs (assert_total (groupsToBlocks gs))
 
   ||| Convert a list of LineGroups into Blocks, threading
   ||| `AttrPrefixGroup`s into the Attrs of the next non-attribute block.
