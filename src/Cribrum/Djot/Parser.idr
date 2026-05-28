@@ -640,6 +640,20 @@ isDefListOpener s = case unpack s of
   [':']             => True
   _                 => False
 
+||| `True` iff `s` is a thematic break (3+ matching `-` or `*` runs,
+||| optionally separated by whitespace). Hoisted ahead of the
+||| blockquote lazy-continuation gate so the gate can disqualify
+||| thematic-break lines from lazy continuation.
+isThematicBreakLine : String -> Bool
+isThematicBreakLine s =
+  let trimmed = trim s
+   in case unpack trimmed of
+        []        => False
+        (c :: cs) =>
+          (c == '-' || c == '*')
+            && let marks = filter (not . isSpace) (c :: cs)
+                in length marks >= 3 && all (== c) marks
+
 ||| `True` iff `s` begins with at least one space (a continuation line
 ||| for an open def-list item).
 isIndentedLine : String -> Bool
@@ -818,6 +832,33 @@ isAttrBlockLine s = case parseAttrBlockLine s of
   Just _  => True
   Nothing => False
 
+||| `True` iff `s` is a non-blank line that does NOT open any of the
+||| block constructs the grouper recognises — i.e. a plausible
+||| paragraph-continuation line. Used by the blockquote lazy-
+||| continuation rule: an unprefixed line that satisfies this predicate
+||| extends the current blockquote's last paragraph (matches Djot's
+||| "lazy continuation" semantics on blockquote-002 / -006 / -007 /
+||| -013).
+|||
+||| List/table/footnote openers are intentionally NOT excluded: the
+||| current slice doesn't exercise mid-blockquote list breaks, so the
+||| broader exclusion list would over-restrict lazy continuation.
+isParagraphContinuable : String -> Bool
+isParagraphContinuable s =
+  not (s == "" || all isSpace (unpack s))
+    && (case parseHeadingMarker s of
+          Just _  => False
+          Nothing => True)
+    && not (isThematicBreakLine s)
+    && (case parseCodeFenceOpen s of
+          Just _  => False
+          Nothing => True)
+    && (case parseFencedDivOpen s of
+          Just _  => False
+          Nothing => True)
+    && not (isAttrBlockLine s)
+    && not (isBlockCommentStart s)
+
 ||| Apply pending Attrs to a Block, replacing its existing attrs by
 ||| merging the pending ones on top of whatever the block already
 ||| carried (which is `emptyAttrs` for newly-parsed blocks). For the
@@ -950,6 +991,30 @@ groupLines xs = go [] [] xs
                 in (l :: more, rest)
           else ([], l :: ls)
 
+    -- Collect blockquote lines, including Djot's lazy-continuation
+    -- form: an unprefixed non-blank paragraph-continuation line
+    -- extends the current blockquote when sandwiched between
+    -- `>`-prefixed lines (or following one). Stops at the first blank
+    -- line, or at a non-prefixed line that opens a new block (heading,
+    -- thematic break, code fence, fenced div, attr block, block
+    -- comment). Lazy lines are kept verbatim so the recursive inner
+    -- blockquote sees them as continuations of its own paragraph.
+    collectQuoteBlock : List String -> (List String, List String)
+    collectQuoteBlock []        = ([], [])
+    collectQuoteBlock (l :: ls) =
+      if isQuotePrefixed l
+        then let (more, rest) = collectQuoteBlock ls in (l :: more, rest)
+        else if isParagraphContinuable l
+          then let (more, rest) = collectQuoteBlock ls in (l :: more, rest)
+          else ([], l :: ls)
+
+    -- Strip the `> ` prefix from a quoted line; lazy-continuation
+    -- lines (no prefix) pass through unchanged so the inner recursive
+    -- blockquote can attach them as paragraph continuations at its own
+    -- level.
+    stripQuoteOrLazy : String -> String
+    stripQuoteOrLazy s = if isQuotePrefixed s then stripQuotePrefix s else s
+
     -- Consume a block-comment run starting at line `x` (already
     -- known to satisfy `isBlockCommentStart`). The run extends to the
     -- first line containing `%}` (inclusive). Returns the input list
@@ -988,11 +1053,11 @@ groupLines xs = go [] [] xs
                   divGroup      = DivGroup attrs inner
                in assert_total (go [] (divGroup :: acc') rest)
             _ =>
-              if isQuotePrefixed x
+              if isQuotePrefixed x && cur == []
               then
                 let (quoteLines, rest) =
-                      spanList isQuotePrefixed (x :: xs)
-                    inner   = map stripQuotePrefix quoteLines
+                      collectQuoteBlock (x :: xs)
+                    inner   = map stripQuoteOrLazy quoteLines
                     acc'    = flushNormal (reverse cur) acc
                     quoted  = QuoteGroup (assert_total (groupLines inner))
                  in assert_total (go [] (quoted :: acc') rest)

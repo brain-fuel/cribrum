@@ -468,14 +468,17 @@ ext_paragraph_then_blockquote = oneShot $
   parseDoc "before\n\n> quoted"
     === ok (doc [para "before", BlockQuote emptyAttrs [para "quoted"]])
 
-||| A `>`-prefixed line directly after a paragraph (no blank line) still
-||| flushes the paragraph and starts a quote group, since `>` is a structural
-||| boundary not a paragraph-continuation.
+||| Per Djot lazy-continuation: an unprefixed paragraph line immediately
+||| following a `>`-prefixed line attaches as a soft-broken continuation
+||| of the blockquote's paragraph rather than starting a fresh top-level
+||| paragraph.
 export
 ext_blockquote_then_paragraph_no_blank : Property
 ext_blockquote_then_paragraph_no_blank = oneShot $
   parseDoc "> quoted\nafter"
-    === ok (doc [BlockQuote emptyAttrs [para "quoted"], para "after"])
+    === ok (doc [BlockQuote emptyAttrs
+                   [paraMulti
+                      [InlText "quoted", InlSoftBreak, InlText "after"]]])
 
 ||| `>x` (no space) is NOT a quote — falls through to paragraph.
 export
