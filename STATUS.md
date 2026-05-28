@@ -1,6 +1,6 @@
 # Cribrum — Current Status
 
-> 485 tests across 18 groups, all green. Phase 4 typed-by-construction
+> 512 tests across 19 groups, all green. Phase 4 typed-by-construction
 > view constructors landed (`TEAWeb.Html.Typed` — Step 4). AA catalog
 > grew from 12 → 19 rules (Step 5 partial): area-alt, link-empty-href,
 > meta-no-refresh, summary-not-empty, track-kind (all Structural, all
@@ -60,7 +60,7 @@
 > normalises whitespace + strips the `<main>` wrapper, and compares
 > against the expected reference output. A baseline file
 > (`test/djot-ref/baseline.txt`) lists currently-passing tests;
-> regressions fail the gate, additions are tracked. 64 / 246
+> regressions fail the gate, additions are tracked. **101 / 246**
 > upstream-ingested tests now pass at the baseline (full `jgm/djot`
 > corpus ingestion shipped). **Step 11 parser remainder** (P5.4
 > remainder): tight ul/ol list collapse (single-`Paragraph` items
@@ -92,6 +92,29 @@
 > form-in-form, comment-in-script, orphan `<li>`/`<dt>`) are
 > documented in the corpus comment for re-introduction once the
 > matching validator slice lands.
+>
+> **Step 12 parser remainder** (P5.4 continued): inline verbatim
+> spans now cross paragraph line breaks (`` `code\nwith a break` ``
+> matches the Djot reference, corpus `verbatim-002`/`-007`);
+> fenced divs `::: cls` parse to `Div` blocks (all 8 `fenced-divs-*`
+> reference tests PASS — opener gated on a fresh block boundary so
+> a mid-paragraph `::::` stays paragraph content; body collection
+> tracks active code fences so `:::` lines inside ``` blocks stay
+> inert); blockquote lazy continuation attaches unprefixed
+> paragraph-continuable lines to the active blockquote (corpus
+> `blockquote-002`/`-006`/`-007`/`-013`/`-014`); inline link +
+> reference-definition URLs join across multi-line continuation
+> by stripping internal whitespace (`[link](url\nandurl)` ->
+> `href="urlandurl"`; `[label]:\n  url\n  andurl` -> RefDef body
+> `"urlandurl"`). `TEAWeb.Sub` leaf install lands in
+> `TEAWeb.Runtime` (FFI for keydown / `requestAnimationFrame` /
+> `setInterval` / port slots) — Sub-driven deliveries route through
+> the same `window.__cribrumDispatch` as view handlers, with each
+> leaf's payload stashed into a dedicated window slot
+> (`__cribrumKey` / `__cribrumTimestamp` / `__cribrumPortMsg`).
+> `RuntimeState` gains a persistent `subHandlers` table so
+> subscriptions survive view re-renders. Net djotref movement
+> across the slice: 64 -> 101 / 246 (5x net gain).
 
 > Snapshot of what's built. Authoritative narrative is `plan.dj`; the
 > convention catalog is `docs/conventions.md`.
@@ -102,7 +125,7 @@
 |---------------------------|-------|--------|
 | `Cribrum.Node`            | core  | HExpr IR (Element/Text/Comment, HAttr w/ handler-capable AttrValue, traversal). |
 | `Cribrum.Djot.Surface`    | 1a    | Faithful Djot AST — full construct inventory representable. |
-| `Cribrum.Djot.Parser`     | 1a    | **Slice**: paragraph, ATX heading (1-6), thematic break, block quote (recursive), fenced code block, unordered + ordered lists, pipe tables (with alignment row + header detection), inline emphasis (`_em_`), strong (`*strong*`), verbatim (`` `code` ``), inline links (`[text](url)`), reference links (`[text][ref]` + collapsed `[text][]`), reference definitions (`[ref]: url ["title"]` — top-level only), inline images (`![alt](src)`), autolinks (`<url>` / `<email>` with non-empty + no-whitespace + has-`:`-or-`@` heuristic), hard breaks (trailing `\` on a non-last paragraph line), smart punctuation (`--`/`---`/`...` + orientation-aware curly quotes). Top-level `parseDoc` is two-pass: raw parse, then walk-and-resolve `LinkReference` against the document's `RefDef` table. Inline tokenizer uses a plain-character accumulator so unpaired/empty markers fold back into the surrounding text without fragmenting `InlText` runs. Definition + task lists, footnotes, attribute blocks → deferred. |
+| `Cribrum.Djot.Parser`     | 1a    | **Slice**: paragraph, ATX heading (1-6), thematic break, block quote (recursive, with lazy paragraph continuation), fenced code block, fenced div (`::: cls` -> `Div` block with class attrs; opener requires fresh block boundary, body collection ignores code-fenced `:::`), unordered + ordered lists, pipe tables (with alignment row + header detection), inline emphasis (`_em_`), strong (`*strong*`), verbatim (`` `code` `` — spans paragraph line breaks), inline links (`[text](url)`; URL strips internal whitespace across line continuation), reference links (`[text][ref]` + collapsed `[text][]`), reference definitions (`[ref]: url ["title"]` with indented continuation lines and empty-URL form), inline images (`![alt](src)`), autolinks (`<url>` / `<email>` with non-empty + no-whitespace + has-`:`-or-`@` heuristic), hard breaks (trailing `\` on a non-last paragraph line), smart punctuation (`--`/`---`/`...` + orientation-aware curly quotes), task lists, definition lists, footnote refs/defs, block-level attribute prefixes (`{#id .cls key=val}`), block-level Djot comments. Top-level `parseDoc` is two-pass: raw parse, then walk-and-resolve `LinkReference` against the document's `RefDef` table. Inline tokenizer uses a plain-character accumulator so unpaired/empty markers fold back into the surrounding text without fragmenting `InlText` runs; multi-line paragraph bodies join with literal `'\n'` so verbatim spans naturally cross line breaks. |
 | `Cribrum.Html.Category`   | 2     | Content-category enum (Metadata/Flow/Sectioning/Heading/Phrasing/Embedded/Interactive/Palpable/ScriptSupporting/FormAssociated). |
 | `Cribrum.Html.Model`      | 2     | Public surface (types + lookups + attribute-name permission). Element catalog (114 elements) lives in `Cribrum.Html.Model.Generated`, ingested from `ingest/content-model.ts` by `ingest/html-model.ts` with `@webref/elements@2.6.0` cross-validation (invariant I8). `Cribrum.Html.Model.Types` carries `ElementSpec` / `ChildPolicy` (extracted to break the Model ↔ Generated cycle). `Cribrum.Html.Model.Invariants` lifts the TS-side tag-closure check (I2) to a decidable Idris proposition (`AllChildTagsExist` + `decAllChildTagsExist`); the test suite asserts the real catalog satisfies it. Drift gate `make ingest-check` fails on `@webref` bump, `content-model.ts` edit, or hand-edit to `Generated.idr` and pinpoints which input drifted. |
 | `Cribrum.Html.Valid`      | 2     | `IsValidHtml = IsKnownTag × All AttrAllowedIn × All ChildAllowedIn × All IsValidHtml`. Total `decideHtml : (h : HExpr) -> Dec (IsValidHtml h)`. Located rejection (`decideHtmlLocated`) returns path-into-tree + `RejectionClass` (UnknownTag / DisallowedAttr / IllegalChild / BlockInPhrasing / MalformedTable / TextNotAllowedIn / CommentNotAllowedIn). |
@@ -119,25 +142,27 @@
 | `TEAWeb.Event`            | T2    | **Spike**: `onClick`/`onSubmit`/`onFocus`/`onBlur`/`onDoubleClick`/`onMouseEnter`/`onMouseLeave` (msg-form, IO-wrapped via `pure`); `onInput`/`onChange` (String-callback form; the closure runs `eventTargetValue` to read the pre-extracted `event.target.value`); `onKeyDown`/`onKeyUp` (String-callback form; closure reads `event.key` via `eventKey`/`currentEventKey`). Callback ids app-supplied for MVP; deterministic `hash(path, event)` when keyed diff lands. |
 | `TEAWeb.Program`          | T3    | **Spike**: `Program model msg` record (init/update/view/subscriptions). |
 | `TEAWeb.Cmd`              | T4    | **Spike**: `None`/`Batch`/`Focus`/`Blur`. `flatten : Cmd msg -> List (Cmd msg)`. Http/Random/After deferred to TEAWeb T6 demo's needs. |
-| `TEAWeb.Sub`              | T4    | **Spike**: `None`/`Batch` only. Leaf variants (`OnKeyDown`, `OnAnimationFrame`, `Every`, `OnResize`, `Port`) deferred to T6 (Counter+Focus doesn't need them). |
-| `TEAWeb.Runtime`          | T3+T4 | **Spike**: `mount` + tail-recursive interpreter loop in Idris; `installDispatch` installs single global `window.__cribrumDispatch`; `runCmd` interprets Focus/Blur via FFI; reconcile after each update keeps state ref + handler table in lockstep. JS-backend execution only. |
+| `TEAWeb.Sub`              | T4    | **Leaves shipped**: `None`/`Batch` + `OnKeyDown` / `OnAnimationFrame` / `Every` / `Port`. `flatten` strips `None` / `Batch` to leaf list; `subCallbackId` exposes per-leaf cbId. `OnResize` deferred. Runtime install lives in `TEAWeb.Runtime`. |
+| `TEAWeb.Runtime`          | T3+T4 | **MVP runtime + Sub-leaf install**: `mount` + tail-recursive interpreter loop in Idris; `installDispatch` installs single global `window.__cribrumDispatch`; `runCmd` interprets Focus/Blur via FFI; reconcile after each update keeps state ref + handler table in lockstep. `installSubs` walks the initial `Sub msg` tree at mount, calls the right installer per leaf (`installSubKeyDown` / `installSubAnimationFrame` / `installSubInterval` / `installSubPort`), and stashes a `(cbId, Event -> IO msg)` projection that reads the right window slot (`__cribrumKey` / `__cribrumTimestamp` / `__cribrumPortMsg`). `RuntimeState.subHandlers` persists across renders so Sub-driven deliveries survive view-handler refresh. Full sub-tree diff between renders deferred to keyed-children reconcile. JS-backend execution only; chez type-checks via multi-spec %foreign with a scheme: fallback. |
 | `TEAWeb.Ports`            | T5    | Not started. Typed JSON FFI boundary for app-specific JS. |
 
-## Tests (485 total, all green)
+## Tests (512 total, all green)
 
 ```
 $ make test-fast        # cribrum + teaweb suites
 $ make test             # adds ingest drift gate + mutation gate
 ```
 
-Counts per group: 18 Node + 16 Surface + 116 Parser + 20 Model + 39 Valid
-+ 26 Elaborate + 17 Render.Html + 1 Render.Dom + 56 AA.Pass + 88 AA.Typed
+Counts per group: 18 Node + 16 Surface + 128 Parser + 20 Model + 52 Valid
++ 31 Elaborate + 17 Render.Html + 1 Render.Dom + 56 AA.Pass + 88 AA.Typed
 + 5 AA.Partition + 16 Pipeline.Anchor + 6 Integration (real README.dj +
-plan.dj read at test time, plus pipeline determinism check) = 424 Cribrum.
+plan.dj read at test time, plus pipeline determinism check) = 454 Cribrum.
 10 TEAWeb.Html + 9 TEAWeb.Html.Typed + 10 TEAWeb.Event + 6 TEAWeb.Cmd
-+ 9 TEAWeb.Program = 44 TEAWeb. Plus 20 djot-ref corpus tests in
-`tools/run-djotref/` (separate harness, gated against baseline).
-**Total: 468 in-suite tests across 18 groups, plus 20 djot-ref tests.**
++ 14 TEAWeb.Sub + 9 TEAWeb.Program = 58 TEAWeb. Plus the djot-ref
+reference-suite gate (`tools/run-djotref/`, 246 corpus tests against a
+101-test baseline; separate harness from the in-suite tests).
+**Total: 512 in-suite tests across 19 groups, plus 246 djot-ref tests
+(101 passing, 145 expected-fail under baseline).**
 
 Each module has:
 - **EXTs** (example tests) — canonical cases for each behaviour.
