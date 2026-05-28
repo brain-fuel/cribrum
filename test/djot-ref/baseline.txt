@@ -75,6 +75,10 @@ insert-delete-mark-003
 insert-delete-mark-004
 links-and-images-001
 links-and-images-003
+links-and-images-004
+links-and-images-005
+links-and-images-006
+links-and-images-008
 links-and-images-016
 links-and-images-018
 links-and-images-020

@@ -256,9 +256,14 @@ mutual
               if url == []
                 then Nothing
                 else
-                  let inner = assert_total (parseInlines label)
+                  -- Per Djot, an inline-link URL that spans paragraph
+                  -- lines joins by stripping internal whitespace; e.g.
+                  -- `[link](url\nandurl)` -> href="urlandurl"
+                  -- (corpus links-and-images-006).
+                  let urlStripped = pack (filter (not . isSpace) url)
+                      inner = assert_total (parseInlines label)
                    in Just (InlLink emptyAttrs
-                              (LinkInline (pack url) Nothing) inner
+                              (LinkInline urlStripped Nothing) inner
                           , after)
             Nothing => Nothing
           ('[' :: rest) => case findClose ']' rest of
@@ -288,9 +293,10 @@ mutual
           if url == []
             then Nothing
             else
-              let inner = assert_total (parseInlines label)
+              let urlStripped = pack (filter (not . isSpace) url)
+                  inner = assert_total (parseInlines label)
                in Just ( InlImage emptyAttrs
-                           (LinkInline (pack url) Nothing) inner
+                           (LinkInline urlStripped Nothing) inner
                        , after)
         Nothing => Nothing
       _ => Nothing
@@ -525,6 +531,12 @@ data LineGroup : Type where
   ||| land in `attrs`; the body is everything between opener and the
   ||| matching close (or EOF if unclosed), regrouped via `groupLines`.
   DivGroup    : Attrs -> List LineGroup -> LineGroup
+  ||| A reference-link definition `[label]: url ...` where `url` may
+  ||| span indented continuation lines (joined with internal
+  ||| whitespace stripped). `rawBody` is the post-`:` content with
+  ||| continuation lines concatenated; the title parser runs over it
+  ||| at `groupToBlock` time.
+  RefDefGroup : (label : String) -> (rawBody : String) -> LineGroup
 
 ||| `True` iff the line starts with `>` followed by space, OR is exactly `>`
 ||| (an empty quote line — Djot allows this).
@@ -832,6 +844,52 @@ isAttrBlockLine s = case parseAttrBlockLine s of
   Just _  => True
   Nothing => False
 
+||| Find the first `]` in `xs` and return `(before, after-the-bracket)`,
+||| or `Nothing` if no `]` exists. Hoisted ahead of `groupLines` so the
+||| refdef opener detection can share the same helper as the post-group
+||| parsing path. (A second top-level definition still appears further
+||| down for `parseRefDef`'s callers — fine, identical body; can be
+||| collapsed later.)
+findCloseRBracketEarly : List Char -> Maybe (List Char, List Char)
+findCloseRBracketEarly []           = Nothing
+findCloseRBracketEarly (']' :: xs)  = Just ([], xs)
+findCloseRBracketEarly (x   :: xs)  = case findCloseRBracketEarly xs of
+  Just (ins, rest) => Just (x :: ins, rest)
+  Nothing          => Nothing
+
+||| Recognise the opener of a Djot reference definition: `[label]:`
+||| optionally followed by URL/title content on the same line. Returns
+||| `(label, sameLineRest)` — `sameLineRest` is whatever followed
+||| `[label]:` on the opener line (post leading whitespace) so the
+||| caller can append indented-continuation lines before parsing the
+||| title. Footnote definitions (`[^label]:`) are explicitly excluded
+||| so they keep going through the footnote opener path.
+parseRefDefOpener : String -> Maybe (String, String)
+parseRefDefOpener src = case unpack src of
+  ('[' :: '^' :: _) => Nothing
+  ('[' :: rest)     => case findCloseRBracketEarly rest of
+    Just (label, afterClose) => case afterClose of
+      (':' :: rest') =>
+        if pack label == ""
+          then Nothing
+          else case rest' of
+            []           => Just (pack label, "")
+            (' ' :: m)   => Just (pack label, trim (pack m))
+            ('\t' :: m)  => Just (pack label, trim (pack m))
+            _            => Nothing
+      _ => Nothing
+    Nothing => Nothing
+  _ => Nothing
+
+||| `True` iff `s` starts with a space (a candidate refdef
+||| continuation line). Refdef continuation lines have any positive
+||| indent; the body content is harvested by `trim`.
+isRefDefContinuation : String -> Bool
+isRefDefContinuation s = case unpack s of
+  (' ' :: _)  => True
+  ('\t' :: _) => True
+  _           => False
+
 ||| `True` iff `s` is a non-blank line that does NOT open any of the
 ||| block constructs the grouper recognises — i.e. a plausible
 ||| paragraph-continuation line. Used by the blockquote lazy-
@@ -991,6 +1049,20 @@ groupLines xs = go [] [] xs
                 in (l :: more, rest)
           else ([], l :: ls)
 
+    -- Greedily collect indented refdef-continuation lines. Stops at
+    -- the first blank line or non-indented line; the trimmed body of
+    -- each line is the caller's responsibility (concatenated with no
+    -- separator to match Djot's "join URL parts" semantics on
+    -- links-and-images-004 / -005).
+    collectRefDefCont : List String -> (List String, List String)
+    collectRefDefCont []        = ([], [])
+    collectRefDefCont (l :: ls) =
+      if isBlankLine l
+        then ([], l :: ls)
+        else if isRefDefContinuation l
+          then let (more, rest) = collectRefDefCont ls in (l :: more, rest)
+          else ([], l :: ls)
+
     -- Collect blockquote lines, including Djot's lazy-continuation
     -- form: an unprefixed non-blank paragraph-continuation line
     -- extends the current blockquote when sandwiched between
@@ -1045,55 +1117,66 @@ groupLines xs = go [] [] xs
                 code         =
                   CodeGroup info (concat (intersperse "\n" body))
              in assert_total (go [] (code :: acc') rest)
-          Nothing => case (cur, parseFencedDivOpen x) of
-            ([], Just (n, attrs)) =>
-              let (body, rest) = collectDivBody n Nothing [] xs
-                  inner         = assert_total (groupLines body)
-                  acc'          = flushNormal (reverse cur) acc
-                  divGroup      = DivGroup attrs inner
-               in assert_total (go [] (divGroup :: acc') rest)
-            _ =>
-              if isQuotePrefixed x && cur == []
-              then
-                let (quoteLines, rest) =
-                      collectQuoteBlock (x :: xs)
-                    inner   = map stripQuoteOrLazy quoteLines
-                    acc'    = flushNormal (reverse cur) acc
-                    quoted  = QuoteGroup (assert_total (groupLines inner))
-                 in assert_total (go [] (quoted :: acc') rest)
-              else if isTableLine x
-                then
-                  let (rows, rest) = spanList isTableLine (x :: xs)
-                      acc'         = flushNormal (reverse cur) acc
-                      table        = case rows of
-                        []         => acc'  -- impossible (x satisfies)
-                        (r :: rs)  =>
-                          TableGroup (r ::: rs) :: acc'
-                   in assert_total (go [] table rest)
-                else if isAttrBlockLine x
-                  then case parseAttrBlockLine x of
-                    Just attrs =>
-                      let acc' = flushNormal (reverse cur) acc
-                       in assert_total
-                            (go [] (AttrPrefixGroup attrs :: acc') xs)
-                    Nothing => go (x :: cur) acc xs  -- impossible
-                  else if isFootnoteOpener x
-                    then
-                      let (rest, rs) = collectFootnoteBody xs
-                          acc'       = flushNormal (reverse cur) acc
-                          (label, openerRest) = case parseFootnoteOpener x of
-                            Just (l, r) => (l, r)
-                            Nothing     => ("", "")
-                          body       = openerRest :: map (dropLeadingSpaces 2) rest
-                          fn         = FootnoteGroup label body
-                       in assert_total (go [] (fn :: acc') rs)
-                    else if isDefListOpener x
-                      then
-                        let (rest, rs) = collectDefList xs
-                            acc'       = flushNormal (reverse cur) acc
-                            defList    = DefListGroup (x ::: rest)
-                         in assert_total (go [] (defList :: acc') rs)
-                      else go (x :: cur) acc xs
+          Nothing =>
+            let mDivOpen = if cur == [] then parseFencedDivOpen x else Nothing
+                mRefOpen = if cur == [] then parseRefDefOpener x else Nothing
+             in case mDivOpen of
+                  Just (n, attrs) =>
+                    let (body, rest) = collectDivBody n Nothing [] xs
+                        inner         = assert_total (groupLines body)
+                        acc'          = flushNormal (reverse cur) acc
+                        divGroup      = DivGroup attrs inner
+                     in assert_total (go [] (divGroup :: acc') rest)
+                  Nothing => case mRefOpen of
+                    Just (label, sameLineRest) =>
+                      let (cont, rest) = collectRefDefCont xs
+                          bodyParts    = sameLineRest
+                                       :: map (trim . pack . unpack) cont
+                          rawBody      = concat bodyParts
+                          acc'         = flushNormal (reverse cur) acc
+                          rg           = RefDefGroup label rawBody
+                       in assert_total (go [] (rg :: acc') rest)
+                    Nothing =>
+                      if isQuotePrefixed x && cur == []
+                        then
+                          let (quoteLines, rest) = collectQuoteBlock (x :: xs)
+                              inner   = map stripQuoteOrLazy quoteLines
+                              acc'    = flushNormal (reverse cur) acc
+                              quoted  = QuoteGroup (assert_total (groupLines inner))
+                           in assert_total (go [] (quoted :: acc') rest)
+                        else if isTableLine x
+                          then
+                            let (rows, rest) = spanList isTableLine (x :: xs)
+                                acc'         = flushNormal (reverse cur) acc
+                                table        = case rows of
+                                  []         => acc'
+                                  (r :: rs)  =>
+                                    TableGroup (r ::: rs) :: acc'
+                             in assert_total (go [] table rest)
+                          else if isAttrBlockLine x
+                            then case parseAttrBlockLine x of
+                              Just attrs =>
+                                let acc' = flushNormal (reverse cur) acc
+                                 in assert_total
+                                      (go [] (AttrPrefixGroup attrs :: acc') xs)
+                              Nothing => go (x :: cur) acc xs
+                            else if isFootnoteOpener x
+                              then
+                                let (rest, rs) = collectFootnoteBody xs
+                                    acc'       = flushNormal (reverse cur) acc
+                                    (label, openerRest) = case parseFootnoteOpener x of
+                                      Just (l, r) => (l, r)
+                                      Nothing     => ("", "")
+                                    body       = openerRest :: map (dropLeadingSpaces 2) rest
+                                    fn         = FootnoteGroup label body
+                                 in assert_total (go [] (fn :: acc') rs)
+                              else if isDefListOpener x
+                                then
+                                  let (rest, rs) = collectDefList xs
+                                      acc'       = flushNormal (reverse cur) acc
+                                      defList    = DefListGroup (x ::: rest)
+                                   in assert_total (go [] (defList :: acc') rs)
+                                else go (x :: cur) acc xs
 
 --------------------------------------------------------------------------------
 -- Group -> Block.
@@ -1488,6 +1571,10 @@ mutual
   groupToBlock (AttrPrefixGroup _) = Paragraph emptyAttrs []
   groupToBlock (DivGroup attrs gs) =
     Div attrs (assert_total (groupsToBlocks gs))
+  groupToBlock (RefDefGroup label rawBody) =
+    case extractRefTitle rawBody of
+      Just (url, title) => RefDef label url (Just title)
+      Nothing           => RefDef label rawBody Nothing
 
   ||| Convert a list of LineGroups into Blocks, threading
   ||| `AttrPrefixGroup`s into the Attrs of the next non-attribute block.

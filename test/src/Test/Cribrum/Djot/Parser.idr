@@ -1079,14 +1079,15 @@ ext_ref_defined_before_link_resolves = oneShot $
                   ]
               ])
 
-||| A `[ref]:` line with no URL is NOT a RefDef — falls through to
-||| paragraph (which then renders as a paragraph containing a
-||| reference-style link).
+||| A `[ref]:` line with an empty URL (only trailing whitespace after
+||| the colon) parses as a RefDef with an empty URL — matching the
+||| Djot reference, which lets a later collapsed-`[ref][]` link resolve
+||| to `href=""`. Pins the post-multi-line-refdef change.
 export
 ext_refdef_empty_url_is_paragraph : Property
 ext_refdef_empty_url_is_paragraph = oneShot $
   parseDoc "[h]: "
-    === ok (doc [paraMulti [InlText "[h]: "]])
+    === ok (doc [RefDef "h" "" Nothing])
 
 ||| `[ref]:url` (no space after the colon) is NOT a RefDef — the
 ||| `:` must be followed by a space. Pins the `(':' :: ' ' :: body)`
