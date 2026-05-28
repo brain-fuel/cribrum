@@ -139,11 +139,10 @@ src/Cribrum/Djot/Parser.idr	parseImageBody chars = case findClose ']' chars of	p
 src/Cribrum/Djot/Parser.idr	InlImage emptyAttrs	InlLink emptyAttrs	parser: image emits as link
 src/Cribrum/Djot/Parser.idr	    '!' => case cs of	    '!' => case [] of	parser: image trigger never matches
 src/Cribrum/Djot/Parser.idr	stripHardBreakMarker ('\\' :: rs) = Just rs	stripHardBreakMarker ('\\' :: rs) = Nothing	parser: hardbreak detection disabled
-src/Cribrum/Djot/Parser.idr	    go ('\\' :: _) = True	    go ('\\' :: _) = False	parser: hardbreak trailing backslash inverted
-src/Cribrum/Djot/Parser.idr	      if endsWithBackslash cur	      if False	parser: hardbreak branch never taken
-src/Cribrum/Djot/Parser.idr	      if endsWithBackslash cur	      if True	parser: hardbreak branch always taken
-src/Cribrum/Djot/Parser.idr	              ++ (InlHardBreak :: go next more)	              ++ (InlSoftBreak :: go next more)	parser: hardbreak downgraded to softbreak
-src/Cribrum/Djot/Parser.idr	dropTrailingChar s = pack (reverse (drop' (reverse (unpack s))))	dropTrailingChar s = s	parser: hardbreak drops nothing (backslash leaks into text)
+src/Cribrum/Djot/Parser.idr	Just acc' => flushAcc acc' ++ [InlHardBreak]	Just acc' => flushAcc acc' ++ [InlSoftBreak]	parser: hardbreak downgraded to softbreak
+src/Cribrum/Djot/Parser.idr	flushAcc acc' ++ [InlHardBreak]	flushAcc acc'	parser: hardbreak emission dropped
+src/Cribrum/Djot/Parser.idr	Nothing   => flushAcc acc ++ [InlSoftBreak]	Nothing   => flushAcc acc ++ [InlHardBreak]	parser: softbreak upgraded to hardbreak
+src/Cribrum/Djot/Parser.idr	if c == ' ' || c == '\t' then stripHardBreakMarker rs else Nothing	if c == ' ' || c == '\t' then stripHardBreakMarker rs else Just rs	parser: hardbreak marker accepts any preceding char
 src/Cribrum/Elaborate.idr	   in Element "img" [ MkHAttr "alt" (Str alt)	   in Element "img" [ MkHAttr "src" (Str alt)	elaborate: image alt attribute renamed to src
 src/Cribrum/Elaborate.idr	                    , MkHAttr "src" (Str url)	                    , MkHAttr "alt" (Str url)	elaborate: image src attribute renamed to alt
 src/Cribrum/Elaborate.idr	   in Element "img" [ MkHAttr "alt" (Str alt)	   in Element "img" [	elaborate: image emits without alt (would break img-alt)
