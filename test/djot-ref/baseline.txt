@@ -44,6 +44,7 @@ emphasis-015
 emphasis-016
 emphasis-019
 emphasis-020
+emphasis-021
 emphasis-023
 emphasis-025
 emphasis-027
@@ -56,12 +57,14 @@ escapes-004
 escapes-005
 fenced-divs-004
 headings-009
+insert-delete-mark-001
 insert-delete-mark-002
 insert-delete-mark-003
 insert-delete-mark-004
 links-and-images-001
 links-and-images-003
 links-and-images-016
+links-and-images-018
 links-and-images-020
 links-and-images-026
 lists-001
@@ -75,6 +78,8 @@ thematic-breaks-001
 thematic-breaks-002
 thematic-breaks-004
 verbatim-001
+verbatim-002
 verbatim-003
 verbatim-005
 verbatim-006
+verbatim-007

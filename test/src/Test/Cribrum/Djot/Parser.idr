@@ -370,18 +370,17 @@ ext_two_backticks_is_paragraph = oneShot $
 ||| Under the rule: opener line is rejected as a fence (info string
 ||| contains backticks); the line becomes paragraph content. The inline
 ||| parser then sees the four leading backticks as a verbatim opener of
-||| length 4; no matching 4-backtick closer exists on the line, so per
-||| Djot's "unclosed verbatim runs to end of inline content" rule the
-||| remainder of the line is verbatim. The trailing standalone ```
-||| line still opens a real (empty) code block.
+||| length 4; no matching 4-backtick closer exists in the paragraph
+||| body, so per Djot's "unclosed verbatim runs to end of inline content"
+||| rule the remainder of the paragraph body (line 1 + softbreak-joined
+||| line 2) is verbatim. The trailing standalone ``` line still opens a
+||| real (empty) code block.
 export
 ext_info_with_backticks_is_not_fence : Property
 ext_info_with_backticks_is_not_fence = oneShot $
   parseDoc "```` ` `\nbody\n```"
     === ok (doc [ paraMulti
-                    [ InlVerbatim emptyAttrs " ` `"
-                    , InlSoftBreak
-                    , InlText "body"
+                    [ InlVerbatim emptyAttrs " ` `\nbody"
                     ]
                 , code "" ""
                 ])

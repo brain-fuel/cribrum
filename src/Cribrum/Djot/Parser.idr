@@ -132,6 +132,17 @@ isOpenContext []        = True
 isOpenContext (c :: _)  =
   isSpace c || c == '(' || c == '[' || c == '{'
 
+||| Peel a Djot hard-break marker off the reversed plain-text accumulator.
+||| The marker is a literal `\\` optionally followed (in source order) by
+||| trailing whitespace — i.e. in the reversed accumulator the pattern is
+||| `(' '|'\t')* '\\' rest`. Returns `Just rest` (accumulator with the
+||| marker stripped) when the pattern matches, else `Nothing`.
+stripHardBreakMarker : List Char -> Maybe (List Char)
+stripHardBreakMarker []           = Nothing
+stripHardBreakMarker ('\\' :: rs) = Just rs
+stripHardBreakMarker (c :: rs)    =
+  if c == ' ' || c == '\t' then stripHardBreakMarker rs else Nothing
+
 ||| Emphasis opener (`*`/`_`) is blocked when the next character is
 ||| whitespace or end-of-input. `cs` is the character list after the
 ||| marker.
@@ -430,6 +441,16 @@ mutual
       let sp = if isOpenContext acc then LSQuote else RSQuote
        in flushAcc acc ++ [InlSmart sp]
             ++ assert_total (parseInlinesAcc [] cs)
+    -- Line break inside a paragraph body. The paragraph driver joins
+    -- continuation lines with literal '\n' so multi-line constructs
+    -- (verbatim spans) can swallow the newline naturally; outside such
+    -- constructs the newline emits a soft/hard break inline. A trailing
+    -- `\\` (with optional whitespace after) flips the break to hard.
+    '\n' => case stripHardBreakMarker acc of
+      Just acc' => flushAcc acc' ++ [InlHardBreak]
+        ++ assert_total (parseInlinesAcc [] cs)
+      Nothing   => flushAcc acc ++ [InlSoftBreak]
+        ++ assert_total (parseInlinesAcc [] cs)
     other => assert_total (parseInlinesAcc (other :: acc) cs)
 
   ||| Top-level inline tokenizer over character lists.
@@ -444,33 +465,6 @@ parseInlineLine : String -> List Inline
 parseInlineLine "" = []
 parseInlineLine s  = parseInlines (unpack s)
 
-||| `True` iff `s` ends with a backslash possibly followed by trailing
-||| whitespace (spaces or tabs). Djot uses such a trailing backslash on
-||| a paragraph line as the hard-break marker — the line break in the
-||| rendered output is a real `<br>`, not a soft break that can be
-||| collapsed. Only meaningful between lines of the *same* paragraph;
-||| at end-of-paragraph the backslash is left literal.
-endsWithBackslash : String -> Bool
-endsWithBackslash s = go (reverse (unpack s))
-  where
-    go : List Char -> Bool
-    go []        = False
-    go ('\\' :: _) = True
-    go (c :: rest) =
-      if c == ' ' || c == '\t' then go rest else False
-
-||| Drop the trailing backslash + any whitespace after it. The caller
-||| has already confirmed `endsWithBackslash s = True`; if not, the
-||| function falls back to the original string.
-dropTrailingChar : String -> String
-dropTrailingChar s = pack (reverse (drop' (reverse (unpack s))))
-  where
-    drop' : List Char -> List Char
-    drop' []           = []
-    drop' ('\\' :: rs) = rs
-    drop' (c :: rs)    =
-      if c == ' ' || c == '\t' then drop' rs else (c :: rs)
-
 ||| Parse a paragraph body: consecutive non-blank lines joined by
 ||| `InlSoftBreak`, OR by `InlHardBreak` when the preceding line ends
 ||| with a `\\` (Djot's hard-break marker — the `\\` is stripped from
@@ -480,16 +474,17 @@ dropTrailingChar s = pack (reverse (drop' (reverse (unpack s))))
 ||| (Djot only treats the marker as a hard break when followed by
 ||| another line in the same paragraph).
 parseParagraphLines : List1 String -> List Inline
-parseParagraphLines (l ::: ls) = go l ls
+parseParagraphLines (l ::: ls) = parseInlines (joinPara (l :: ls))
   where
-    go : (cur : String) -> (rest : List String) -> List Inline
-    go cur []              = parseInlineLine cur
-    go cur (next :: more)  =
-      if endsWithBackslash cur
-        then parseInlineLine (dropTrailingChar cur)
-              ++ (InlHardBreak :: go next more)
-        else parseInlineLine cur
-              ++ (InlSoftBreak :: go next more)
+    -- Join paragraph lines with literal '\n' so the inline tokenizer
+    -- sees the entire body in one pass. The tokenizer's '\n' handler
+    -- emits InlSoftBreak (or InlHardBreak if the preceding text ends
+    -- with a `\\` per Djot). Verbatim spans naturally consume newlines
+    -- by virtue of `findVerbatimClose` walking the full char list.
+    joinPara : List String -> List Char
+    joinPara []        = []
+    joinPara [s]       = unpack s
+    joinPara (s :: ss) = unpack s ++ ('\n' :: joinPara ss)
 
 --------------------------------------------------------------------------------
 -- Block grouping over the raw lines.
