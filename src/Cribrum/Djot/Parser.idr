@@ -1330,33 +1330,82 @@ parseRefDef src = case unpack src of
     Nothing => Nothing
   _ => Nothing
 
-||| Convert one NORMAL line group into a block.
+||| Strip a leading heading marker (any level 1..6) from a line,
+||| returning the content after it. Lines with no marker pass through
+||| verbatim — they are lazy-continuation lines of an open heading.
+stripHeadingMarker : String -> String
+stripHeadingMarker s = case parseHeadingMarker s of
+  Just (_, rest) => rest
+  Nothing        => s
+
+||| Build a heading's inline content from its opener plus lazy-
+||| continuation lines. Each line's heading marker (if any) is stripped;
+||| the remaining text is joined with `\n` (the inline tokenizer turns
+||| that into a soft break) and parsed as inlines. Lines that strip to
+||| empty (a bare marker) contribute nothing, matching the reference's
+||| `## \n heading -> <h2>heading</h2>` shape.
+parseHeadingLines : List String -> List Inline
+parseHeadingLines lines =
+  parseInlines (joinNL (filter (/= "") (map stripHeadingMarker lines)))
+  where
+    joinNL : List String -> List Char
+    joinNL []        = []
+    joinNL [s]       = unpack s
+    joinNL (s :: ss) = unpack s ++ ('\n' :: joinNL ss)
+
+||| `True` iff line `s` continues a heading opened at level `lvl`: it is
+||| either a plain (non-marker) line — a lazy continuation — or a heading
+||| marker of the SAME level. A marker of a *different* level closes the
+||| current heading and opens a new one (Djot headings-003/006/008).
+continuesHeading : Nat -> String -> Bool
+continuesHeading lvl s = case parseHeadingMarker s of
+  Just (l', _) => l' == lvl
+  Nothing      => True
+
+||| Split a heading-led line run into one or more `Heading` blocks. The
+||| opener fixes the level; following lines extend the same heading while
+||| `continuesHeading` holds (lazy continuation, same-level markers folded
+||| in). The first different-level marker starts a fresh heading, which
+||| `elaborate` later nests as a `<section>`.
+splitHeadings : (lvl : Nat) -> (opener : String) -> (more : List String) -> List Block
+splitHeadings lvl opener more =
+  let (cont, rest) = spanList (continuesHeading lvl) more
+      hd           = Heading emptyAttrs lvl (parseHeadingLines (opener :: cont))
+   in case rest of
+        []        => [hd]
+        (r :: rs) => case parseHeadingMarker r of
+          Just (lvl', _) => hd :: assert_total (splitHeadings lvl' r rs)
+          Nothing        => [hd]   -- unreachable: `rest` opens at a marker
+
+||| Convert one NORMAL line group into a block (non-heading path). A
+||| heading-led group is handled by `normalGroupToBlocks` instead.
 |||
 ||| Order matters: thematic break is checked first (a single `---` line is
-||| not a heading and not a paragraph). Heading next; then reference
-||| definition (single-line `[ref]: url`); then list block; everything
-||| else falls through to paragraph.
+||| not a heading and not a paragraph); then reference definition
+||| (single-line `[ref]: url`); then list block; everything else falls
+||| through to paragraph.
 normalGroupToBlock : List1 String -> Block
 normalGroupToBlock (l ::: ls) =
   if isNil ls && isThematicBreak l
     then ThematicBreak emptyAttrs
-    else case parseHeadingMarker l of
-           Just (lvl, rest) =>
-             if isNil ls
-               then Heading emptyAttrs lvl (parseInlineLine rest)
-               else Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
-           Nothing =>
-             if isNil ls
-               then case parseRefDef l of
-                 Just (label, url, title) => RefDef label url title
-                 Nothing => case tryParseList (l ::: ls) of
-                   Just listBlock => listBlock
-                   Nothing => Paragraph emptyAttrs
-                                (parseParagraphLines (l ::: ls))
-               else case tryParseList (l ::: ls) of
-                 Just listBlock => listBlock
-                 Nothing => Paragraph emptyAttrs
-                              (parseParagraphLines (l ::: ls))
+    else if isNil ls
+      then case parseRefDef l of
+        Just (label, url, title) => RefDef label url title
+        Nothing => case tryParseList (l ::: ls) of
+          Just listBlock => listBlock
+          Nothing => Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
+      else case tryParseList (l ::: ls) of
+        Just listBlock => listBlock
+        Nothing => Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
+
+||| Convert one NORMAL line group into a block sequence. A group whose
+||| first line is an ATX heading marker yields one or more `Heading`
+||| blocks (lazy continuation + level-change splitting via
+||| `splitHeadings`); every other group yields a single block.
+normalGroupToBlocks : List1 String -> List Block
+normalGroupToBlocks (l ::: ls) = case parseHeadingMarker l of
+  Just (lvl, _) => splitHeadings lvl l ls
+  Nothing       => [normalGroupToBlock (l ::: ls)]
 
 --------------------------------------------------------------------------------
 -- Pipe tables (slice).
@@ -1576,10 +1625,21 @@ mutual
       isEmpty (MkAttrs Nothing [] []) = True
       isEmpty _                       = False
 
+      -- Attach pending attrs to the FIRST block only (a heading-led
+      -- NormalGroup can expand to several blocks; the prefix binds the
+      -- opener).
+      attachHead : Attrs -> List Block -> List Block
+      attachHead _    []        = []
+      attachHead pend (b :: bs) =
+        (if isEmpty pend then b else applyAttrsToBlock pend b) :: bs
+
       go : Attrs -> List LineGroup -> List Block
       go _      []                            = []
       go pend (AttrPrefixGroup a :: gs)       =
         go (mergeAttrs pend a) gs
+      go pend (NormalGroup g :: gs)           =
+        attachHead pend (normalGroupToBlocks g)
+          ++ assert_total (go emptyAttrs gs)
       go pend (g :: gs)                       =
         let b = assert_total (groupToBlock g)
          in (if isEmpty pend then b else applyAttrsToBlock pend b)

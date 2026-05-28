@@ -4,6 +4,7 @@
 |||
 |||   parseDoc  (Cribrum.Djot.Parser)
 |||      -> elaborate (Cribrum.Elaborate, strict)
+|||      -> addSectionIds (Cribrum.Pipeline.Anchor)
 |||      -> renderHtml (Cribrum.Render.Html)
 |||
 ||| and writes the result wrapped in a minimal `<!doctype html>` shell so
@@ -26,6 +27,7 @@ import Cribrum.Djot.Parser
 import Cribrum.Html.Valid
 import Cribrum.Elaborate
 import Cribrum.Render.Html
+import Cribrum.Pipeline.Anchor
 
 %default total
 
@@ -55,7 +57,7 @@ renderSource src = case parseDoc src of
   Left e  => Left ("parse failed: " ++ show e)
   Right d => case elaborate d of
     Left e             => Left ("elaborate failed: " ++ show e)
-    Right (h ** (_, _)) => Right (renderHtml h)
+    Right (h ** (_, _)) => Right (renderHtml (addSectionIds h))
 
 usage : IO ()
 usage = do

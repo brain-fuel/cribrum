@@ -462,13 +462,64 @@ isInvisibleBlock (RefDef _ _ _)      = True
 isInvisibleBlock (FootnoteDef _ _ _) = True
 isInvisibleBlock _                   = False
 
-||| Wrap the elaborated blocks in a single `<main>` landmark — a minimal
-||| semantic root that satisfies the no-`div`-soup commitment. As Phase 1b
-||| matures the wrapper will be inferred from heading structure.
+||| Heading level of a block, if it is a `Heading`.
+headingBlockLevel : Block -> Maybe Nat
+headingBlockLevel (Heading _ lvl _) = Just lvl
+headingBlockLevel _                 = Nothing
+
+||| Pull the `id` attribute off an element's attr list, returning the id
+||| value (if any) and the remaining attrs. Used to MOVE a heading's
+||| explicit `{#id}` onto its wrapping `<section>` so the heading itself
+||| carries no id (Djot headings-013/015 shape).
+extractIdAttr : List HAttr -> (Maybe String, List HAttr)
+extractIdAttr []                              = (Nothing, [])
+extractIdAttr (MkHAttr "id" (Str v) :: rest)  = (Just v, rest)
+extractIdAttr (a :: rest)                     =
+  let (mid, rest') = extractIdAttr rest in (mid, a :: rest')
+
+||| Wrap heading-led runs of a flat block list into nested `<section>`
+||| landmarks — plan.dj §1b "heading-level sequences are inferred into
+||| nested `<section>` structure". A heading at level L opens a section
+||| holding the heading plus every following block up to (but not
+||| including) the next heading of level <= L; deeper headings nest as
+||| child sections. Blocks before the first heading stay unwrapped at the
+||| top level. A heading's explicit id moves onto its section. Auto-ids
+||| for id-less sections are filled in afterwards by
+||| `Cribrum.Pipeline.Anchor.addSectionIds`, kept out of the strict
+||| codomain so the disambiguator can never introduce a duplicate id.
+public export
+sectionize : List Block -> List HExpr
+sectionize []        = []
+sectionize (b :: bs) = case headingBlockLevel b of
+  Nothing  => elaborateBlock b :: assert_total (sectionize bs)
+  Just lvl =>
+    let (inside, after) = break (closesSection lvl) bs
+        (secId, hdr)    = case elaborateBlock b of
+          Element t attrs cs =>
+            let (mid, attrs') = extractIdAttr attrs
+             in (mid, Element t attrs' cs)
+          other => (Nothing, other)
+        secAttrs        = case secId of
+          Just i  => [MkHAttr "id" (Str i)]
+          Nothing => []
+        children        = hdr :: assert_total (sectionize inside)
+     in Element "section" secAttrs children
+          :: assert_total (sectionize after)
+  where
+    ||| A heading of level <= `lvl` closes the section opened at `lvl`.
+    closesSection : Nat -> Block -> Bool
+    closesSection lvl b' = case headingBlockLevel b' of
+      Just l' => l' <= lvl
+      Nothing => False
+
+||| Wrap the elaborated blocks in a single `<main>` landmark, with
+||| heading-level sequences inferred into nested `<section>` structure
+||| (`sectionize`). Satisfies the no-`div`-soup commitment with a real
+||| semantic root + landmark sectioning.
 public export
 elaborateDoc : Doc -> HExpr
 elaborateDoc (MkDoc bs) =
-  Element "main" [] (map elaborateBlock (filter (not . isInvisibleBlock) bs))
+  Element "main" [] (sectionize (filter (not . isInvisibleBlock) bs))
 
 ||| Strict elaboration: returns the HExpr together with proofs of validity
 ||| and structural accessibility. Per plan.dj §Governing principle, callers

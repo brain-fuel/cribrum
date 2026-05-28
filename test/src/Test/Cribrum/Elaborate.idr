@@ -37,11 +37,38 @@ ext_paragraph_becomes_p = oneShot $
   elaborateDoc (doc [para "hi"])
     === Element "main" [] [Element "p" [] [Text "hi"]]
 
+||| A heading at the document top level is wrapped in a `<section>`
+||| (id-less until `Cribrum.Pipeline.Anchor.addSectionIds` runs); the
+||| heading tag still maps from the level.
 export
 ext_heading_levels_map_to_h_tags : Property
 ext_heading_levels_map_to_h_tags = oneShot $
   elaborateDoc (doc [heading 3 "T"])
-    === Element "main" [] [Element "h3" [] [Text "T"]]
+    === Element "main" [] [Element "section" [] [Element "h3" [] [Text "T"]]]
+
+||| Two same-level headings produce two SIBLING sections, not one nested
+||| inside the other — a heading of level <= the open section's level
+||| closes it. (Mutant-kill on `closesSection`'s `<=`.)
+export
+ext_sibling_headings_are_sibling_sections : Property
+ext_sibling_headings_are_sibling_sections = oneShot $
+  elaborateDoc (doc [heading 1 "A", heading 1 "B"])
+    === Element "main" []
+          [ Element "section" [] [Element "h1" [] [Text "A"]]
+          , Element "section" [] [Element "h1" [] [Text "B"]]
+          ]
+
+||| A deeper heading nests as a CHILD section of the shallower one.
+export
+ext_deeper_heading_nests : Property
+ext_deeper_heading_nests = oneShot $
+  elaborateDoc (doc [heading 1 "A", heading 2 "B"])
+    === Element "main" []
+          [ Element "section" []
+              [ Element "h1" [] [Text "A"]
+              , Element "section" [] [Element "h2" [] [Text "B"]]
+              ]
+          ]
 
 export
 ext_thematic_becomes_hr : Property
@@ -533,6 +560,8 @@ group = MkGroup "Cribrum.Elaborate"
   [ ("ext_empty_doc_elaborates_to_empty_main", ext_empty_doc_elaborates_to_empty_main)
   , ("ext_paragraph_becomes_p",                ext_paragraph_becomes_p)
   , ("ext_heading_levels_map_to_h_tags",       ext_heading_levels_map_to_h_tags)
+  , ("ext_sibling_headings_are_sibling_sections", ext_sibling_headings_are_sibling_sections)
+  , ("ext_deeper_heading_nests",               ext_deeper_heading_nests)
   , ("ext_thematic_becomes_hr",                ext_thematic_becomes_hr)
   , ("ext_softbreak_becomes_space",            ext_softbreak_becomes_space)
   , ("ext_hardbreak_becomes_br",               ext_hardbreak_becomes_br)

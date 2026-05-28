@@ -11,11 +11,11 @@
 |||
 ||| The TOC catalog is *generated* from `README.dj` by
 ||| `tools/render-docsnav` — see `Generated.idr` (auto-emitted) and
-||| `TocData.idr` (record type). Anchors are slugified from the heading
-||| text by `Cribrum.Pipeline.Anchor.slugify` and match the `id`
-||| attributes the same pipeline writes onto the corresponding `<h2>` /
-||| `<h3>` elements in `index.html`, so in-page navigation works without
-||| manual sync.
+||| `TocData.idr` (record type). Anchors are the `autoId`s
+||| `Cribrum.Pipeline.Anchor` derives from the heading text and match the
+||| `id` attributes the same pipeline writes onto the wrapping
+||| `<section>` elements in `index.html`, so in-page navigation works
+||| without manual sync.
 |||
 ||| Build:
 |||   $ make docsnav             -- regenerates index.html + Generated.idr
@@ -40,7 +40,7 @@ import Generated
 
 --------------------------------------------------------------------------------
 -- TOC catalog. Harvested from README.dj via the actual Cribrum pipeline
--- (parser -> elaborate -> addHeadingIds -> harvestHeadings).
+-- (parser -> elaborate -> addSectionIds -> harvestHeadings).
 --------------------------------------------------------------------------------
 
 tocItems : List TocItem

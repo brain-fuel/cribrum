@@ -43,6 +43,7 @@ import Cribrum.Djot.Parser
 import Cribrum.Html.Valid
 import Cribrum.Elaborate
 import Cribrum.Render.Html
+import Cribrum.Pipeline.Anchor
 
 %default total
 
@@ -170,13 +171,15 @@ normWhitespace = pack . dropTagSpace . trimDup [] . unpack
     dropTagSpace (c :: cs)          = c   :: dropTagSpace cs
 
 ||| Run a TestCase through the pipeline. Returns `Right body` on
-||| success, `Left reason` on parse/elaborate failure.
+||| success, `Left reason` on parse/elaborate failure. `addSectionIds`
+||| fills in the heading-derived section anchors the reference renderer
+||| also emits (elaborate leaves them unset; see `Cribrum.Pipeline.Anchor`).
 runPipeline : String -> Either String String
 runPipeline src = case parseDoc src of
   Left e  => Left ("parse failed: " ++ show e)
   Right d => case elaborate d of
     Left e             => Left ("elaborate failed: " ++ show e)
-    Right (h ** (_, _)) => Right (renderHtml h)
+    Right (h ** (_, _)) => Right (renderHtml (addSectionIds h))
 
 data Outcome = Pass | Fail String | Error String
 

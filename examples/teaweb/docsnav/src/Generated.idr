@@ -13,20 +13,20 @@ import TocData
 public export
 genTocItems : List TocItem
 genTocItems =
-  [ MkTocItem "what-cribrum-is" "What Cribrum is" 1
-  , MkTocItem "current-status" "Current status" 1
-  , MkTocItem "the-ir-single-tree-hexpr" "The IR (single-tree HExpr)" 2
-  , MkTocItem "html-validity-as-a-refinement" "HTML validity as a refinement" 2
-  , MkTocItem "aa-accessibility-as-a-refinement" "AA accessibility as a refinement" 2
-  , MkTocItem "phase-order" "Phase order" 1
-  , MkTocItem "phase-1-djot-parser-elaborate" "Phase 1 — Djot parser + elaborate" 2
-  , MkTocItem "phase-2-validity-in-types" "Phase 2 — Validity in types" 2
-  , MkTocItem "phase-3-aa-checking-pass" "Phase 3 — AA checking pass" 2
-  , MkTocItem "phase-4-structural-aa-in-types" "Phase 4 — Structural AA in types" 2
-  , MkTocItem "phase-5-dom-render" "Phase 5 — DOM render" 2
-  , MkTocItem "teaweb-elm-on-cribrum" "TEAWeb — Elm++ on Cribrum" 1
-  , MkTocItem "teaweb-runtime-dispatch" "TEAWeb runtime + dispatch" 2
-  , MkTocItem "teaweb-typed-by-content-view-api" "TEAWeb typed-by-content view API" 2
-  , MkTocItem "convention-layer" "Convention layer" 1
-  , MkTocItem "ingest-pipeline" "Ingest pipeline" 1
+  [ MkTocItem "What-Cribrum-is" "What Cribrum is" 1
+  , MkTocItem "Current-status" "Current status" 1
+  , MkTocItem "The-IR-single-tree-HExpr" "The IR (single-tree HExpr)" 2
+  , MkTocItem "HTML-validity-as-a-refinement" "HTML validity as a refinement" 2
+  , MkTocItem "AA-accessibility-as-a-refinement" "AA accessibility as a refinement" 2
+  , MkTocItem "Phase-order" "Phase order" 1
+  , MkTocItem "Phase-1-Djot-parser-elaborate" "Phase 1 — Djot parser + elaborate" 2
+  , MkTocItem "Phase-2-Validity-in-types" "Phase 2 — Validity in types" 2
+  , MkTocItem "Phase-3-AA-checking-pass" "Phase 3 — AA checking pass" 2
+  , MkTocItem "Phase-4-Structural-AA-in-types" "Phase 4 — Structural AA in types" 2
+  , MkTocItem "Phase-5-DOM-render" "Phase 5 — DOM render" 2
+  , MkTocItem "TEAWeb-Elm-on-Cribrum" "TEAWeb — Elm++ on Cribrum" 1
+  , MkTocItem "TEAWeb-runtime-dispatch" "TEAWeb runtime + dispatch" 2
+  , MkTocItem "TEAWeb-typed-by-content-view-API" "TEAWeb typed-by-content view API" 2
+  , MkTocItem "Convention-layer" "Convention layer" 1
+  , MkTocItem "Ingest-pipeline" "Ingest pipeline" 1
   ]

@@ -4,7 +4,7 @@ src/Cribrum/Djot/Parser.idr	n >= 1 && n <= 6	n >= 0 && n <= 6	heading level floo
 src/Cribrum/Djot/Parser.idr	(' ' :: rest) => Just	('\t' :: rest) => Just	heading separator: space -> tab
 src/Cribrum/Djot/Parser.idr	parseInlineLine "" = []	parseInlineLine "" = [InlText ""]	inline emit on empty line
 src/Cribrum/Djot/Parser.idr	flushAcc acc ++ [InlSoftBreak]	flushAcc acc	drop SoftBreak emission on inline newline
-src/Cribrum/Djot/Parser.idr	if isNil ls	if not (isNil ls)	flip heading/paragraph selection condition
+src/Cribrum/Djot/Parser.idr	Just (l', _) => l' == lvl	Just (l', _) => l' /= lvl	heading lazy-continuation same-level test inverted (merge vs split)
 src/Cribrum/Djot/Parser.idr	then go [] (flushNormal (reverse cur) acc) xs	then go cur acc xs	blank line no longer flushes paragraph
 src/Cribrum/Djot/Parser.idr	go cur acc []        = reverse (flushNormal (reverse cur) acc)	go cur acc []        = reverse acc	drop final paragraph at EOF
 src/Cribrum/Djot/Parser.idr	flushNormal []           acc = acc	flushNormal []           acc = []	flushNormal wipes accumulated groups when empty
@@ -27,7 +27,7 @@ src/Cribrum/Elaborate.idr	  Element "hr" (attrsToHAttrs a) []	  Element "br" (at
 src/Cribrum/Elaborate.idr	elaborateInline InlSoftBreak       = Text " "	elaborateInline InlSoftBreak       = Text ""	elaborate: softbreak -> empty
 src/Cribrum/Elaborate.idr	elaborateInline InlHardBreak       = Element "br" [] []	elaborateInline InlHardBreak       = Element "hr" [] []	elaborate: hardbreak -> hr
 src/Cribrum/Elaborate.idr	Element "em" [] (assert_total	Element "strong" [] (assert_total	elaborate: em -> strong
-src/Cribrum/Elaborate.idr	Element "main" [] (map elaborateBlock (filter (not . isInvisibleBlock) bs))	Element "section" [] (map elaborateBlock (filter (not . isInvisibleBlock) bs))	elaborate: doc wrapper main -> section
+src/Cribrum/Elaborate.idr	Element "main" [] (sectionize (filter (not . isInvisibleBlock) bs))	Element "section" [] (sectionize (filter (not . isInvisibleBlock) bs))	elaborate: doc wrapper main -> section
 src/Cribrum/Render/Html.idr	escapeChar '&'  = "&amp;"	escapeChar '&'  = "&"	render: skip & escape
 src/Cribrum/Render/Html.idr	escapeChar '<'  = "&lt;"	escapeChar '<'  = "<"	render: skip < escape
 src/Cribrum/Render/Html.idr	escapeChar '>'  = "&gt;"	escapeChar '>'  = ">"	render: skip > escape
@@ -186,7 +186,8 @@ src/Cribrum/Djot/Parser.idr	      table = collectRefDefs raw	      table = []	pa
 src/Cribrum/Elaborate.idr	isInvisibleBlock (RefDef _ _ _)      = True	isInvisibleBlock (RefDef _ _ _)      = False	elaborate: RefDef becomes visible (re-emits unwanted comment)
 src/Cribrum/Elaborate.idr	isInvisibleBlock (FootnoteDef _ _ _) = True	isInvisibleBlock (FootnoteDef _ _ _) = False	elaborate: FootnoteDef becomes visible
 src/Cribrum/Elaborate.idr	isInvisibleBlock _                   = False	isInvisibleBlock _                   = True	elaborate: every block becomes invisible (renders empty)
-src/Cribrum/Elaborate.idr	Element "main" [] (map elaborateBlock (filter (not . isInvisibleBlock) bs))	Element "main" [] (map elaborateBlock bs)	elaborate: doc skips invisibility filter (RefDef emits)
+src/Cribrum/Elaborate.idr	Element "main" [] (sectionize (filter (not . isInvisibleBlock) bs))	Element "main" [] (sectionize bs)	elaborate: doc skips invisibility filter (RefDef emits)
+src/Cribrum/Elaborate.idr	Just l' => l' <= lvl	Just l' => l' < lvl	elaborate: section close <= -> < (same-level headings over-nest as children)
 src/Cribrum/Djot/Parser.idr	      ('^' :: rest) => case findClose ']' rest of	      ('^' :: rest) => Nothing	parser: footnote-ref inline `[^label]` disabled
 src/Cribrum/Djot/Parser.idr	            then assert_total (parseInlinesAcc ('[' :: acc) cs)	            then flushAcc acc ++ [InlFootnoteRef ""] ++ assert_total (parseInlinesAcc [] after)	parser: empty-label footnote ref still emitted
 src/Cribrum/Djot/Parser.idr	parseFootnoteOpener s = case unpack s of	parseFootnoteOpener s = Nothing	parser: footnote-def opener recognition disabled

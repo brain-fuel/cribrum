@@ -1,20 +1,31 @@
-||| Heading-anchor pipeline pass — plan §T6 demo deliverable plumbing.
+||| Section-anchor pipeline pass — plan §1b heading-inference plumbing +
+||| §T6 demo deliverable.
 |||
-||| `addHeadingIds` walks an `HExpr` and attaches an `id="<slug>"`
-||| attribute to every `<h1>`..`<h6>` that lacks one, deriving the slug
-||| from the heading's plain-text children via `slugify`. Slugs are
-||| deduplicated against earlier headings in the document by appending
-||| `-2`, `-3`, ... so the produced tree never violates the
+||| `elaborate` wraps heading-level sequences in nested `<section>`
+||| landmarks but leaves auto-`id`s unfilled (so the strict codomain's
+||| `duplicate-id` check never sees a disambiguator-generated id).
+||| `addSectionIds` is the post-pass that fills them in: it walks an
+||| `HExpr` and attaches an `id="<autoId>"` attribute to every
+||| `<section>` that lacks one, deriving the value from the section's
+||| heading text via `autoId`. Ids are deduplicated against every id
+||| already present in the document (explicit `{#id}` on any element,
+||| plus earlier auto-ids) by appending `-1`, `-2`, ... — the Djot
+||| reference identifier scheme — so the produced tree never violates the
 ||| `duplicate-id` AA rule.
 |||
 ||| `harvestHeadings` walks the *anchored* tree and emits one
-||| `(level, anchor, plainTitle)` row per heading in document order.
-||| The TEAWeb T6 docs-nav island consumes this to populate its
-||| table-of-contents pane — anchors match the heading ids exactly, so
-||| in-page navigation works without manual sync.
+||| `(level, anchor, plainTitle)` row per section in document order, where
+||| `anchor` is the section id and `level`/`plainTitle` come from the
+||| section's heading. The TEAWeb T6 docs-nav island consumes this to
+||| populate its table-of-contents pane — anchors match the section ids
+||| exactly, so in-page navigation works without manual sync.
 |||
-||| Both passes are total. `addHeadingIds . addHeadingIds = addHeadingIds`
-||| (idempotent — the second pass sees ids on every heading and leaves
+||| `autoId` matches the Djot reference auto-identifier: runs of non
+||| `[A-Za-z0-9_]` characters collapse to a single `-`, leading/trailing
+||| `-` are trimmed, and case is *preserved* (Djot does not lowercase).
+|||
+||| Both passes are total. `addSectionIds . addSectionIds = addSectionIds`
+||| (idempotent — the second pass sees ids on every section and leaves
 ||| them alone).
 module Cribrum.Pipeline.Anchor
 
@@ -35,23 +46,21 @@ isAsciiAlpha c =
 isAsciiDigit : Char -> Bool
 isAsciiDigit c = c >= '0' && c <= '9'
 
-isSlugChar : Char -> Bool
-isSlugChar c = isAsciiAlpha c || isAsciiDigit c
-
-toLowerAscii : Char -> Char
-toLowerAscii c =
-  if c >= 'A' && c <= 'Z' then chr (ord c + 32) else c
+||| A character that survives into an auto-identifier verbatim: ASCII
+||| alphanumerics plus underscore (matching Djot's `\w`). Everything else
+||| is a separator.
+isIdentChar : Char -> Bool
+isIdentChar c = isAsciiAlpha c || isAsciiDigit c || c == '_'
 
 --------------------------------------------------------------------------------
--- Slugify.
+-- autoId — Djot reference auto-identifier.
 --------------------------------------------------------------------------------
 
-||| Map a character to either its lowercase form (if alphanumeric) or
-||| a hyphen separator.
+||| Map a character to itself (if an identifier char) or a hyphen
+||| separator. Case is preserved — Djot's identifier algorithm does not
+||| lowercase.
 foldChar : Char -> Char
-foldChar c =
-  let lc = toLowerAscii c
-   in if isSlugChar lc then lc else '-'
+foldChar c = if isIdentChar c then c else '-'
 
 ||| Collapse consecutive hyphens into one. Structural recursion over the
 ||| input list keeps Idris happy: we only ever recurse on the second-cons.
@@ -70,14 +79,16 @@ dropLeadingHyphens xs            = xs
 trimHyphens : List Char -> List Char
 trimHyphens xs = reverse (dropLeadingHyphens (reverse (dropLeadingHyphens xs)))
 
-||| Slugify: ASCII-fold, replace runs of non-alphanumerics with single
-||| hyphens, trim leading/trailing hyphens. Empty input -> empty output.
+||| Djot reference auto-identifier: replace runs of non-`[A-Za-z0-9_]`
+||| with single hyphens, trim leading/trailing hyphens, preserve case.
+||| Empty / all-separator input -> empty output (the caller supplies a
+||| fallback base for empty headings).
 public export
-slugify : String -> String
-slugify s = pack (trimHyphens (collapseHyphens (map foldChar (unpack s))))
+autoId : String -> String
+autoId s = pack (trimHyphens (collapseHyphens (map foldChar (unpack s))))
 
 --------------------------------------------------------------------------------
--- Plain-text projection (used for slug source + TOC title).
+-- Plain-text projection (used for id source + TOC title).
 --------------------------------------------------------------------------------
 
 ||| Concatenate every text node's content in pre-order. Comments contribute
@@ -127,40 +138,54 @@ attrValueL name (MkHAttr n (Str s) :: rest)   =
 attrValueL name (_ :: rest)                   = attrValueL name rest
 
 --------------------------------------------------------------------------------
--- Disambiguation: pick `base`, `base-2`, `base-3`, ... not yet in `seen`.
+-- Section heading text: the plain text of a section's direct heading
+-- child (the first `<h1>`..`<h6>` among its children — nested sections'
+-- headings are NOT considered).
+--------------------------------------------------------------------------------
+
+sectionHeadingText : List HExpr -> String
+sectionHeadingText []                       = ""
+sectionHeadingText (Element t _ cs :: rest) =
+  if isHeading t then childrenText cs else sectionHeadingText rest
+sectionHeadingText (_ :: rest)              = sectionHeadingText rest
+
+--------------------------------------------------------------------------------
+-- Disambiguation: pick `base`, `base-1`, `base-2`, ... not yet in `seen`
+-- (the Djot reference identifier scheme: the un-suffixed form first, then
+-- `-1`-based suffixes).
 --------------------------------------------------------------------------------
 
 candidate : String -> Nat -> String
-candidate base 1 = base
+candidate base 0 = base
 candidate base n = base ++ "-" ++ show n
 
-||| Choose the lowest `n >= 1` such that `candidate base n` is not in `seen`.
-||| Bounded by `length seen + 1` (pigeon-hole: only that many distinct
-||| candidates can clash).
+||| Choose the lowest `n >= 0` such that `candidate base n` is not in
+||| `seen`. Bounded by `length seen + 1` (pigeon-hole: only that many
+||| distinct candidates can clash).
 disambiguate : String -> List String -> String
-disambiguate base seen = pickFrom 1 (S (length seen))
+disambiguate base seen = pickFrom 0 (S (length seen))
   where
     pickFrom : (n : Nat) -> (fuel : Nat) -> String
-    pickFrom n Z        = candidate base n     -- fuel exhausted — must be free
-    pickFrom n (S k)    =
+    pickFrom n Z     = candidate base n     -- fuel exhausted — must be free
+    pickFrom n (S k) =
       let c = candidate base n
        in if elem c seen
             then pickFrom (S n) k
             else c
 
 --------------------------------------------------------------------------------
--- addHeadingIds: pre-order traversal threading the seen-slug list.
+-- addSectionIds: pre-order traversal threading the seen-id list.
 --------------------------------------------------------------------------------
 
-||| Walk one node. Returns the rewritten node and the updated seen-slug
-||| list (parent assigns its slug *before* its children's slugs are
-||| computed, so descendants see the ancestor's slug when disambiguating).
+||| Walk one node. Returns the rewritten node and the updated seen-id
+||| list. A `<section>` assigns its id *before* its children are walked,
+||| so a nested section disambiguates against its ancestor's id.
 walkNode : List String -> HExpr -> (List String, HExpr)
 
 walkNodeList : List String -> List HExpr -> (List String, List HExpr)
 walkNodeList seen []        = (seen, [])
 walkNodeList seen (h :: hs) =
-  let (seen1, h')   = walkNode seen h
+  let (seen1, h')  = walkNode seen h
       (seen2, hs') = walkNodeList seen1 hs
    in (seen2, h' :: hs')
 
@@ -168,47 +193,56 @@ walkNode seen (Text s)    = (seen, Text s)
 walkNode seen (Comment s) = (seen, Comment s)
 walkNode seen (Element t attrs cs) =
   let (seen1, attrs') =
-        if isHeading t && not (hasAttrL "id" attrs)
+        if t == "section" && not (hasAttrL "id" attrs)
           then
-            let raw = slugify (childrenText cs)
-                base = if raw == "" then "section" else raw
+            let raw  = autoId (sectionHeadingText cs)
+                base = if raw == "" then "s" else raw
                 slug = disambiguate base seen
              in (slug :: seen, attrs ++ [MkHAttr "id" (Str slug)])
           else
-            -- Pre-existing id (or non-heading): just record any present id
-            -- so descendant headings don't accidentally collide with it.
+            -- Pre-existing id (section or otherwise): record it so
+            -- later sections don't collide with it.
             case attrValueL "id" attrs of
               Just v  => (v :: seen, attrs)
               Nothing => (seen, attrs)
       (seen2, cs') = walkNodeList seen1 cs
    in (seen2, Element t attrs' cs')
 
-||| Decorate every unanchored heading with an `id="<slug>"` attribute.
-||| Idempotent — re-running on an already-anchored tree is a no-op.
-||| Existing ids are honoured (and never overwritten); any heading whose
-||| plain text slugifies to the empty string falls back to `section`.
+||| Decorate every unanchored `<section>` with an `id="<autoId>"`
+||| attribute derived from its heading text. Idempotent — re-running on an
+||| already-anchored tree is a no-op. Existing ids (on sections or any
+||| other element) are honoured and never overwritten; a section whose
+||| heading text is empty falls back to `s` (disambiguated).
 public export
-addHeadingIds : HExpr -> HExpr
-addHeadingIds h = snd (walkNode [] h)
+addSectionIds : HExpr -> HExpr
+addSectionIds h = snd (walkNode [] h)
 
 --------------------------------------------------------------------------------
 -- harvestHeadings: pre-order list of (level, anchor, plainTitle).
 --------------------------------------------------------------------------------
 
-||| Walk the tree in document order; emit one row per heading. The anchor
-||| is taken from the heading's `id` attribute if present, else "" — call
-||| `addHeadingIds` first if you want the slugs filled in.
+||| Level + plain title of a section's direct heading child.
+directHeading : List HExpr -> (Nat, String)
+directHeading []                       = (0, "")
+directHeading (Element t _ cs :: rest) = case headingLevel t of
+  Just lvl => (lvl, childrenText cs)
+  Nothing  => directHeading rest
+directHeading (_ :: rest)              = directHeading rest
+
+||| Walk the tree in document order; emit one row per `<section>`. The
+||| anchor is the section's `id` (call `addSectionIds` first to fill in
+||| the auto-ids); the level + title come from the section's heading.
 public export
 harvestHeadings : HExpr -> List (Nat, String, String)
-harvestHeadings (Text _)        = []
-harvestHeadings (Comment _)     = []
-harvestHeadings (Element t attrs cs) = case headingLevel t of
-  Just lvl =>
-    let anchor = case attrValueL "id" attrs of
-                   Just v  => v
-                   Nothing => ""
-        title  = childrenText cs
-        here   = (lvl, anchor, title)
-     in here :: concatMap (assert_total harvestHeadings) cs
-  Nothing =>
-    concatMap (assert_total harvestHeadings) cs
+harvestHeadings (Text _)    = []
+harvestHeadings (Comment _) = []
+harvestHeadings (Element t attrs cs) =
+  if t == "section"
+    then
+      let anchor       = case attrValueL "id" attrs of
+                           Just v  => v
+                           Nothing => ""
+          (lvl, title) = directHeading cs
+          here         = (lvl, anchor, title)
+       in here :: concatMap (assert_total harvestHeadings) cs
+    else concatMap (assert_total harvestHeadings) cs

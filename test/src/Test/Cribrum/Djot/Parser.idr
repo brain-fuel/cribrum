@@ -104,14 +104,27 @@ ext_trailing_blank_ignored : Property
 ext_trailing_blank_ignored = oneShot $
   parseDoc "hi\n\n\n" === ok (doc [para "hi"])
 
-||| Multi-line block whose *first* line looks like a heading is currently a
-||| paragraph (multi-line headings will arrive in a later slice with a setext-
-||| like or `>` annotation). Pin the current behaviour.
+||| A heading-marker line followed by a plain (non-marker) line is one
+||| heading with the continuation folded in by a soft break (Djot lazy
+||| heading continuation — headings-007). A same-level marker on the
+||| next line is stripped and likewise folded (headings-003).
 export
-ext_heading_marker_with_following_line_is_paragraph : Property
-ext_heading_marker_with_following_line_is_paragraph = oneShot $
+ext_heading_lazy_continuation : Property
+ext_heading_lazy_continuation = oneShot $ do
   parseDoc "# H\nmore"
-    === ok (doc [paraMulti [InlText "# H", InlSoftBreak, InlText "more"]])
+    === ok (doc [Heading emptyAttrs 1 [InlText "H", InlSoftBreak, InlText "more"]])
+  parseDoc "# H\n# more"
+    === ok (doc [Heading emptyAttrs 1 [InlText "H", InlSoftBreak, InlText "more"]])
+
+||| A different-level marker closes the current heading and opens a new
+||| one — two sibling headings, NOT a lazy continuation (headings-006).
+export
+ext_heading_level_change_splits : Property
+ext_heading_level_change_splits = oneShot $
+  parseDoc "## H\n### sub"
+    === ok (doc [ Heading emptyAttrs 2 [InlText "H"]
+                , Heading emptyAttrs 3 [InlText "sub"]
+                ])
 
 ||| Line starting with a space (no '#') is a paragraph, NOT a heading-of-level-0.
 ||| (Mutant-kill: bounds 6->5/7 are tested; this pins the lower bound at 1.)
@@ -121,11 +134,19 @@ ext_space_leading_line_is_paragraph = oneShot $
   parseDoc " hello" === ok (doc [para " hello"])
 
 ||| `# ` (marker + space, empty body) is a heading with EMPTY inline content,
-||| not a heading carrying `InlText ""`. (Mutant-kill on parseInlineLine "".)
+||| not a heading carrying `InlText ""`.
 export
 ext_heading_empty_body : Property
 ext_heading_empty_body = oneShot $
   parseDoc "# " === ok (doc [Heading emptyAttrs 1 []])
+
+||| An empty inline line yields no inlines, NOT a singleton `InlText ""`.
+||| (Mutant-kill on `parseInlineLine "" = []`; the empty-heading path now
+||| routes through `parseHeadingLines`, so this pins the leaf directly.)
+export
+ext_parse_inline_line_empty : Property
+ext_parse_inline_line_empty = oneShot $
+  parseInlineLine "" === []
 
 --- Thematic breaks -----------------------------------------------------------
 
@@ -1326,10 +1347,13 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_heading_then_paragraph",               ext_heading_then_paragraph)
   , ("ext_leading_blank_ignored",                ext_leading_blank_ignored)
   , ("ext_trailing_blank_ignored",               ext_trailing_blank_ignored)
-  , ("ext_heading_marker_with_following_line_is_paragraph",
-        ext_heading_marker_with_following_line_is_paragraph)
+  , ("ext_heading_lazy_continuation",
+        ext_heading_lazy_continuation)
+  , ("ext_heading_level_change_splits",
+        ext_heading_level_change_splits)
   , ("ext_space_leading_line_is_paragraph",      ext_space_leading_line_is_paragraph)
   , ("ext_heading_empty_body",                   ext_heading_empty_body)
+  , ("ext_parse_inline_line_empty",               ext_parse_inline_line_empty)
   , ("ext_thematic_dashes",                      ext_thematic_dashes)
   , ("ext_thematic_stars",                       ext_thematic_stars)
   , ("ext_thematic_many_dashes",                 ext_thematic_many_dashes)

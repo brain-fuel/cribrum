@@ -1,6 +1,7 @@
 attributes-013
 attributes-015
 attributes-017
+attributes-018
 attributes-019
 attributes-022
 attributes-025
@@ -68,7 +69,18 @@ fenced-divs-005
 fenced-divs-006
 fenced-divs-007
 fenced-divs-008
+headings-001
+headings-002
+headings-003
+headings-006
+headings-007
+headings-008
 headings-009
+headings-011
+headings-012
+headings-013
+headings-014
+headings-016
 insert-delete-mark-001
 insert-delete-mark-002
 insert-delete-mark-003

@@ -1,6 +1,6 @@
 # Cribrum — Current Status
 
-> 512 tests across 19 groups, all green. Phase 4 typed-by-construction
+> 517 tests across 19 groups, all green. Phase 4 typed-by-construction
 > view constructors landed (`TEAWeb.Html.Typed` — Step 4). AA catalog
 > grew from 12 → 19 rules (Step 5 partial): area-alt, link-empty-href,
 > meta-no-refresh, summary-not-empty, track-kind (all Structural, all
@@ -60,7 +60,7 @@
 > normalises whitespace + strips the `<main>` wrapper, and compares
 > against the expected reference output. A baseline file
 > (`test/djot-ref/baseline.txt`) lists currently-passing tests;
-> regressions fail the gate, additions are tracked. **101 / 246**
+> regressions fail the gate, additions are tracked. **113 / 246**
 > upstream-ingested tests now pass at the baseline (full `jgm/djot`
 > corpus ingestion shipped). **Step 11 parser remainder** (P5.4
 > remainder): tight ul/ol list collapse (single-`Paragraph` items
@@ -115,6 +115,22 @@
 > `RuntimeState` gains a persistent `subHandlers` table so
 > subscriptions survive view re-renders. Net djotref movement
 > across the slice: 64 -> 101 / 246 (5x net gain).
+>
+> **Step 13 heading → section inference** (plan §1b): `elaborate` now
+> wraps heading-level sequences in nested `<section>` landmarks — a
+> heading at level L opens a section holding it plus following blocks
+> until the next heading of level <= L; deeper headings nest. A
+> heading's explicit `{#id}` moves onto its section. The parser gained
+> **lazy heading continuation**: a heading-marker line followed by plain
+> or same-level-marker lines folds into one heading (corpus
+> `headings-003`/`-007`/`-008`); a different-level marker splits into
+> sibling headings (`headings-006`). `Cribrum.Pipeline.Anchor` was
+> refactored — `slugify` → `autoId` (the Djot reference identifier:
+> case-preserving, `_` kept, `-N` disambiguation) and
+> `addHeadingIds` → `addSectionIds` (auto-ids land on `<section>`s, not
+> headings); `harvestHeadings` reads section ids. The docsnav demo
+> migrated to the new case-preserving section anchors. Net djotref
+> movement: 101 -> 113 / 246 (12 `headings-*`/`attributes-*` tests).
 
 > Snapshot of what's built. Authoritative narrative is `plan.dj`; the
 > convention catalog is `docs/conventions.md`.
@@ -125,18 +141,18 @@
 |---------------------------|-------|--------|
 | `Cribrum.Node`            | core  | HExpr IR (Element/Text/Comment, HAttr w/ handler-capable AttrValue, traversal). |
 | `Cribrum.Djot.Surface`    | 1a    | Faithful Djot AST — full construct inventory representable. |
-| `Cribrum.Djot.Parser`     | 1a    | **Slice**: paragraph, ATX heading (1-6), thematic break, block quote (recursive, with lazy paragraph continuation), fenced code block, fenced div (`::: cls` -> `Div` block with class attrs; opener requires fresh block boundary, body collection ignores code-fenced `:::`), unordered + ordered lists, pipe tables (with alignment row + header detection), inline emphasis (`_em_`), strong (`*strong*`), verbatim (`` `code` `` — spans paragraph line breaks), inline links (`[text](url)`; URL strips internal whitespace across line continuation), reference links (`[text][ref]` + collapsed `[text][]`), reference definitions (`[ref]: url ["title"]` with indented continuation lines and empty-URL form), inline images (`![alt](src)`), autolinks (`<url>` / `<email>` with non-empty + no-whitespace + has-`:`-or-`@` heuristic), hard breaks (trailing `\` on a non-last paragraph line), smart punctuation (`--`/`---`/`...` + orientation-aware curly quotes), task lists, definition lists, footnote refs/defs, block-level attribute prefixes (`{#id .cls key=val}`), block-level Djot comments. Top-level `parseDoc` is two-pass: raw parse, then walk-and-resolve `LinkReference` against the document's `RefDef` table. Inline tokenizer uses a plain-character accumulator so unpaired/empty markers fold back into the surrounding text without fragmenting `InlText` runs; multi-line paragraph bodies join with literal `'\n'` so verbatim spans naturally cross line breaks. |
+| `Cribrum.Djot.Parser`     | 1a    | **Slice**: paragraph, ATX heading (1-6, with lazy continuation — a heading-marker line followed by plain or same-level-marker lines folds into one heading, markers stripped; a different-level marker splits into sibling headings), thematic break, block quote (recursive, with lazy paragraph continuation), fenced code block, fenced div (`::: cls` -> `Div` block with class attrs; opener requires fresh block boundary, body collection ignores code-fenced `:::`), unordered + ordered lists, pipe tables (with alignment row + header detection), inline emphasis (`_em_`), strong (`*strong*`), verbatim (`` `code` `` — spans paragraph line breaks), inline links (`[text](url)`; URL strips internal whitespace across line continuation), reference links (`[text][ref]` + collapsed `[text][]`), reference definitions (`[ref]: url ["title"]` with indented continuation lines and empty-URL form), inline images (`![alt](src)`), autolinks (`<url>` / `<email>` with non-empty + no-whitespace + has-`:`-or-`@` heuristic), hard breaks (trailing `\` on a non-last paragraph line), smart punctuation (`--`/`---`/`...` + orientation-aware curly quotes), task lists, definition lists, footnote refs/defs, block-level attribute prefixes (`{#id .cls key=val}`), block-level Djot comments. Top-level `parseDoc` is two-pass: raw parse, then walk-and-resolve `LinkReference` against the document's `RefDef` table. Inline tokenizer uses a plain-character accumulator so unpaired/empty markers fold back into the surrounding text without fragmenting `InlText` runs; multi-line paragraph bodies join with literal `'\n'` so verbatim spans naturally cross line breaks. |
 | `Cribrum.Html.Category`   | 2     | Content-category enum (Metadata/Flow/Sectioning/Heading/Phrasing/Embedded/Interactive/Palpable/ScriptSupporting/FormAssociated). |
 | `Cribrum.Html.Model`      | 2     | Public surface (types + lookups + attribute-name permission). Element catalog (114 elements) lives in `Cribrum.Html.Model.Generated`, ingested from `ingest/content-model.ts` by `ingest/html-model.ts` with `@webref/elements@2.6.0` cross-validation (invariant I8). `Cribrum.Html.Model.Types` carries `ElementSpec` / `ChildPolicy` (extracted to break the Model ↔ Generated cycle). `Cribrum.Html.Model.Invariants` lifts the TS-side tag-closure check (I2) to a decidable Idris proposition (`AllChildTagsExist` + `decAllChildTagsExist`); the test suite asserts the real catalog satisfies it. Drift gate `make ingest-check` fails on `@webref` bump, `content-model.ts` edit, or hand-edit to `Generated.idr` and pinpoints which input drifted. |
 | `Cribrum.Html.Valid`      | 2     | `IsValidHtml = IsKnownTag × All AttrAllowedIn × All ChildAllowedIn × All IsValidHtml`. Total `decideHtml : (h : HExpr) -> Dec (IsValidHtml h)`. Located rejection (`decideHtmlLocated`) returns path-into-tree + `RejectionClass` (UnknownTag / DisallowedAttr / IllegalChild / BlockInPhrasing / MalformedTable / TextNotAllowedIn / CommentNotAllowedIn). |
-| `Cribrum.Elaborate`       | 1b    | Strict elaboration `Doc -> Either ElabError (h ** (IsValidHtml h, StructuralAA h))`. Phase-2 sharpened: failure path uses `LocatedHtmlError` carrying a `LocatedReject`. **Phase-4 sharpened**: `StructuralAA h` is now the actual conjunct of all 10 Phase-4 propositions (img-alt, anchor-href, iframe-title, label-for-control, fieldset-legend, button-name, link-name, document-lang, heading-no-skip, duplicate-id) — `decStructuralAA` short-circuits to `StructuralAaFailure ruleId path` on the first failing predicate. AA failure-path **located**: per-node rules carry `Just path`; root-only `document-lang` carries `Just []`; whole-tree rules (heading-no-skip, duplicate-id) carry `Nothing`. |
+| `Cribrum.Elaborate`       | 1b    | Strict elaboration `Doc -> Either ElabError (h ** (IsValidHtml h, StructuralAA h))`. **Heading → section inference** (plan §1b): `sectionize` wraps heading-level runs in nested `<section>` landmarks — a heading at level L opens a section holding it plus following blocks up to the next heading of level <= L; deeper headings nest. A heading's explicit `id` moves onto its section (the heading keeps no id); auto-ids for id-less sections are filled by `Cribrum.Pipeline.Anchor.addSectionIds` afterwards, kept out of the strict codomain so the disambiguator can't introduce a duplicate id. Phase-2 sharpened: failure path uses `LocatedHtmlError` carrying a `LocatedReject`. **Phase-4 sharpened**: `StructuralAA h` is now the actual conjunct of all 10 Phase-4 propositions (img-alt, anchor-href, iframe-title, label-for-control, fieldset-legend, button-name, link-name, document-lang, heading-no-skip, duplicate-id) — `decStructuralAA` short-circuits to `StructuralAaFailure ruleId path` on the first failing predicate. AA failure-path **located**: per-node rules carry `Just path`; root-only `document-lang` carries `Just []`; whole-tree rules (heading-no-skip, duplicate-id) carry `Nothing`. |
 | `Cribrum.Render.Html`     | 5     | Total `HExpr -> String`. HTML 5 void-element handling, escaping, handler attrs render as `data-on-<event>`. |
 | `Cribrum.Render.Dom`      | 5     | **Spike**: tiny FFI surface (createElement/createTextNode/createComment/setAttribute/removeAttribute/addEventListener/appendChild/replaceChild/getElementById/clearChildren) + `currentEventValue` (input-value extraction) + `captureFocus`/`restoreFocus` (focus + selection-range preservation across reconcile). `renderDom : HExpr -> IO DomNode`, `reconcile` (Day-1 blow-and-rebuild, skip on unchanged tree, focus bracketed), `mountInto`. JS-backend only at runtime; chez type-checks via multi-spec %foreign with a scheme: fallback. Handler attrs dispatch via `window.__cribrumDispatch`; the dispatcher pre-extracts `event.target.value` into `window.__cribrumValue` for `onInput`/`onChange`. |
 | `Cribrum.AA.Catalog`      | 3+4   | Shared rule catalog (single source of truth across pass + future types). Types (`Rule`/`Confidence`/`Severity`) in `Cribrum.AA.Catalog.Types`; rule data in `Cribrum.AA.Catalog.Generated`, ingested from `ingest/aa.ts` by `ingest/aa-catalog.ts` (plan §P3.1 scaffold) with `make ingest-check` drift gate. **19 rules** (Step 5 expansion): img-alt, anchor-href, alt-meaningful, heading-no-skip, document-lang, iframe-title, label-for-control, fieldset-legend, link-name, button-name, duplicate-id, unique-main, area-alt, link-empty-href, meta-no-refresh, summary-not-empty, track-kind (all Structural); aria-label-redundant, positive-tabindex (Heuristic). |
 | `Cribrum.AA.Pass`         | 3     | **Data interpreter** (plan §P3.2): per-node traversal folds over `nodeRuleImpls : List (Rule, NodeRuleCheck)` — 16 rows pairing each catalog `Rule` with its impl through five tiny adapters (`pAttr`/`pNode`/`pCh`/`pAttrsOnly`/`pRoot`) that lift per-rule signatures to a single `Path -> Bool -> HExpr -> List Finding` shape. `treeRuleImpls` mirrors the same data view for the three whole-tree rules (heading-no-skip, duplicate-id, unique-main); `checkAA` keeps them as explicit `++` terms for mutation-gate stability. Total; confidence-partitioned (`structuralFindings` / `heuristicFindings`). Adding a per-node rule = one row. |
 | `Cribrum.AA.Typed`        | 4     | **All 16 Structural rules** from the catalog promoted to type-level propositions via `So`: img-alt, anchor-href, iframe-title, label-for-control, fieldset-legend, button-name, link-name, area-alt, link-empty-href, meta-no-refresh, summary-not-empty, track-kind (per-node `All` over `walkNodes`); document-lang (root-only); heading-no-skip, duplicate-id, unique-main (whole-tree bool + `So`). Decision via `decSo` (and `All` for per-node rules). Each per-node rule's typed wrapper is a 5-line alias through `Cribrum.AA.Promote`. Partitioning witness `isTypedPromoted : String -> Bool` exposes the promoted-id set; `Test.Cribrum.AA.Partition` (plan §P3.3) asserts it agrees with `confidence == Structural` across `allRules`. `Cribrum.Elaborate.StructuralAA` is the 16-tuple conjunct of these props; `decStructuralAA` short-circuits to `(ruleId, path)` on first failing predicate. |
 | `Cribrum.AA.Promote`      | 4     | Per plan §P4.2 the bool-predicate + `So` + `All` over `walkNodes` pattern is factored into a single generic interface: `NodeOk pred`, `AllNodesOk pred`, `decAllNodesOk pred`, `allNodesOk pred`. Per-node rules in `Cribrum.AA.Typed` consume it; adding a new per-node rule is now ~5 lines. |
-| `Cribrum.Pipeline.Anchor` | T6    | Heading-anchor pipeline pass. `slugify : String -> String` ASCII-folds + collapses runs of non-alphanumerics into single hyphens + trims edges. `addHeadingIds : HExpr -> HExpr` walks the tree pre-order and decorates every `<h1>..<h6>` lacking an `id` with `id="<slug>"`; duplicates disambiguate to `-2`/`-3`/... so produced trees never violate the `duplicate-id` AA rule. Idempotent. `harvestHeadings : HExpr -> List (Nat, String, String)` returns `(level, anchor, plainTitle)` rows in document order — consumed by `tools/render-docsnav/` to generate the TOC. |
+| `Cribrum.Pipeline.Anchor` | 1b/T6 | Section-anchor pipeline pass. `autoId : String -> String` is the Djot reference identifier: runs of non-`[A-Za-z0-9_]` collapse to a single `-`, edges trimmed, **case preserved** (`_` kept). `addSectionIds : HExpr -> HExpr` walks the tree pre-order and decorates every `<section>` lacking an `id` with `id="<autoId of its heading text>"`; duplicates (against every id already in the tree — explicit `{#id}` on any element + earlier auto-ids) disambiguate to `-1`/`-2`/... (Djot scheme) so produced trees never violate the `duplicate-id` AA rule. Empty heading text falls back to base `s`. Idempotent. `harvestHeadings : HExpr -> List (Nat, String, String)` returns `(level, sectionId, plainTitle)` rows in document order — consumed by `tools/render-docsnav/` to generate the TOC. |
 | `TEAWeb.Html`             | T1    | **Spike**: view-builder smart constructors for 34 elements; `Attr msg` data type (`Plain` / `On`); `View msg` record = (HExpr, HandlerTable with `Event -> IO msg` closures); leaf nodes (`text_`, `comment_`); void elements (`br_`, `hr_`); plain attribute helpers (`class_`, `id_`, `href_`, ...). `viewSafe` routes through Phase-2's `decideHtmlLocated`, returning `Either ViewError ((h ** IsValidHtml h), HandlerTable)` with `LocatedReject` on rejection — content-model + attribute-permission misuse is caught dynamically with path-into-tree diagnostics. The dynamic gate now coexists with the typed-by-construction surface in `TEAWeb.Html.Typed`. `eventTargetValue` re-exports the value-extraction primitive from `Cribrum.Render.Dom`. |
 | `TEAWeb.Html.Typed`       | T1    | **Phase-2 typed-by-construction view-builder** (plan §T1 follow-on). 30 element constructors (`pT_`/`ulT_`/`liT_`/...) return `TypedView <tag> msg`; child positions consume `Child <parent> msg` (`c_`/`tx_`/`cm_`) carrying a compile-time `So (isTagAllowedIn parent child)` witness. Catalog parity gated by `pddt_typed_predicate_matches_catalog` — 34 parents × 25 candidate child tags cross-validated against `Cribrum.Html.Valid.childAllowedBool`. Bridges to the untyped layer via `unTyped : TypedView tag msg -> View msg` for callers (e.g. `TEAWeb.Program.view`). |
 | `TEAWeb.Event`            | T2    | **Spike**: `onClick`/`onSubmit`/`onFocus`/`onBlur`/`onDoubleClick`/`onMouseEnter`/`onMouseLeave` (msg-form, IO-wrapped via `pure`); `onInput`/`onChange` (String-callback form; the closure runs `eventTargetValue` to read the pre-extracted `event.target.value`); `onKeyDown`/`onKeyUp` (String-callback form; closure reads `event.key` via `eventKey`/`currentEventKey`). Callback ids app-supplied for MVP; deterministic `hash(path, event)` when keyed diff lands. |
@@ -153,16 +169,16 @@ $ make test-fast        # cribrum + teaweb suites
 $ make test             # adds ingest drift gate + mutation gate
 ```
 
-Counts per group: 18 Node + 16 Surface + 128 Parser + 20 Model + 52 Valid
-+ 31 Elaborate + 17 Render.Html + 1 Render.Dom + 56 AA.Pass + 88 AA.Typed
-+ 5 AA.Partition + 16 Pipeline.Anchor + 6 Integration (real README.dj +
-plan.dj read at test time, plus pipeline determinism check) = 454 Cribrum.
+Counts per group: 18 Node + 16 Surface + 130 Parser + 20 Model + 52 Valid
++ 33 Elaborate + 17 Render.Html + 1 Render.Dom + 56 AA.Pass + 88 AA.Typed
++ 5 AA.Partition + 17 Pipeline.Anchor + 6 Integration (real README.dj +
+plan.dj read at test time, plus pipeline determinism check) = 459 Cribrum.
 10 TEAWeb.Html + 9 TEAWeb.Html.Typed + 10 TEAWeb.Event + 6 TEAWeb.Cmd
 + 14 TEAWeb.Sub + 9 TEAWeb.Program = 58 TEAWeb. Plus the djot-ref
 reference-suite gate (`tools/run-djotref/`, 246 corpus tests against a
-101-test baseline; separate harness from the in-suite tests).
-**Total: 512 in-suite tests across 19 groups, plus 246 djot-ref tests
-(101 passing, 145 expected-fail under baseline).**
+113-test baseline; separate harness from the in-suite tests).
+**Total: 517 in-suite tests across 19 groups, plus 246 djot-ref tests
+(113 passing, 133 expected-fail under baseline).**
 
 Each module has:
 - **EXTs** (example tests) — canonical cases for each behaviour.
@@ -171,7 +187,7 @@ Each module has:
 - **PBTs** (property-based tests via hedgehog) — invariants over generated
   inputs.
 
-## Mutation gate (208 mutants, 0 surviving)
+## Mutation gate (209 mutants, 0 surviving)
 
 ```
 $ test/mutation/run.sh                # changed-file scope (default)
@@ -270,8 +286,9 @@ through Cribrum's own pipeline (matching `README.dj`'s role).
   automated browser test in CI yet). `removeEventListener` deferred
   to keyed-children diff.
 - **Convention layer**: §2 of `docs/conventions.md` is mostly deferred —
-  elaboration currently only wraps blocks in `<main>`; `:::nav` etc. don't
-  promote yet.
+  elaboration wraps blocks in `<main>` and infers heading-level sequences
+  into nested `<section>` landmarks (plan §1b), but `:::nav` / `:::aside`
+  etc. don't promote to their semantic elements yet.
 - **Ingest pipeline**: Both gates shipped — HTML content model (114
   elements, `Cribrum.Html.Model.Generated` from `ingest/content-model.ts`
   + `@webref/elements@2.6.0` cross-validation) AND the AA catalog
