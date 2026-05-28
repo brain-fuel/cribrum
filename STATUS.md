@@ -171,7 +171,7 @@ Each module has:
 - **PBTs** (property-based tests via hedgehog) — invariants over generated
   inputs.
 
-## Mutation gate (209 mutants, 0 surviving)
+## Mutation gate (208 mutants, 0 surviving)
 
 ```
 $ test/mutation/run.sh                # changed-file scope (default)
