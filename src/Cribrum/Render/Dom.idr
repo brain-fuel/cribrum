@@ -109,6 +109,28 @@ export
 currentEventKey : IO String
 currentEventKey = fromPrim (prim__currentEventKey "")
 
+%foreign "scheme:(lambda (_) 0.0)"
+         "browser:lambda:(_)=>Number(window.__cribrumTimestamp || 0)"
+prim__currentEventTimestamp : String -> PrimIO Double
+
+||| Numeric timestamp (DOMHighResTimeStamp or `Date.now()` value) most
+||| recently stashed by the Sub installer for an animation-frame or
+||| `Every` tick. Returns `0.0` outside such a dispatch.
+export
+currentEventTimestamp : IO Double
+currentEventTimestamp = fromPrim (prim__currentEventTimestamp "")
+
+%foreign "scheme:(lambda (_) \"\")"
+         "browser:lambda:(_)=>String(window.__cribrumPortMsg || \"\")"
+prim__currentEventPortMsg : String -> PrimIO String
+
+||| String payload of the most recent inbound port message, as stashed
+||| by the port installer. Returns the empty string outside a port
+||| dispatch.
+export
+currentEventPortMsg : IO String
+currentEventPortMsg = fromPrim (prim__currentEventPortMsg "")
+
 --------------------------------------------------------------------------------
 -- Focus preservation across blow-and-rebuild reconcile.
 --

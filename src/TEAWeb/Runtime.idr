@@ -60,17 +60,104 @@ blurElement : ElementId -> IO ()
 blurElement id = primIO (prim__blurElement id)
 
 --------------------------------------------------------------------------------
+-- Sub-leaf installers. Each `Sub` leaf opens its own browser event
+-- source (document keydown, requestAnimationFrame, setInterval, named
+-- port slot) and routes deliveries through `window.__cribrumDispatch`.
+-- For non-Event payloads (rAF timestamp, interval timestamp, port
+-- message) the installer stashes the value into a window slot before
+-- calling dispatch — the leaf's handler closure then pulls it back
+-- out via `currentEventTimestamp` / `currentEventPortMsg`.
+--
+-- Chez stubs are no-ops so the runtime type-checks at the chez
+-- backend even though the JS backend is the only one that runs the
+-- code in anger.
+--------------------------------------------------------------------------------
+
+%foreign "scheme:(lambda (_) 0)"
+         "browser:lambda:(cbId)=>{ document.addEventListener('keydown', (ev)=>{ window.__cribrumKey = (ev && typeof ev.key === 'string') ? ev.key : ''; if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, ev); } }); }"
+prim__installSubKeyDown : String -> PrimIO ()
+
+%foreign "scheme:(lambda (_) 0)"
+         "browser:lambda:(cbId)=>{ const step = (ts)=>{ window.__cribrumTimestamp = Number(ts); if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, {}); } requestAnimationFrame(step); }; requestAnimationFrame(step); }"
+prim__installSubAnimationFrame : String -> PrimIO ()
+
+%foreign "scheme:(lambda (_,_) 0)"
+         "browser:lambda:(cbId,period)=>{ setInterval(()=>{ window.__cribrumTimestamp = Number(Date.now()); if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, {}); } }, period); }"
+prim__installSubInterval : String -> Integer -> PrimIO ()
+
+%foreign "scheme:(lambda (_,_) 0)"
+         "browser:lambda:(cbId,portName)=>{ window.__cribrumPorts = window.__cribrumPorts || {}; window.__cribrumPorts[portName] = (msg)=>{ window.__cribrumPortMsg = String(msg); if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, {}); } }; }"
+prim__installSubPort : String -> String -> PrimIO ()
+
+installSubKeyDown : String -> IO ()
+installSubKeyDown cb = primIO (prim__installSubKeyDown cb)
+
+installSubAnimationFrame : String -> IO ()
+installSubAnimationFrame cb = primIO (prim__installSubAnimationFrame cb)
+
+installSubInterval : String -> Integer -> IO ()
+installSubInterval cb period = primIO (prim__installSubInterval cb period)
+
+installSubPort : String -> String -> IO ()
+installSubPort cb name = primIO (prim__installSubPort cb name)
+
+||| Walk a `Sub msg` tree, install one browser-side listener per leaf,
+||| and build the matching `(callbackId, Event -> IO msg)` entries the
+||| dispatcher consults to project each delivery back to `msg`.
+|||
+||| Each projection reads the right window slot (`__cribrumKey` for
+||| keydown, `__cribrumTimestamp` for rAF / Every, `__cribrumPortMsg`
+||| for Port) before applying the user's `String -> msg` / `Double ->
+||| msg` callback.
+|||
+||| MVP-grade: install fires once at mount. Sub-tree diff across
+||| renders (add/remove listeners as `subscriptions model` changes)
+||| arrives with keyed-children reconcile; until then `subscriptions`
+||| is effectively read once at startup. Leaves the existing
+||| `None`-only counter demo wholly unaffected.
+export
+installSubs : Sub msg -> IO (List (String, Event -> IO msg))
+installSubs None         = pure []
+installSubs (Batch subs) =
+  assert_total
+    (foldlM
+       (\acc, s => do
+          entries <- installSubs s
+          pure (acc ++ entries))
+       []
+       subs)
+installSubs (OnKeyDown cb proj) = do
+  installSubKeyDown cb
+  pure [(cb, \ev => map proj currentEventKey)]
+installSubs (OnAnimationFrame cb proj) = do
+  installSubAnimationFrame cb
+  pure [(cb, \ev => map proj currentEventTimestamp)]
+installSubs (Every cb period proj) = do
+  installSubInterval cb period
+  pure [(cb, \ev => map proj currentEventTimestamp)]
+installSubs (Port cb portName proj) = do
+  installSubPort cb portName
+  pure [(cb, \ev => map proj currentEventPortMsg)]
+
+--------------------------------------------------------------------------------
 -- Runtime state.
 --------------------------------------------------------------------------------
 
 ||| Mutable state held across renders. The `IORef` is private to the
 ||| runtime; nothing outside `TEAWeb.Runtime` touches it.
+|||
+||| `handlers` is rebuilt from `handlers nextView` each render so view
+||| events stay in lockstep with the rendered tree. `subHandlers` is
+||| installed once at mount and persists across renders — Sub leaves
+||| don't get redrawn out from under their listeners. The dispatch
+||| lookup checks `handlers` first, then `subHandlers`.
 record RuntimeState (m : Type) (ms : Type) where
   constructor MkRuntimeState
-  current  : m
-  tree     : HExpr
-  handlers : List (String, Event -> IO ms)
-  host     : DomNode
+  current      : m
+  tree         : HExpr
+  handlers     : List (String, Event -> IO ms)
+  subHandlers  : List (String, Event -> IO ms)
+  host         : DomNode
 
 --------------------------------------------------------------------------------
 -- Cmd interpretation. Total recursion via `assert_total` on the Batch
@@ -104,7 +191,7 @@ lookupHandler key ((k, fn) :: rest) =
 ||| Mount a `Program` into the DOM element with the given id, starting
 ||| the dispatch loop. Total at the Idris side; impurity isolated to
 ||| the FFI calls inside `runCmd`, `reconcile`, `installDispatch`,
-||| `mountInto`.
+||| `mountInto`, and the Sub-leaf installers.
 export
 mount : Program model msg -> (hostId : String) -> IO ()
 mount prog hostId = do
@@ -113,6 +200,11 @@ mount prog hostId = do
   let initialView                = prog.view initialModel
   -- Mount the initial DOM.
   mountInto host (tree initialView)
+  -- Install the initial subscription set; the resulting (cbId,
+  -- handler) entries persist across renders in `subHandlers` so the
+  -- dispatcher can find them on Sub-driven deliveries even after
+  -- view-handler refreshes.
+  subHs <- installSubs (prog.subscriptions initialModel)
   -- Initialise the mutable state. `model` lives here, never escapes.
   stateRef <-
     newIORef
@@ -120,13 +212,14 @@ mount prog hostId = do
         initialModel
         (tree initialView)
         (handlers initialView)
+        subHs
         host)
   -- Install the single global dispatcher. The closure captures
   -- `stateRef`, so all future renders update the handler table by
   -- writing to the IORef — no FFI required after this point.
   installDispatch $ \cbId, event => do
     state <- readIORef stateRef
-    case lookupHandler cbId (handlers state) of
+    case lookupHandler cbId (handlers state ++ state.subHandlers) of
       Nothing => pure ()
       Just fn => do
         msg <- fn event
@@ -148,6 +241,7 @@ mount prog hostId = do
             newModel
             nextTree
             (handlers nextView)
+            state.subHandlers
             state.host)
         runCmd newCmd
   -- Run the initial Cmd after the first render.
