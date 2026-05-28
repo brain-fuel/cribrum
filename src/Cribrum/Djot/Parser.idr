@@ -652,12 +652,15 @@ isDefListOpener s = case unpack s of
   [':']             => True
   _                 => False
 
-||| `True` iff `s` is a thematic break (3+ matching `-` or `*` runs,
-||| optionally separated by whitespace). Hoisted ahead of the
-||| blockquote lazy-continuation gate so the gate can disqualify
-||| thematic-break lines from lazy continuation.
-isThematicBreakLine : String -> Bool
-isThematicBreakLine s =
+||| Per Djot spec: a thematic break is a line consisting of three or
+||| more `-` or `*` characters, optionally separated by whitespace,
+||| alone on the line. Hoisted ahead of `groupLines` so the blockquote
+||| lazy-continuation gate can disqualify thematic-break lines from
+||| lazy continuation; also the single canonical source so the
+||| mutation gate has one site to mutate (avoiding a duplicate body
+||| at the original later position).
+isThematicBreak : String -> Bool
+isThematicBreak s =
   let trimmed = trim s
    in case unpack trimmed of
         []        => False
@@ -907,7 +910,7 @@ isParagraphContinuable s =
     && (case parseHeadingMarker s of
           Just _  => False
           Nothing => True)
-    && not (isThematicBreakLine s)
+    && not (isThematicBreak s)
     && (case parseCodeFenceOpen s of
           Just _  => False
           Nothing => True)
@@ -1181,20 +1184,6 @@ groupLines xs = go [] [] xs
 --------------------------------------------------------------------------------
 -- Group -> Block.
 --------------------------------------------------------------------------------
-
-||| Per Djot spec: a thematic break is a line consisting of three or more
-||| `-` or `*` characters, optionally separated by whitespace, alone on the
-||| line. (We don't yet handle the mixed-whitespace form `- - -` — that is a
-||| later slice; pin the simple `---`/`***` form here.)
-isThematicBreak : String -> Bool
-isThematicBreak s =
-  let trimmed = trim s
-   in case unpack trimmed of
-        []        => False
-        (c :: cs) =>
-          (c == '-' || c == '*')
-            && let marks = filter (not . isSpace) (c :: cs)
-                in length marks >= 3 && all (== c) marks
 
 --------------------------------------------------------------------------------
 -- List parsing. The slice covers unordered lists with `-`, `*`, `+`
