@@ -3,7 +3,7 @@ src/Cribrum/Djot/Parser.idr	n >= 1 && n <= 6	n >= 1 && n <= 7	heading level cap:
 src/Cribrum/Djot/Parser.idr	n >= 1 && n <= 6	n >= 0 && n <= 6	heading level floor: 1 -> 0 (accepts no-hash)
 src/Cribrum/Djot/Parser.idr	(' ' :: rest) => Just	('\t' :: rest) => Just	heading separator: space -> tab
 src/Cribrum/Djot/Parser.idr	parseInlineLine "" = []	parseInlineLine "" = [InlText ""]	inline emit on empty line
-src/Cribrum/Djot/Parser.idr	++ (InlSoftBreak :: go next more)	++ go next more	drop SoftBreak between paragraph lines
+src/Cribrum/Djot/Parser.idr	flushAcc acc ++ [InlSoftBreak]	flushAcc acc	drop SoftBreak emission on inline newline
 src/Cribrum/Djot/Parser.idr	if isNil ls	if not (isNil ls)	flip heading/paragraph selection condition
 src/Cribrum/Djot/Parser.idr	then go [] (flushNormal (reverse cur) acc) xs	then go cur acc xs	blank line no longer flushes paragraph
 src/Cribrum/Djot/Parser.idr	go cur acc []        = reverse (flushNormal (reverse cur) acc)	go cur acc []        = reverse acc	drop final paragraph at EOF
@@ -138,7 +138,7 @@ src/Cribrum/Djot/Parser.idr	        Just (img, after) =>	        Just (_, after)
 src/Cribrum/Djot/Parser.idr	parseImageBody chars = case findClose ']' chars of	parseImageBody chars = Nothing	parser: image parsing disabled
 src/Cribrum/Djot/Parser.idr	InlImage emptyAttrs	InlLink emptyAttrs	parser: image emits as link
 src/Cribrum/Djot/Parser.idr	    '!' => case cs of	    '!' => case [] of	parser: image trigger never matches
-src/Cribrum/Djot/Parser.idr	endsWithBackslash s = go (reverse (unpack s))	endsWithBackslash s = False	parser: hardbreak detection disabled
+src/Cribrum/Djot/Parser.idr	stripHardBreakMarker ('\\' :: rs) = Just rs	stripHardBreakMarker ('\\' :: rs) = Nothing	parser: hardbreak detection disabled
 src/Cribrum/Djot/Parser.idr	    go ('\\' :: _) = True	    go ('\\' :: _) = False	parser: hardbreak trailing backslash inverted
 src/Cribrum/Djot/Parser.idr	      if endsWithBackslash cur	      if False	parser: hardbreak branch never taken
 src/Cribrum/Djot/Parser.idr	      if endsWithBackslash cur	      if True	parser: hardbreak branch always taken
