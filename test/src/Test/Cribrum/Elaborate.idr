@@ -26,6 +26,14 @@ heading n s = Heading emptyAttrs n [InlText s]
 doc : List Block -> Doc
 doc = MkDoc
 
+||| A fenced `:::cls` div carrying only classes (no id / pairs).
+divc : List String -> List Block -> Block
+divc cs = Div (MkAttrs Nothing cs [])
+
+||| An inline `[..]{.cls}` span carrying only classes (no id / pairs).
+spanc : List String -> List Inline -> Inline
+spanc cs = InlSpan (MkAttrs Nothing cs [])
+
 export
 ext_empty_doc_elaborates_to_empty_main : Property
 ext_empty_doc_elaborates_to_empty_main = oneShot $
@@ -554,6 +562,152 @@ ext_attrs_emit_class_before_id = oneShot $
               ]
               [Text "x"]]
 
+--------------------------------------------------------------------------------
+-- Convention §2: fenced-div → semantic-element promotion.
+--------------------------------------------------------------------------------
+
+||| `:::nav` promotes to `<nav>` and the convention class is CONSUMED —
+||| it never leaks into a `class` attribute (no-`div`-soup commitment).
+export
+ext_div_nav_promotes_and_consumes_class : Property
+ext_div_nav_promotes_and_consumes_class = oneShot $
+  elaborateBlock (divc ["nav"] [para "x"])
+    === Element "nav" [] [Element "p" [] [Text "x"]]
+
+export
+ext_div_aside_promotes : Property
+ext_div_aside_promotes = oneShot $
+  elaborateBlock (divc ["aside"] [para "n"])
+    === Element "aside" [] [Element "p" [] [Text "n"]]
+
+||| `:::figure` wraps a nested `:::figcaption`; each div promotes
+||| independently to its own semantic element.
+export
+ext_div_figure_with_figcaption_nests : Property
+ext_div_figure_with_figcaption_nests = oneShot $
+  elaborateBlock (divc ["figure"] [divc ["figcaption"] [para "cap"]])
+    === Element "figure" []
+          [Element "figcaption" [] [Element "p" [] [Text "cap"]]]
+
+export
+ext_div_header_promotes : Property
+ext_div_header_promotes = oneShot $
+  elaborateBlock (divc ["header"] [para "h"])
+    === Element "header" [] [Element "p" [] [Text "h"]]
+
+export
+ext_div_footer_promotes : Property
+ext_div_footer_promotes = oneShot $
+  elaborateBlock (divc ["footer"] [para "f"])
+    === Element "footer" [] [Element "p" [] [Text "f"]]
+
+||| `:::main` is the explicit override of the §3 `<main>`-wrapper
+||| inference.
+export
+ext_div_main_promotes : Property
+ext_div_main_promotes = oneShot $
+  elaborateBlock (divc ["main"] [para "m"])
+    === Element "main" [] [Element "p" [] [Text "m"]]
+
+||| `:::section` is the explicit override of the §1b heading→`<section>`
+||| inference.
+export
+ext_div_section_promotes : Property
+ext_div_section_promotes = oneShot $
+  elaborateBlock (divc ["section"] [para "s"])
+    === Element "section" [] [Element "p" [] [Text "s"]]
+
+||| A div whose classes are all non-convention stays a plain `<div>`
+||| and keeps every class. (Mutant-kill on `promoteDiv`'s default.)
+export
+ext_div_non_convention_stays_div : Property
+ext_div_non_convention_stays_div = oneShot $
+  elaborateBlock (divc ["note", "warning"] [para "x"])
+    === Element "div" [MkHAttr "class" (Str "note warning")]
+          [Element "p" [] [Text "x"]]
+
+||| The FIRST convention class (source order) drives promotion and is
+||| dropped; non-convention classes around it survive in order. Kills
+||| mutants that consume the wrong class or stop scanning early.
+export
+ext_div_first_convention_wins_residual_classes_kept : Property
+ext_div_first_convention_wins_residual_classes_kept = oneShot $
+  elaborateBlock (divc ["sidebar", "nav", "sticky"] [para "x"])
+    === Element "nav" [MkHAttr "class" (Str "sidebar sticky")]
+          [Element "p" [] [Text "x"]]
+
+||| `{role=}` / `{lang=}` annotations ride through untouched as pair
+||| attributes on the promoted element.
+export
+ext_div_role_lang_ride_through : Property
+ext_div_role_lang_ride_through = oneShot $
+  elaborateBlock
+    (Div (MkAttrs Nothing ["aside"] [("role", "note"), ("lang", "fr")])
+         [para "x"])
+    === Element "aside"
+          [ MkHAttr "role" (Str "note")
+          , MkHAttr "lang" (Str "fr")
+          ]
+          [Element "p" [] [Text "x"]]
+
+--------------------------------------------------------------------------------
+-- Convention §2 (span side): inline-span → semantic-phrasing promotion.
+--------------------------------------------------------------------------------
+
+||| `[..]{.abbr}` promotes to `<abbr>` and the convention class is
+||| CONSUMED — never leaks into a `class` attribute (no-`span`-soup).
+export
+ext_span_abbr_promotes_and_consumes_class : Property
+ext_span_abbr_promotes_and_consumes_class = oneShot $
+  elaborateInline (spanc ["abbr"] [InlText "HTML"])
+    === Element "abbr" [] [Text "HTML"]
+
+export
+ext_span_cite_promotes : Property
+ext_span_cite_promotes = oneShot $
+  elaborateInline (spanc ["cite"] [InlText "Moby-Dick"])
+    === Element "cite" [] [Text "Moby-Dick"]
+
+export
+ext_span_kbd_promotes : Property
+ext_span_kbd_promotes = oneShot $
+  elaborateInline (spanc ["kbd"] [InlText "Ctrl"])
+    === Element "kbd" [] [Text "Ctrl"]
+
+||| A span whose classes are all non-convention stays a plain `<span>`
+||| and keeps every class. Kills the `promoteSpan` default mutant and
+||| guards against the prior whole-attribute-block drop.
+export
+ext_span_non_convention_stays_span : Property
+ext_span_non_convention_stays_span = oneShot $
+  elaborateInline (spanc ["note", "warning"] [InlText "x"])
+    === Element "span" [MkHAttr "class" (Str "note warning")] [Text "x"]
+
+||| The FIRST convention class (source order) drives promotion and is
+||| dropped; non-convention classes around it survive in order. Kills
+||| mutants that consume the wrong class or stop scanning early.
+export
+ext_span_first_convention_wins_residual_classes_kept : Property
+ext_span_first_convention_wins_residual_classes_kept = oneShot $
+  elaborateInline (spanc ["lead", "cite", "fancy"] [InlText "x"])
+    === Element "cite" [MkHAttr "class" (Str "lead fancy")] [Text "x"]
+
+||| `id` / `{role=}` / `{lang=}` annotations ride through untouched on
+||| the promoted element. Direct regression for the prior bug where
+||| `InlSpan` dropped its entire `Attrs`.
+export
+ext_span_id_role_lang_ride_through : Property
+ext_span_id_role_lang_ride_through = oneShot $
+  elaborateInline
+    (InlSpan (MkAttrs (Just "t1") ["time"] [("role", "note"), ("lang", "fr")])
+             [InlText "x"])
+    === Element "time"
+          [ MkHAttr "id" (Str "t1")
+          , MkHAttr "role" (Str "note")
+          , MkHAttr "lang" (Str "fr")
+          ]
+          [Text "x"]
+
 export
 group : Group
 group = MkGroup "Cribrum.Elaborate"
@@ -595,4 +749,23 @@ group = MkGroup "Cribrum.Elaborate"
   , ("ext_tight_ul_collapses_paragraph_wrap",  ext_tight_ul_collapses_paragraph_wrap)
   , ("ext_loose_ul_keeps_paragraph_wrap",      ext_loose_ul_keeps_paragraph_wrap)
   , ("ext_attrs_emit_class_before_id",         ext_attrs_emit_class_before_id)
+  , ("ext_div_nav_promotes_and_consumes_class", ext_div_nav_promotes_and_consumes_class)
+  , ("ext_div_aside_promotes",                 ext_div_aside_promotes)
+  , ("ext_div_figure_with_figcaption_nests",   ext_div_figure_with_figcaption_nests)
+  , ("ext_div_header_promotes",                ext_div_header_promotes)
+  , ("ext_div_footer_promotes",                ext_div_footer_promotes)
+  , ("ext_div_main_promotes",                  ext_div_main_promotes)
+  , ("ext_div_section_promotes",               ext_div_section_promotes)
+  , ("ext_div_non_convention_stays_div",       ext_div_non_convention_stays_div)
+  , ("ext_div_first_convention_wins_residual_classes_kept",
+        ext_div_first_convention_wins_residual_classes_kept)
+  , ("ext_div_role_lang_ride_through",         ext_div_role_lang_ride_through)
+  , ("ext_span_abbr_promotes_and_consumes_class",
+        ext_span_abbr_promotes_and_consumes_class)
+  , ("ext_span_cite_promotes",                 ext_span_cite_promotes)
+  , ("ext_span_kbd_promotes",                  ext_span_kbd_promotes)
+  , ("ext_span_non_convention_stays_span",     ext_span_non_convention_stays_span)
+  , ("ext_span_first_convention_wins_residual_classes_kept",
+        ext_span_first_convention_wins_residual_classes_kept)
+  , ("ext_span_id_role_lang_ride_through",     ext_span_id_role_lang_ride_through)
   ]

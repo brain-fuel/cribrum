@@ -187,7 +187,7 @@ Each module has:
 - **PBTs** (property-based tests via hedgehog) — invariants over generated
   inputs.
 
-## Mutation gate (209 mutants, 0 surviving)
+## Mutation gate (215 mutants, 0 surviving)
 
 ```
 $ test/mutation/run.sh                # changed-file scope (default)
@@ -285,10 +285,17 @@ through Cribrum's own pipeline (matching `README.dj`'s role).
   manually by loading `examples/teaweb/counter/index.html` (no
   automated browser test in CI yet). `removeEventListener` deferred
   to keyed-children diff.
-- **Convention layer**: §2 of `docs/conventions.md` is mostly deferred —
-  elaboration wraps blocks in `<main>` and infers heading-level sequences
-  into nested `<section>` landmarks (plan §1b), but `:::nav` / `:::aside`
-  etc. don't promote to their semantic elements yet.
+- **Convention layer**: §2 of `docs/conventions.md` — class-driven semantic
+  promotion now lands on **both axes**. Block side (`promoteDiv`): `:::nav`,
+  `:::aside`, `:::figure`/`:::figcaption`, `:::header`/`:::footer`,
+  `:::section`, `:::main` promote fenced divs to their landmark/sectioning
+  element. Inline side (`promoteSpan`): `[..]{.abbr|.cite|.dfn|.kbd|.samp|`
+  `.var|.time|.q}` promote spans to phrasing elements. First convention
+  class wins and is consumed; remaining classes + `id`/`role`/`lang`/pairs
+  ride through. Elaboration also wraps blocks in `<main>` and infers
+  heading-level sequences into nested `<section>` landmarks (plan §1b).
+  §3 inference rules (nav-region, etc.) and footnote-def → `<aside>` remain
+  deferred.
 - **Ingest pipeline**: Both gates shipped — HTML content model (114
   elements, `Cribrum.Html.Model.Generated` from `ingest/content-model.ts`
   + `@webref/elements@2.6.0` cross-validation) AND the AA catalog

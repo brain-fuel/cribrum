@@ -207,3 +207,9 @@ src/Cribrum/Elaborate.idr	      classAttr = case classes of	      classAttr = []
 src/Cribrum/Elaborate.idr	      idAttr = case ident of	      idAttr = []	elaborate: id never emitted in attrsToHAttrs
 src/Cribrum/Elaborate.idr	if tight	if False	elaborate: tight-list collapse never fires (always wraps in <p>)
 src/Cribrum/Elaborate.idr	if tight	if True	elaborate: tight-list collapse always fires (drops <p> on loose lists)
+src/Cribrum/Elaborate.idr	divConventionTag "nav"        = Just "nav"	divConventionTag "nav"        = Nothing	elaborate: :::nav not promoted (stays div)
+src/Cribrum/Elaborate.idr	  Just tag => (tag, cs)	  Just tag => (tag, c :: cs)	elaborate: convention class not consumed (leaks into class attr)
+src/Cribrum/Elaborate.idr	  Nothing  => let (tag, cs') = promoteDiv cs in (tag, c :: cs')	  Nothing  => let (tag, cs') = promoteDiv cs in (tag, cs')	elaborate: promoteDiv drops non-convention classes
+src/Cribrum/Elaborate.idr	spanConventionTag "abbr" = Just "abbr"	spanConventionTag "abbr" = Nothing	elaborate: span .abbr not promoted (stays span)
+src/Cribrum/Elaborate.idr	promoteSpan []        = ("span", [])	promoteSpan []        = ("div", [])	elaborate: span fallthrough tag wrong (div not span)
+src/Cribrum/Elaborate.idr	let (tag, cs') = promoteSpan cs in (tag, c :: cs')	let (tag, cs') = promoteSpan cs in (tag, cs')	elaborate: promoteSpan drops non-convention classes

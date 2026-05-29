@@ -42,7 +42,7 @@ honour.
 | List (definition)     | `<dl>` + `<dt>` + `<dd>`   | deferred | `term` carried separately. |
 | Code block (fenced)   | `<pre><code>`              | spike    | `info` string parsed but not yet promoted to language class (deferred). |
 | Raw block             | (passthrough)              | deferred | Format tag `html` injects literal; other tags suppressed. |
-| Div (fenced)          | (see conventions §2)       | deferred | Class drives semantic-element promotion. |
+| Div (fenced)          | (see conventions §2)       | spike    | Convention class drives semantic-element promotion; else `<div>`. |
 | Pipe table            | `<table>`, `<thead>`, ...  | deferred | Column alignment becomes `style="text-align: ..."`. |
 | Reference link def    | (no visible output)        | deferred | Captured for link resolution. |
 | Footnote def          | `<aside class="footnote">` | deferred | Anchored by label. |
@@ -85,15 +85,44 @@ HTML from a stock-Djot input. Each entry is an EXPLICIT convention: an
 authoring class that elaboration consumes (and removes from the output) to
 emit a specific semantic element.
 
-| Source                       | Becomes                | Slice    |
-|------------------------------|------------------------|----------|
-| `:::nav` ... `:::`           | `<nav>`                | deferred |
-| `:::aside` ... `:::`         | `<aside>`              | deferred |
-| `:::figure` + `:::figcaption`| `<figure>`/`<figcaption>` | deferred |
-| `:::main` ... `:::`          | `<main>`               | spike    | Currently inferred as the document wrapper, not a class. |
-| `:::header` / `:::footer`    | `<header>` / `<footer>`| deferred |
-| `{role="..."}` attribute     | `role` ARIA attribute  | deferred | Validity enforced by Phase 4 ARIA-role check. |
-| `{lang="..."}` attribute     | `lang` attribute       | deferred | Phase 4: document-language structural rule. |
+| Source                       | Becomes                | Slice    | Notes |
+|------------------------------|------------------------|----------|-------|
+| `:::nav` ... `:::`           | `<nav>`                | spike    | First convention class wins; consumed from `class`. |
+| `:::aside` ... `:::`         | `<aside>`              | spike    | |
+| `:::figure` + `:::figcaption`| `<figure>`/`<figcaption>` | spike | Each div promotes independently; nest `:::figcaption` inside `:::figure`. |
+| `:::main` ... `:::`          | `<main>`               | spike    | Explicit override of the §3 `<main>`-wrapper inference. |
+| `:::header` / `:::footer`    | `<header>` / `<footer>`| spike    | |
+| `:::section` ... `:::`       | `<section>`            | spike    | Explicit override of the §3 heading→`<section>` inference. |
+| `{role="..."}` attribute     | `role` ARIA attribute  | spike    | Rides through as a pair attr; validity enforced by Phase 4 ARIA-role check. |
+| `{lang="..."}` attribute     | `lang` attribute       | spike    | Rides through as a pair attr; Phase 4: document-language structural rule. |
+
+Promotion rule (`Cribrum.Elaborate.promoteDiv`): the **first** class in
+source order matching the convention set (`nav`, `aside`, `figure`,
+`figcaption`, `header`, `footer`, `section`, `main`) drives the element tag
+and is **removed** from the emitted `class`; remaining classes survive in
+order. No convention class → plain `<div>`. Other annotations (`id`, `role`,
+`lang`, arbitrary `key=value`) pass through untouched via `attrsToHAttrs`.
+
+The same promotion applies on the **inline** axis: a `[text]{.cls}` span is
+promoted to a semantic *phrasing* element by an authoring class.
+
+| Source                       | Becomes                | Slice    | Notes |
+|------------------------------|------------------------|----------|-------|
+| `[..]{.abbr}`                | `<abbr>`               | spike    | First convention class wins; consumed from `class`. |
+| `[..]{.cite}`                | `<cite>`               | spike    | |
+| `[..]{.dfn}`                 | `<dfn>`                | spike    | Defining instance of a term. |
+| `[..]{.kbd}`                 | `<kbd>`                | spike    | |
+| `[..]{.samp}`                | `<samp>`               | spike    | Sample / program output. |
+| `[..]{.var}`                 | `<var>`                | spike    | |
+| `[..]{.time}`                | `<time>`               | spike    | `{datetime=}` rides through as a pair attr. |
+| `[..]{.q}`                   | `<q>`                  | spike    | Inline quotation. |
+
+Span promotion rule (`Cribrum.Elaborate.promoteSpan`): the inline mirror of
+`promoteDiv` — the **first** class matching the span convention set (`abbr`,
+`cite`, `dfn`, `kbd`, `samp`, `var`, `time`, `q`) drives the phrasing tag and
+is **removed** from the emitted `class`; remaining classes survive in order.
+No convention class → plain `<span>`. `id` and arbitrary `key=value` pairs
+pass through untouched via `attrsToHAttrs`.
 
 The full list lives here; PRs add rows alongside the elaborator slice that
 implements them.

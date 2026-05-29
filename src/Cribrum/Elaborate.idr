@@ -154,6 +154,80 @@ decStructuralAA h = case decImgsAllOk h of
                                                  , p8, p9, p10, p11
                                                  , p12, p13, p14, p15, p16)
 
+||| Convert a Djot `Attrs` into the HTML attribute list. Emission
+||| order (matching the reference Djot renderer):
+|||
+|||   class=... (joined by spaces, in source order, no dedupe)
+|||   id=...    (if present)
+|||   <other pairs in source order, last-value-wins per key>
+|||
+||| `class` / `id` keys appearing in `pairs` are folded into the
+||| structured `classes` / `identifier` fields rather than emitted
+||| twice.
+public export
+attrsToHAttrs : Attrs -> List HAttr
+attrsToHAttrs (MkAttrs ident classes pairs) =
+  let classAttr : List HAttr
+      classAttr = case classes of
+        [] => []
+        cs => [MkHAttr "class" (Str (joinWith " " cs))]
+      idAttr : List HAttr
+      idAttr = case ident of
+        Just i  => [MkHAttr "id" (Str i)]
+        Nothing => []
+      others : List HAttr
+      others = map mkPairAttr (dedupeLastWins pairs)
+   in classAttr ++ idAttr ++ others
+  where
+    joinWith : String -> List String -> String
+    joinWith _   []        = ""
+    joinWith _   [x]       = x
+    joinWith sep (x :: xs) = x ++ sep ++ joinWith sep xs
+
+    mkPairAttr : (String, String) -> HAttr
+    mkPairAttr (k, v) = MkHAttr k (Str v)
+
+    -- Keep the LAST occurrence of each key, preserving the original
+    -- relative order of distinct keys (first-seen position).
+    dedupeLastWins : List (String, String) -> List (String, String)
+    dedupeLastWins ps =
+      let keys = nub (map fst ps)
+       in mapMaybe (\k => map (\v => (k, v)) (lookupLast k ps)) keys
+    where
+      lookupLast : String -> List (String, String) -> Maybe String
+      lookupLast _ []                = Nothing
+      lookupLast k ((k', v) :: rest) =
+        case lookupLast k rest of
+          Just v' => Just v'
+          Nothing => if k == k' then Just v else Nothing
+
+||| Class names that promote an inline `[..]{.cls}` span to a semantic
+||| phrasing element (convention catalog §2, span side — the
+||| no-`span`-soup commitment). The inline mirror of `divConventionTag`:
+||| the matched class is the authoring hint and is CONSUMED by
+||| `promoteSpan`, so it never leaks into the emitted `class` attribute.
+spanConventionTag : String -> Maybe String
+spanConventionTag "abbr" = Just "abbr"
+spanConventionTag "cite" = Just "cite"
+spanConventionTag "dfn"  = Just "dfn"
+spanConventionTag "kbd"  = Just "kbd"
+spanConventionTag "samp" = Just "samp"
+spanConventionTag "var"  = Just "var"
+spanConventionTag "time" = Just "time"
+spanConventionTag "q"    = Just "q"
+spanConventionTag _      = Nothing
+
+||| Resolve an inline span's class list to its emitted phrasing tag.
+||| The FIRST convention class (source order) drives promotion and is
+||| dropped from the returned residual class list; non-convention
+||| classes are preserved in order. With no convention class the span
+||| stays a plain `<span>` and all classes survive.
+promoteSpan : List String -> (String, List String)
+promoteSpan []        = ("span", [])
+promoteSpan (c :: cs) = case spanConventionTag c of
+  Just tag => (tag, cs)
+  Nothing  => let (tag, cs') = promoteSpan cs in (tag, c :: cs')
+
 --------------------------------------------------------------------------------
 -- Inline elaboration.
 --------------------------------------------------------------------------------
@@ -247,8 +321,13 @@ elaborateInline (InlMath _ s)      = Element "code" [] [Text s]
 elaborateInline (InlFootnoteRef l) = Text ("[" ++ l ++ "]")
 elaborateInline (InlSymbol n)      = Text (":" ++ n ++ ":")
 elaborateInline (InlRaw _ s)       = Text s
-elaborateInline (InlSpan _ xs)     =
-  Element "span" [] (assert_total (map elaborateInline xs))
+elaborateInline (InlSpan (MkAttrs ident classes pairs) xs) =
+  -- Convention §2 (span side): a convention class promotes the span to a
+  -- semantic phrasing element and is consumed; `{role=}`/`{lang=}` and the
+  -- rest ride through. Previously the whole attribute block was dropped.
+  let (tag, classes') = promoteSpan classes
+   in Element tag (attrsToHAttrs (MkAttrs ident classes' pairs))
+        (assert_total (map elaborateInline xs))
 elaborateInline (InlSmart sp) = case sp of
   LDQuote  => Text "\x201C"   -- “
   RDQuote  => Text "\x201D"   -- ”
@@ -275,52 +354,33 @@ headingTag 5 = "h5"
 headingTag 6 = "h6"
 headingTag _ = "h1"
 
-||| Convert a Djot `Attrs` into the HTML attribute list. Emission
-||| order (matching the reference Djot renderer):
-|||
-|||   class=... (joined by spaces, in source order, no dedupe)
-|||   id=...    (if present)
-|||   <other pairs in source order, last-value-wins per key>
-|||
-||| `class` / `id` keys appearing in `pairs` are folded into the
-||| structured `classes` / `identifier` fields rather than emitted
-||| twice.
-public export
-attrsToHAttrs : Attrs -> List HAttr
-attrsToHAttrs (MkAttrs ident classes pairs) =
-  let classAttr : List HAttr
-      classAttr = case classes of
-        [] => []
-        cs => [MkHAttr "class" (Str (joinWith " " cs))]
-      idAttr : List HAttr
-      idAttr = case ident of
-        Just i  => [MkHAttr "id" (Str i)]
-        Nothing => []
-      others : List HAttr
-      others = map mkPairAttr (dedupeLastWins pairs)
-   in classAttr ++ idAttr ++ others
-  where
-    joinWith : String -> List String -> String
-    joinWith _   []        = ""
-    joinWith _   [x]       = x
-    joinWith sep (x :: xs) = x ++ sep ++ joinWith sep xs
+||| Class names that promote a fenced `:::cls` div to a semantic
+||| landmark / sectioning element (convention catalog §2 — the
+||| no-`div`-soup commitment). The matched class is the authoring hint;
+||| it is CONSUMED by `promoteDiv` so it never leaks into the emitted
+||| `class` attribute. `main`/`section` are accepted as explicit
+||| overrides of the structural inference in §3.
+divConventionTag : String -> Maybe String
+divConventionTag "nav"        = Just "nav"
+divConventionTag "aside"      = Just "aside"
+divConventionTag "figure"     = Just "figure"
+divConventionTag "figcaption" = Just "figcaption"
+divConventionTag "header"     = Just "header"
+divConventionTag "footer"     = Just "footer"
+divConventionTag "section"    = Just "section"
+divConventionTag "main"       = Just "main"
+divConventionTag _            = Nothing
 
-    mkPairAttr : (String, String) -> HAttr
-    mkPairAttr (k, v) = MkHAttr k (Str v)
-
-    -- Keep the LAST occurrence of each key, preserving the original
-    -- relative order of distinct keys (first-seen position).
-    dedupeLastWins : List (String, String) -> List (String, String)
-    dedupeLastWins ps =
-      let keys = nub (map fst ps)
-       in mapMaybe (\k => map (\v => (k, v)) (lookupLast k ps)) keys
-    where
-      lookupLast : String -> List (String, String) -> Maybe String
-      lookupLast _ []                = Nothing
-      lookupLast k ((k', v) :: rest) =
-        case lookupLast k rest of
-          Just v' => Just v'
-          Nothing => if k == k' then Just v else Nothing
+||| Resolve a fenced div's class list to its emitted element tag.
+||| The FIRST convention class (source order) drives promotion and is
+||| dropped from the returned residual class list; non-convention
+||| classes are preserved in order. With no convention class the div
+||| stays a plain `<div>` and all classes survive.
+promoteDiv : List String -> (String, List String)
+promoteDiv []        = ("div", [])
+promoteDiv (c :: cs) = case divConventionTag c of
+  Just tag => (tag, cs)
+  Nothing  => let (tag, cs') = promoteDiv cs in (tag, c :: cs')
 
 public export
 elaborateBlock : Block -> HExpr
@@ -333,9 +393,12 @@ elaborateBlock (ThematicBreak a) =
 elaborateBlock (BlockQuote a bs) =
   Element "blockquote" (attrsToHAttrs a)
     (assert_total (map elaborateBlock bs))
-elaborateBlock (Div a bs) =
-  Element "div" (attrsToHAttrs a)
-    (assert_total (map elaborateBlock bs))
+elaborateBlock (Div (MkAttrs ident classes pairs) bs) =
+  -- Convention §2: a convention class promotes the div to a semantic
+  -- element and is consumed; `{role=}`/`{lang=}` ride through as pairs.
+  let (tag, classes') = promoteDiv classes
+   in Element tag (attrsToHAttrs (MkAttrs ident classes' pairs))
+        (assert_total (map elaborateBlock bs))
 elaborateBlock (CodeBlock a info body) =
   let codeAttrs : List HAttr
       codeAttrs = case info of
