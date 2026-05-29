@@ -62,6 +62,7 @@ hasHrefAttr (_                :: xs) = hasHrefAttr xs
 collectText : HExpr -> String
 collectText (Text s)         = s
 collectText (Comment _)      = ""
+collectText (Raw _)          = ""
 collectText (Element _ _ cs) = concatMap (assert_total collectText) cs
 
 hasAccessibleName : List HAttr -> List HExpr -> Bool

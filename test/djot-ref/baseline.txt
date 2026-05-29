@@ -99,6 +99,9 @@ lists-001
 lists-015
 lists-030
 para-001
+raw-001
+raw-002
+raw-004
 smart-016
 smart-018
 task-lists-001

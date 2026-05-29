@@ -220,3 +220,11 @@ src/Cribrum/Elaborate.idr	MkHAttr "href" (Str ("#fn-" ++ l))	MkHAttr "href" (Str
 src/Cribrum/Preprocess.idr	if path == "" then Nothing else Just path	if path == "" then Just path else Nothing	preprocess: include directive empty-path guard inverted
 src/Cribrum/Preprocess.idr	if elem r.key visited	if False	preprocess: cycle detection disabled (never fires)
 src/Cribrum/Preprocess.idr	(top :: rest) => if top == ".." then ".." :: acc else rest	(top :: rest) => if top == ".." then ".." :: acc else acc	preprocess: normalizePath .. never pops parent segment
+src/Cribrum/Elaborate.idr	then Raw body else Text ""	then Text body else Text ""	elaborate: raw-block html escapes instead of passthrough
+src/Cribrum/Elaborate.idr	then Raw body else Text ""	then Raw body else Text body	elaborate: raw-block non-html no longer suppressed
+src/Cribrum/Elaborate.idr	then Raw s else Text ""	then Text s else Text ""	elaborate: raw-inline html escapes instead of passthrough
+src/Cribrum/Elaborate.idr	(Str "main")) = True	(Str "main")) = False	elaborate: role=main not recognised as a main landmark
+src/Cribrum/Elaborate.idr	if isMainLandmark single	if False	elaborate: main-landmark override never fires (double-wraps)
+src/Cribrum/Elaborate.idr	if isMainLandmark single	if True	elaborate: main wrapper always steps aside (unwraps plain body)
+src/Cribrum/Djot/Parser.idr	('=' :: fmt) => RawBlock (trim (pack fmt)) b	('=' :: fmt) => CodeBlock emptyAttrs info b	parser: =FORMAT fence not recognised as raw block
+src/Cribrum/Djot/Parser.idr	not (any isSpace inner)	(any isSpace inner)	parser: raw-inline whitespace guard inverted

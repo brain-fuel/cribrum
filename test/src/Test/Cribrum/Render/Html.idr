@@ -32,6 +32,15 @@ ext_comment_unescaped : Property
 ext_comment_unescaped = oneShot $
   renderHtml (Comment "x < y") === "<!-- x < y -->"
 
+||| A `Raw` node renders verbatim — NO escaping, NO wrapping. This is the
+||| passthrough contract (Djot `=html`); the markup the author injected
+||| reaches the output untouched.
+export
+ext_raw_unescaped_passthrough : Property
+ext_raw_unescaped_passthrough = oneShot $
+  renderHtml (Raw "<table><tr><td>x & y</td></tr></table>")
+    === "<table><tr><td>x & y</td></tr></table>"
+
 export
 ext_empty_p : Property
 ext_empty_p = oneShot $
@@ -196,6 +205,7 @@ group = MkGroup "Cribrum.Render.Html"
   [ ("ext_text_escaped",                  ext_text_escaped)
   , ("ext_text_quotes_escaped",           ext_text_quotes_escaped)
   , ("ext_comment_unescaped",             ext_comment_unescaped)
+  , ("ext_raw_unescaped_passthrough",     ext_raw_unescaped_passthrough)
   , ("ext_empty_p",                       ext_empty_p)
   , ("ext_p_with_text",                   ext_p_with_text)
   , ("ext_nested_section",                ext_nested_section)

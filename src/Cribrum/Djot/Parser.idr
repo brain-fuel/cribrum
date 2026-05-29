@@ -100,6 +100,22 @@ findClose c (x :: xs) =
       Just (ins, rest) => Just (x :: ins, rest)
       Nothing          => Nothing
 
+||| Recognise a raw-format attribute immediately following an inline
+||| verbatim span: `{=FORMAT}` where FORMAT is a single non-empty token
+||| with no internal whitespace (e.g. `` `<a>`{=html} ``). Returns
+||| `(format, rest-after-the-brace)`, or `Nothing` if `cs` does not open
+||| with such an attribute. A brace carrying anything beyond the bare
+||| `=FORMAT` token (e.g. `{=html #id}`) is rejected, so it falls back to
+||| an ordinary verbatim span — matching the reference renderer.
+takeRawFormatAttr : List Char -> Maybe (String, List Char)
+takeRawFormatAttr ('{' :: '=' :: rest) = case findClose '}' rest of
+  Just (inner, after) =>
+    if inner /= [] && not (any isSpace inner)
+      then Just (pack inner, after)
+      else Nothing
+  Nothing => Nothing
+takeRawFormatAttr _ = Nothing
+
 ||| Scan `cs` for the first occurrence of the two-character closer
 ||| `c1 c2` (in order). Returns body before the closer and the rest
 ||| after it. Used by `{+...+}` / `{-...-}` / `{=...=}` spans.
@@ -377,9 +393,17 @@ mutual
             Just (inner, after) =>
               if inner == []
                 then assert_total (parseInlinesAcc ('`' :: acc) cs)
-                else flushAcc acc
-                  ++ [InlVerbatim emptyAttrs (pack (verbatimStrip inner))]
-                  ++ assert_total (parseInlinesAcc [] after)
+                else case takeRawFormatAttr after of
+                  -- `` `…`{=fmt} `` — raw inline of the named format. The
+                  -- elaborator gates on `fmt` (html injects, else suppressed).
+                  Just (fmt, after') =>
+                    flushAcc acc
+                      ++ [InlRaw fmt (pack (verbatimStrip inner))]
+                      ++ assert_total (parseInlinesAcc [] after')
+                  Nothing =>
+                    flushAcc acc
+                      ++ [InlVerbatim emptyAttrs (pack (verbatimStrip inner))]
+                      ++ assert_total (parseInlinesAcc [] after)
             Nothing =>
               -- Unclosed opener: per spec, consumes the rest of the
               -- inline content. (The inline parser runs per line, so
@@ -1602,7 +1626,13 @@ mutual
   groupToBlock (QuoteGroup  gs)   =
     BlockQuote emptyAttrs (assert_total (groupsToBlocks gs))
   groupToBlock (CodeGroup info b) =
-    CodeBlock emptyAttrs info b
+    -- Djot raw block: a fenced block whose info string is `=FORMAT`
+    -- (leading `=`) is raw passthrough of the named format, not a code
+    -- block. The elaborator gates on the format (`html` injects literal,
+    -- others are suppressed — conventions §1).
+    case unpack info of
+      ('=' :: fmt) => RawBlock (trim (pack fmt)) b
+      _            => CodeBlock emptyAttrs info b
   groupToBlock (TableGroup rows)  = tableGroupToBlock rows
   groupToBlock (DefListGroup rs)  = defListGroupToBlock rs
   groupToBlock (FootnoteGroup l body) = footnoteGroupToBlock l body

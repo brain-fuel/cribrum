@@ -57,6 +57,12 @@ prim__createTextNode : String -> PrimIO DomNode
 %foreign "browser:lambda:(text)=>document.createComment(text)"
 prim__createComment : String -> PrimIO DomNode
 
+-- Raw passthrough: parse an HTML string into a DocumentFragment via a
+-- detached <template>, returning the fragment. appendChild on a fragment
+-- splices its children in place, so a multi-node raw block lands correctly.
+%foreign "browser:lambda:(html)=>{ const t=document.createElement('template'); t.innerHTML=html; return t.content; }"
+prim__createRawFragment : String -> PrimIO DomNode
+
 %foreign "browser:lambda:(node,name,value)=>node.setAttribute(name,value)"
 prim__setAttribute : DomNode -> String -> String -> PrimIO ()
 
@@ -222,6 +228,10 @@ createComment : String -> IO DomNode
 createComment s = fromPrim (prim__createComment s)
 
 export
+createRawFragment : String -> IO DomNode
+createRawFragment s = fromPrim (prim__createRawFragment s)
+
+export
 setAttribute : DomNode -> String -> String -> IO ()
 setAttribute n k v = fromPrim (prim__setAttribute n k v)
 
@@ -279,6 +289,7 @@ export
 renderDom : HExpr -> IO DomNode
 renderDom (Text s)    = createTextNode s
 renderDom (Comment s) = createComment s
+renderDom (Raw s)     = createRawFragment s
 renderDom (Element tag attrs children) = do
   node <- createElement tag
   -- Attach attrs (incl. handler attrs).

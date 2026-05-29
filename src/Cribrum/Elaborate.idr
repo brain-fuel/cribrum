@@ -326,7 +326,12 @@ elaborateInline (InlFootnoteRef l) =
   Element "a" [MkHAttr "href" (Str ("#fn-" ++ l))]
     [Element "sup" [] [Text l]]
 elaborateInline (InlSymbol n)      = Text (":" ++ n ++ ":")
-elaborateInline (InlRaw _ s)       = Text s
+elaborateInline (InlRaw fmt s)     =
+  -- Raw-inline gating (conventions §1, "Raw inline" row): the `html`
+  -- format injects its content verbatim as a `Raw` passthrough node;
+  -- every other format is suppressed (no output), matching the
+  -- reference renderer which drops raw spans of unknown formats.
+  if fmt == "html" then Raw s else Text ""
 elaborateInline (InlSpan (MkAttrs ident classes pairs) xs) =
   -- Convention §2 (span side): a convention class promotes the span to a
   -- semantic phrasing element and is consumed; `{role=}`/`{lang=}` and the
@@ -411,7 +416,11 @@ elaborateBlock (CodeBlock a info body) =
         "" => []
         i  => [MkHAttr "class" (Str ("language-" ++ i))]
    in Element "pre" (attrsToHAttrs a) [Element "code" codeAttrs [Text body]]
-elaborateBlock (RawBlock _ body) = Text body
+elaborateBlock (RawBlock fmt body) =
+  -- Raw-block gating (conventions §1, "Raw block" row): `=html` fenced
+  -- blocks inject their body verbatim as a `Raw` passthrough node; raw
+  -- blocks tagged with any other format are suppressed (no output).
+  if fmt == "html" then Raw body else Text ""
 elaborateBlock (ListBlock _ style _ tight items) =
   let tag = case style of
               OrderedDecimal     => "ol"
@@ -599,17 +608,34 @@ sectionize (b :: bs) = case headingBlockLevel b of
 |||
 ||| Convention §3 "inference with override": the `<main>` wrapper is an
 ||| *inference*. When the document body already supplies its own `<main>`
-||| landmark as its whole content (e.g. a top-level `:::main` fenced div,
-||| which `promoteDiv` turns into `<main>`), the explicit landmark wins
-||| and we emit it directly — wrapping it again would nest `<main>` in
-||| `<main>` and fail the `unique-main` structural rule. The narrower
-||| `{role=main}` override and mixed main+sibling layouts stay deferred.
+||| landmark as its whole content, the explicit landmark wins and we emit
+||| it directly — wrapping it again would produce two main landmarks and
+||| fail the `unique-main` structural rule. Two authoring forms count as an
+||| explicit main:
+|||
+|||   * a top-level `:::main` fenced div (`promoteDiv` → `<main>` tag);
+|||   * a top-level element carrying `role="main"` (the ARIA main
+|||     landmark, e.g. `:::{role=main}` → `<div role="main">`).
+|||
+||| Either as the document's whole content steps the wrapper aside. Mixed
+||| main+sibling layouts stay deferred.
+isMainLandmark : HExpr -> Bool
+isMainLandmark (Element "main" _ _) = True
+isMainLandmark (Element _ attrs _)  = any isRoleMain attrs
+  where
+    isRoleMain : HAttr -> Bool
+    isRoleMain (MkHAttr "role" (Str "main")) = True
+    isRoleMain _                             = False
+isMainLandmark _                    = False
+
 public export
 elaborateDoc : Doc -> HExpr
 elaborateDoc (MkDoc bs) =
   case sectionize (filter (not . isInvisibleBlock) bs) of
-    [Element "main" attrs cs] => Element "main" attrs cs
-    children                  => Element "main" [] children
+    [single] => if isMainLandmark single
+                  then single
+                  else Element "main" [] [single]
+    children => Element "main" [] children
 
 ||| Strict elaboration: returns the HExpr together with proofs of validity
 ||| and structural accessibility. Per plan.dj §Governing principle, callers

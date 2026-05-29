@@ -56,6 +56,7 @@ ext_walk_preorder = oneShot $
     describe (Element t _ _) = "E:" ++ t
     describe (Text s)        = "T:" ++ s
     describe (Comment s)     = "C:" ++ s
+    describe (Raw s)         = "R:" ++ s
 
 export
 ext_descendants_excludes_root : Property

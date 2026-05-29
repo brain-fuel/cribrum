@@ -41,7 +41,7 @@ honour.
 | List (task)           | `<ul>` + `<li>` w/ checkbox| deferred | Renders `<input type="checkbox" disabled>` first child. |
 | List (definition)     | `<dl>` + `<dt>` + `<dd>`   | deferred | `term` carried separately. |
 | Code block (fenced)   | `<pre><code>`              | spike    | `info` string parsed but not yet promoted to language class (deferred). |
-| Raw block             | (passthrough)              | deferred | Format tag `html` injects literal; other tags suppressed. |
+| Raw block             | `Raw` (passthrough)        | spike    | `=html` fenced block (`` ``` =html ``) injects its body verbatim as an unescaped `Raw` node; any other format is suppressed (no output). |
 | Div (fenced)          | (see conventions §2)       | spike    | Convention class drives semantic-element promotion; else `<div>`. |
 | Pipe table            | `<table>`, `<thead>`, ...  | deferred | Column alignment becomes `style="text-align: ..."`. |
 | Reference link def    | (no visible output)        | deferred | Captured for link resolution. |
@@ -68,7 +68,7 @@ honour.
 | Math (inline/display) | `<code>`                   | placeholder | MathJax-style `\\(...\\)` mapping later. |
 | Footnote reference    | `<a href="#fn-label"><sup>label</sup></a>` | spike | Intra-document anchor to the `fn-<label>` aside; no upstream-style renumbering. Dangling if no matching def. |
 | Symbol (`:name:`)     | `Text ":name:"`            | placeholder | Emoji/symbol table later. |
-| Raw inline            | `Text` (passthrough)       | spike    | Format gating deferred. |
+| Raw inline            | `Raw` (passthrough)        | spike    | `` `…`{=html} `` injects its content verbatim as an unescaped `Raw` node; any other format is suppressed. A `{=fmt …}` brace carrying anything beyond the bare `=fmt` token falls back to ordinary verbatim. |
 | Span                  | `<span>`                   | spike    | Class-driven semantic promotion — see §2. |
 | Smart punctuation     | Unicode `Text`             | spike    | “ ” ‘ ’ – — … |
 
@@ -134,7 +134,7 @@ implements them.
 | Inference                                       | Status | Override |
 |-------------------------------------------------|--------|----------|
 | Consecutive headings of decreasing level → nested `<section>` | done (`sectionize`) | `:::section` fenced div explicitly demarcates. |
-| Document body → single `<main>` wrapper         | done (`elaborateDoc`) | A body that is itself an explicit `<main>` (top-level `:::main`) wins — the wrapper steps aside instead of nesting `<main>` in `<main>`. `{role=main}` + mixed main+sibling layouts deferred. |
+| Document body → single `<main>` wrapper         | done (`elaborateDoc`) | A body that is itself an explicit main landmark wins — the wrapper steps aside instead of producing two mains. Two forms count: a top-level `:::main` (→ `<main>` tag) **and** a top-level element carrying `role="main"` (the ARIA form, e.g. `:::{role=main}`). Both decided by `isMainLandmark`. Mixed main+sibling layouts stay deferred. |
 | "This region is a `<nav>`"                       | **not inferred** — explicit-only | `:::nav` (§2). Per plan.dj §central design commitment, nav semantics cannot be safely inferred from structure and *require* an explicit convention annotation. |
 
 The **inference with override** policy (plan.dj §central design commitment):

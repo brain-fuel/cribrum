@@ -60,9 +60,10 @@
 > normalises whitespace + strips the `<main>` wrapper, and compares
 > against the expected reference output. A baseline file
 > (`test/djot-ref/baseline.txt`) lists currently-passing tests;
-> regressions fail the gate, additions are tracked. **113 / 246**
+> regressions fail the gate, additions are tracked. **116 / 246**
 > upstream-ingested tests now pass at the baseline (full `jgm/djot`
-> corpus ingestion shipped). **Step 11 parser remainder** (P5.4
+> corpus ingestion shipped; the latest +3 are the `raw-*` cases — see the
+> raw-passthrough note below). **Step 11 parser remainder** (P5.4
 > remainder): tight ul/ol list collapse (single-`Paragraph` items
 > drop their `<p>` wrap in `<li>` for tight lists, matching the
 > reference renderer); footnote refs (`[^label]` parses to
@@ -171,15 +172,15 @@ $ make test             # adds ingest drift gate + mutation gate
 ```
 
 Counts per group: 18 Node + 16 Surface + 130 Parser + 20 Model + 52 Valid
-+ 33 Elaborate + 17 Render.Html + 1 Render.Dom + 56 AA.Pass + 88 AA.Typed
++ 41 Elaborate + 18 Render.Html + 1 Render.Dom + 56 AA.Pass + 88 AA.Typed
 + 5 AA.Partition + 17 Pipeline.Anchor + 6 Integration (real README.dj +
-plan.dj read at test time, plus pipeline determinism check) = 459 Cribrum.
+plan.dj read at test time, plus pipeline determinism check) = 468 Cribrum.
 10 TEAWeb.Html + 9 TEAWeb.Html.Typed + 10 TEAWeb.Event + 6 TEAWeb.Cmd
 + 14 TEAWeb.Sub + 9 TEAWeb.Program = 58 TEAWeb. Plus the djot-ref
 reference-suite gate (`tools/run-djotref/`, 246 corpus tests against a
-113-test baseline; separate harness from the in-suite tests).
-**Total: 517 in-suite tests across 19 groups, plus 246 djot-ref tests
-(113 passing, 133 expected-fail under baseline).**
+116-test baseline; separate harness from the in-suite tests).
+**Total: 526 in-suite tests across 19 groups, plus 246 djot-ref tests
+(116 passing, 130 expected-fail under baseline).**
 
 Each module has:
 - **EXTs** (example tests) — canonical cases for each behaviour.
@@ -296,11 +297,23 @@ through Cribrum's own pipeline (matching `README.dj`'s role).
   ride through. Elaboration also wraps blocks in `<main>` and infers
   heading-level sequences into nested `<section>` landmarks (plan §1b).
 - **§3 inference + override**: the `<main>` wrapper is now overridable — a
-  document body that is itself an explicit `<main>` (top-level `:::main`) is
-  emitted directly rather than nested in a second `<main>` (which would fail
-  `unique-main`). Per plan.dj, `<nav>` is *not* inferred from structure; it is
-  explicit-only via `:::nav`. `{role=main}` override + mixed main+sibling
-  layouts stay deferred.
+  document body that is itself an explicit main landmark is emitted directly
+  rather than producing two mains (which would fail `unique-main`).
+  `isMainLandmark` recognises **both** the `:::main` form (top-level `<main>`
+  tag) **and** the ARIA form (a top-level element carrying `role="main"`,
+  e.g. `:::{role=main}`). Per plan.dj, `<nav>` is *not* inferred from
+  structure; it is explicit-only via `:::nav`. Mixed main+sibling layouts
+  stay deferred.
+- **Raw passthrough (§1)**: a new `Cribrum.Node.Raw` HExpr leaf carries
+  unescaped author-injected markup — the single deliberate hole in the
+  by-construction guarantee (`IsValidHtml (Raw _)` is unconditional; the
+  author opted out by writing `=html`). The parser detects `=FORMAT` fenced
+  blocks (`RawBlock`) and `` `…`{=html} `` inline (`InlRaw`); elaboration
+  gates on the format — `html` becomes a `Raw` node rendered verbatim, every
+  other format is suppressed. `Render.Html` emits its content with no
+  escaping; `Render.Dom` splices it via a detached `<template>`. The
+  `raw-001/002/004` djot-ref corpus cases are now baselined (raw-003, a
+  `{=html #id}` combined-attribute edge, stays intentionally unbaselined).
 - **Footnotes**: footnote definitions elaborate to `<aside class="footnote"`
   ` id="fn-<label>">` and references `[^label]` to `<a href="#fn-label">`
   `<sup>label</sup></a>` (convention §1) — label-anchored, deliberately

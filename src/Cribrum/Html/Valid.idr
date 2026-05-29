@@ -91,11 +91,13 @@ childAllowedBool parent c = case childPolicyOf parent of
   TextOnly              => case c of
     Text _                => True
     Comment _             => not (isRawTextOf parent)
+    Raw _                 => True
     Element _ _ _         => False
   AnyContent            => True
   OnlyTags ts allowText => case c of
     Text _                => allowText
     Comment _             => True
+    Raw _                 => True
     Element t _ _         => elem t ts
   OnlyCategories cats   => case c of
     -- Text is phrasing content; phrasing ⊆ flow, so a parent that
@@ -103,6 +105,10 @@ childAllowedBool parent c = case childPolicyOf parent of
     -- spec: any phrasing-content node is also flow content.
     Text _                => elem Phrasing cats || elem Flow cats
     Comment _             => True
+    -- Raw passthrough is opaque content the author injected; it rides
+    -- through any content model that admits children (only a void
+    -- `NoChildren` parent rejects it). Placement is the author's call.
+    Raw _                 => True
     Element t _ _         => anyOverlap (categoriesOf t) cats
 
 ||| `c` is permitted directly inside element `parent`.
@@ -128,6 +134,12 @@ public export
 data IsValidHtml : HExpr -> Type where
   ValidText    : IsValidHtml (Text s)
   ValidComment : IsValidHtml (Comment s)
+  ||| A `Raw` passthrough node is trivially valid: its content is an opaque
+  ||| string the author asked to inject literally (Djot `=html`). We cannot
+  ||| — and by design do not — inspect it, so the witness is unconditional.
+  ||| This is the documented hole in the by-construction guarantee (see
+  ||| `Cribrum.Node.Raw`).
+  ValidRaw     : IsValidHtml (Raw s)
   ValidElement : (tagOk         : IsKnownTag tag)
               -> (attrsOk       : All (AttrAllowedIn tag) attrs)
               -> (childPlaceOk  : All (ChildAllowedIn tag) cs)
@@ -162,6 +174,7 @@ mutual
   decideHtml : (h : HExpr) -> Dec (IsValidHtml h)
   decideHtml (Text _)               = Yes ValidText
   decideHtml (Comment _)            = Yes ValidComment
+  decideHtml (Raw _)                = Yes ValidRaw
   decideHtml (Element t attrs cs)   = case decKnownTag t of
     No  contraT => No (\(ValidElement tg _ _ _) => contraT tg)
     Yes tagOk   => case decideAttrs t attrs of
@@ -299,6 +312,11 @@ classifyChildRejection : (parent : String) -> HExpr -> RejectionClass
 classifyChildRejection parent (Text _) = case childPolicyOf parent of
   NoChildren            => TextNotAllowedIn parent
   _                     => TextNotAllowedIn parent
+-- A `Raw` child is always permitted under a non-void parent
+-- (`childAllowedBool _ (Raw _) = True`), so this branch is unreachable;
+-- it exists only to keep the match total. `TextNotAllowedIn` is an
+-- arbitrary placeholder reason.
+classifyChildRejection parent (Raw _) = TextNotAllowedIn parent
 classifyChildRejection parent (Comment _) = case childPolicyOf parent of
   NoChildren            => CommentNotAllowedIn parent
   TextOnly              => if isRawTextOf parent
@@ -356,6 +374,7 @@ mutual
   locate : (path : List Nat) -> (h : HExpr) -> Maybe LocatedReject
   locate _    (Text _)             = Nothing
   locate _    (Comment _)          = Nothing
+  locate _    (Raw _)              = Nothing
   locate path (Element t attrs cs) =
     if not (isKnownTagBool t)
       then Just (MkLocatedReject path (UnknownTag t))
@@ -455,6 +474,7 @@ mutual
   locateAncestor : AncestorCtx -> List Nat -> HExpr -> Maybe LocatedReject
   locateAncestor _   _    (Text _)           = Nothing
   locateAncestor _   _    (Comment _)        = Nothing
+  locateAncestor _   _    (Raw _)            = Nothing
   locateAncestor ctx path (Element t _ cs) = case selfAncestorReject ctx t of
     Just rc => Just (MkLocatedReject path rc)
     Nothing =>

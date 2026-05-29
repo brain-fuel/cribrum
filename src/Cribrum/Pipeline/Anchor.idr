@@ -97,6 +97,7 @@ public export
 plainText : HExpr -> String
 plainText (Text s)         = s
 plainText (Comment _)      = ""
+plainText (Raw _)          = ""
 plainText (Element _ _ cs) =
   concatMap (assert_total plainText) cs
 
@@ -191,6 +192,7 @@ walkNodeList seen (h :: hs) =
 
 walkNode seen (Text s)    = (seen, Text s)
 walkNode seen (Comment s) = (seen, Comment s)
+walkNode seen (Raw s)     = (seen, Raw s)
 walkNode seen (Element t attrs cs) =
   let (seen1, attrs') =
         if t == "section" && not (hasAttrL "id" attrs)
@@ -236,6 +238,7 @@ public export
 harvestHeadings : HExpr -> List (Nat, String, String)
 harvestHeadings (Text _)    = []
 harvestHeadings (Comment _) = []
+harvestHeadings (Raw _)     = []
 harvestHeadings (Element t attrs cs) =
   if t == "section"
     then

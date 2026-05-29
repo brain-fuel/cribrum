@@ -87,6 +87,9 @@ public export
 renderHtml : HExpr -> String
 renderHtml (Text s)         = escapeText s
 renderHtml (Comment s)      = "<!-- " ++ s ++ " -->"
+-- Raw passthrough: emit the content verbatim, no escaping. This is the
+-- whole point of a `Raw` node (Djot `=html`); the author owns its safety.
+renderHtml (Raw s)          = s
 renderHtml (Element t a cs) =
   if isVoid t
     then "<" ++ t ++ renderAttrs a ++ ">"

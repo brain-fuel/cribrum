@@ -32,6 +32,7 @@ public export
 walkNodes : HExpr -> List HExpr
 walkNodes h@(Text _)         = [h]
 walkNodes h@(Comment _)      = [h]
+walkNodes h@(Raw _)          = [h]
 walkNodes h@(Element _ _ cs) =
   h :: assert_total (concatMap walkNodes cs)
 

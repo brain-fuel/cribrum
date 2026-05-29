@@ -770,6 +770,86 @@ ext_plain_body_keeps_inferred_main = oneShot $
   elaborateDoc (MkDoc [para "x"])
     === Element "main" [] [Element "p" [] [Text "x"]]
 
+||| `{role=main}` on a body's sole element is an explicit main landmark
+||| (the ARIA form). Like `:::main`, the inferred `<main>` wrapper steps
+||| aside so the document is the single landmark itself — wrapping would
+||| produce a `<main>` enclosing a `role="main"` element (two mains).
+export
+ext_role_main_div_not_double_wrapped : Property
+ext_role_main_div_not_double_wrapped = oneShot $
+  elaborateDoc (MkDoc [Div (MkAttrs Nothing [] [("role", "main")]) [para "x"]])
+    === Element "div" [MkHAttr "role" (Str "main")] [Element "p" [] [Text "x"]]
+
+||| Consequence of the `{role=main}` override: such a document strictly
+||| elaborates. Without it the inferred `<main>` wrapper + the ARIA main
+||| role would be two main landmarks.
+export
+ext_role_main_strict_elaborates : Property
+ext_role_main_strict_elaborates = oneShot $
+  case elaborate (MkDoc [Div (MkAttrs Nothing [] [("role", "main")]) [para "x"]]) of
+    Right _ => success
+    Left  e => failWith Nothing ("expected Right; got " ++ show e)
+
+--------------------------------------------------------------------------------
+-- Convention §1: raw-block / raw-inline format gating.
+--------------------------------------------------------------------------------
+
+||| A `=html` raw block injects its body verbatim as a `Raw` passthrough
+||| node (no escaping, no wrapping element).
+export
+ext_raw_block_html_passthrough : Property
+ext_raw_block_html_passthrough = oneShot $
+  elaborateBlock (RawBlock "html" "<table>")
+    === Raw "<table>"
+
+||| A raw block of any non-`html` format is suppressed — no visible output.
+export
+ext_raw_block_other_format_suppressed : Property
+ext_raw_block_other_format_suppressed = oneShot $
+  elaborateBlock (RawBlock "latex" "\\begin{x}")
+    === Text ""
+
+||| A `=html` raw inline injects its content verbatim as a `Raw` node.
+export
+ext_raw_inline_html_passthrough : Property
+ext_raw_inline_html_passthrough = oneShot $
+  elaborateInline (InlRaw "html" "<a>")
+    === Raw "<a>"
+
+||| A raw inline of any non-`html` format is suppressed.
+export
+ext_raw_inline_other_format_suppressed : Property
+ext_raw_inline_other_format_suppressed = oneShot $
+  elaborateInline (InlRaw "tex" "\\(x\\)")
+    === Text ""
+
+||| End-to-end: `=html` fenced block parses + elaborates to a `Raw` node
+||| carrying the literal body, and the whole document strictly elaborates.
+export
+ext_raw_block_round_trip_strict : Property
+ext_raw_block_round_trip_strict = oneShot $
+  case parseDoc "``` =html\n<table>\n```\n" of
+    Left e  => failWith Nothing ("parse failed: " ++ show e)
+    Right d => case elaborate d of
+      Left e               => failWith Nothing ("elaborate failed: " ++ show e)
+      Right (Element "main" [] [Raw "<table>"] ** _) => success
+      Right (h ** _)                                 =>
+        failWith Nothing ("unexpected tree: " ++ show h)
+
+||| End-to-end through the *parser*: `` `<a>`{=html} `` parses to an
+||| `InlRaw "html" "<a>"` and elaborates to a `Raw` node inside the `<p>`.
+||| Exercises `takeRawFormatAttr` (the parser-side raw-inline detector),
+||| which the direct `elaborateInline` tests above do not reach.
+export
+ext_raw_inline_round_trip_strict : Property
+ext_raw_inline_round_trip_strict = oneShot $
+  case parseDoc "`<a>`{=html}\n" of
+    Left e  => failWith Nothing ("parse failed: " ++ show e)
+    Right d => case elaborate d of
+      Left e => failWith Nothing ("elaborate failed: " ++ show e)
+      Right (Element "main" [] [Element "p" [] [Raw "<a>"]] ** _) => success
+      Right (h ** _) => failWith Nothing ("unexpected tree: " ++ show h)
+
 export
 group : Group
 group = MkGroup "Cribrum.Elaborate"
@@ -835,4 +915,12 @@ group = MkGroup "Cribrum.Elaborate"
   , ("ext_explicit_main_not_double_wrapped",   ext_explicit_main_not_double_wrapped)
   , ("ext_explicit_main_strict_no_nested_main", ext_explicit_main_strict_no_nested_main)
   , ("ext_plain_body_keeps_inferred_main",     ext_plain_body_keeps_inferred_main)
+  , ("ext_role_main_div_not_double_wrapped",   ext_role_main_div_not_double_wrapped)
+  , ("ext_role_main_strict_elaborates",        ext_role_main_strict_elaborates)
+  , ("ext_raw_block_html_passthrough",         ext_raw_block_html_passthrough)
+  , ("ext_raw_block_other_format_suppressed",  ext_raw_block_other_format_suppressed)
+  , ("ext_raw_inline_html_passthrough",        ext_raw_inline_html_passthrough)
+  , ("ext_raw_inline_other_format_suppressed", ext_raw_inline_other_format_suppressed)
+  , ("ext_raw_block_round_trip_strict",        ext_raw_block_round_trip_strict)
+  , ("ext_raw_inline_round_trip_strict",       ext_raw_inline_round_trip_strict)
   ]

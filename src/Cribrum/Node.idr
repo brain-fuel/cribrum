@@ -41,11 +41,20 @@ data HExpr : Type where
   Element : (tag : String) -> (attrs : List HAttr) -> (children : List HExpr) -> HExpr
   Text    : (content : String) -> HExpr
   Comment : (content : String) -> HExpr
+  ||| Verbatim, *unescaped* passthrough. The single deliberate hole in the
+  ||| by-construction guarantee: a `Raw` node carries a string the author
+  ||| asked to inject literally (Djot `=html` raw block / `` `…`{=html} ``
+  ||| raw inline). It is opaque to the validity + AA predicates — the author
+  ||| opted out of the type system by writing `=html`. Renderers emit its
+  ||| content with no escaping; only the `html` format reaches here (other
+  ||| raw formats are suppressed at elaboration).
+  Raw     : (content : String) -> HExpr
 
 public export
 Eq HExpr where
   Text a         == Text b         = a == b
   Comment a      == Comment b      = a == b
+  Raw a          == Raw b          = a == b
   Element t a cs == Element u b ds =
     t == u && a == b && assert_total (cs == ds)
   _              == _              = False
@@ -63,6 +72,7 @@ public export
 Show HExpr where
   show (Text s)         = "Text " ++ show s
   show (Comment s)      = "Comment " ++ show s
+  show (Raw s)          = "Raw " ++ show s
   show (Element t a cs) =
     "Element " ++ show t ++ " " ++ show a ++ " "
       ++ assert_total (show cs)
@@ -72,6 +82,7 @@ public export
 size : HExpr -> Nat
 size (Text _)            = 1
 size (Comment _)         = 1
+size (Raw _)             = 1
 size (Element _ _ cs)    = S (sum (assert_total (map size cs)))
 
 ||| Maximum depth from root to leaf (root alone has depth 1).
@@ -79,6 +90,7 @@ public export
 depth : HExpr -> Nat
 depth (Text _)         = 1
 depth (Comment _)      = 1
+depth (Raw _)          = 1
 depth (Element _ _ []) = 1
 depth (Element _ _ cs) = S (foldr max 0 (assert_total (map depth cs)))
 
@@ -87,6 +99,7 @@ public export
 walk : HExpr -> List HExpr
 walk h@(Text _)         = [h]
 walk h@(Comment _)      = [h]
+walk h@(Raw _)          = [h]
 walk h@(Element _ _ cs) = h :: assert_total (concatMap walk cs)
 
 ||| All descendants (pre-order), excluding the root itself.
@@ -94,4 +107,5 @@ public export
 descendants : HExpr -> List HExpr
 descendants (Text _)         = []
 descendants (Comment _)      = []
+descendants (Raw _)          = []
 descendants (Element _ _ cs) = assert_total (concatMap walk cs)
