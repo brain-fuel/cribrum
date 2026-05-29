@@ -376,6 +376,26 @@ mutual
               ++ [InlHighlight (assert_total (parseInlines inner))]
               ++ assert_total (parseInlinesAcc [] after)
         Nothing => assert_total (parseInlinesAcc ('{' :: acc) cs)
+      -- Braced superscript/subscript (`{^...^}` / `{~...~}`). The braces
+      -- let the body carry leading/trailing whitespace (`H{~2 ~}O` ->
+      -- `H<sub>2 </sub>O`). A missing two-char closer leaves the `{`
+      -- literal so other `{...}` text survives untouched.
+      ('^' :: rest) => case findClose2 '^' '}' rest of
+        Just (inner, after) =>
+          if inner == []
+            then assert_total (parseInlinesAcc ('{' :: acc) cs)
+            else flushAcc acc
+              ++ [InlSuper (assert_total (parseInlinesAcc [] inner))]
+              ++ assert_total (parseInlinesAcc [] after)
+        Nothing => assert_total (parseInlinesAcc ('{' :: acc) cs)
+      ('~' :: rest) => case findClose2 '~' '}' rest of
+        Just (inner, after) =>
+          if inner == []
+            then assert_total (parseInlinesAcc ('{' :: acc) cs)
+            else flushAcc acc
+              ++ [InlSub (assert_total (parseInlinesAcc [] inner))]
+              ++ assert_total (parseInlinesAcc [] after)
+        Nothing => assert_total (parseInlinesAcc ('{' :: acc) cs)
       _ => assert_total (parseInlinesAcc ('{' :: acc) cs)
     -- Djot backslash escape: `\<punct>` -> literal punct (drop the `\`).
     -- `\<non-punct>` keeps both characters literal. A trailing `\` with
@@ -413,6 +433,27 @@ mutual
                 then assert_total (parseInlinesAcc ('`' :: acc) cs)
                 else flushAcc acc
                   ++ [InlVerbatim emptyAttrs (pack (verbatimStrip afterOpen))]
+    -- Superscript (`^...^`) and subscript (`~...~`). Unlike emphasis,
+    -- Djot imposes no whitespace-flanking restriction on these markers:
+    -- the only requirement is a matching closer and a non-empty body
+    -- (e.g. `mc^2^`, `H~2~O`, and nested `^... ~...~^`). On a missing
+    -- closer or an empty body the marker stays literal.
+    '^' => case findClose '^' cs of
+      Just (inner, after) =>
+        if inner == []
+          then assert_total (parseInlinesAcc ('^' :: acc) cs)
+          else flushAcc acc
+            ++ [InlSuper (assert_total (parseInlinesAcc [] inner))]
+            ++ assert_total (parseInlinesAcc [] after)
+      Nothing => assert_total (parseInlinesAcc ('^' :: acc) cs)
+    '~' => case findClose '~' cs of
+      Just (inner, after) =>
+        if inner == []
+          then assert_total (parseInlinesAcc ('~' :: acc) cs)
+          else flushAcc acc
+            ++ [InlSub (assert_total (parseInlinesAcc [] inner))]
+            ++ assert_total (parseInlinesAcc [] after)
+      Nothing => assert_total (parseInlinesAcc ('~' :: acc) cs)
     '[' => case cs of
       -- Footnote reference `[^label]` — `^` immediately after `[` and a
       -- non-empty label terminated by `]`. Falls back to literal `[` if

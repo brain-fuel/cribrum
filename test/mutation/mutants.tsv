@@ -228,3 +228,8 @@ src/Cribrum/Elaborate.idr	if isMainLandmark single	if False	elaborate: main-land
 src/Cribrum/Elaborate.idr	if isMainLandmark single	if True	elaborate: main wrapper always steps aside (unwraps plain body)
 src/Cribrum/Djot/Parser.idr	('=' :: fmt) => RawBlock (trim (pack fmt)) b	('=' :: fmt) => CodeBlock emptyAttrs info b	parser: =FORMAT fence not recognised as raw block
 src/Cribrum/Djot/Parser.idr	not (any isSpace inner)	(any isSpace inner)	parser: raw-inline whitespace guard inverted
+src/Cribrum/Djot/Parser.idr	'^' => case findClose '^' cs of	'^' => case findClose '~' cs of	parser: superscript closer ^ -> ~ (mc^2^ no longer parses)
+src/Cribrum/Djot/Parser.idr	'~' => case findClose '~' cs of	'~' => case findClose '^' cs of	parser: subscript closer ~ -> ^ (H~2~O no longer parses)
+src/Cribrum/Djot/Parser.idr	Nothing => assert_total (parseInlinesAcc ('^' :: acc) cs)	Nothing => flushAcc acc ++ [InlSuper (assert_total (parseInlinesAcc [] cs))]	parser: unclosed superscript no longer falls back to literal
+src/Cribrum/Djot/Parser.idr	if x == c1 && y == c2	if x == c1 || y == c2	parser: findClose2 pair match && -> || (braced sub/sup closer wrong)
+src/Cribrum/Djot/Parser.idr	findClose2 c1 c2 (y :: rest)	findClose2 c1 c2 rest	parser: findClose2 recursion drops a char (braced sub/sup mis-scans)

@@ -58,8 +58,8 @@ honour.
 | Emphasis              | `<em>`                     | spike    | |
 | Strong                | `<strong>`                 | spike    | |
 | Highlighted           | `<mark>`                   | spike    | |
-| Superscript           | `<sup>`                    | spike    | |
-| Subscript             | `<sub>`                    | spike    | |
+| Superscript           | `<sup>`                    | spike    | `^x^`; braced `{^ x ^}` keeps inner whitespace. No flanking restriction. |
+| Subscript             | `<sub>`                    | spike    | `~x~`; braced `{~ x ~}` keeps inner whitespace. No flanking restriction. |
 | Insert                | `<ins>`                    | spike    | |
 | Delete                | `<del>`                    | spike    | |
 | Verbatim              | `<code>`                   | spike    | Attribute block honoured. |

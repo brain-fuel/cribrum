@@ -1331,6 +1331,59 @@ ext_definition_list_term_only = oneShot $
                        []
                    ]])
 
+--------------------------------------------------------------------------------
+-- Superscript / subscript.
+--------------------------------------------------------------------------------
+
+export
+ext_superscript_basic : Property
+ext_superscript_basic = oneShot $
+  parseDoc "mc^2^"
+    === ok (doc [paraMulti [InlText "mc", InlSuper [InlText "2"]]])
+
+export
+ext_subscript_basic : Property
+ext_subscript_basic = oneShot $
+  parseDoc "H~2~O"
+    === ok (doc [paraMulti [ InlText "H"
+                           , InlSub [InlText "2"]
+                           , InlText "O"
+                           ]])
+
+export
+ext_superscript_nested_subscript : Property
+ext_superscript_nested_subscript = oneShot $
+  parseDoc "test^of superscript ~with subscript~^"
+    === ok (doc [paraMulti
+                   [ InlText "test"
+                   , InlSuper
+                       [ InlText "of superscript "
+                       , InlSub [InlText "with subscript"]
+                       ]
+                   ]])
+
+export
+ext_subscript_braced_keeps_space : Property
+ext_subscript_braced_keeps_space = oneShot $
+  -- The braced form `{~...~}` lets the body carry trailing whitespace.
+  parseDoc "H{~2 ~}O"
+    === ok (doc [paraMulti [ InlText "H"
+                           , InlSub [InlText "2 "]
+                           , InlText "O"
+                           ]])
+
+export
+ext_superscript_empty_is_literal : Property
+ext_superscript_empty_is_literal = oneShot $
+  -- `^^` has an empty body, so the markers stay literal text.
+  parseDoc "a^^b" === ok (doc [para "a^^b"])
+
+export
+ext_subscript_unclosed_is_literal : Property
+ext_subscript_unclosed_is_literal = oneShot $
+  -- A `~` with no matching closer stays literal.
+  parseDoc "a~b" === ok (doc [para "a~b"])
+
 export
 group : Group
 group = MkGroup "Cribrum.Djot.Parser"
@@ -1472,4 +1525,10 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_attr_block_prefixes_paragraph",        ext_attr_block_prefixes_paragraph)
   , ("ext_attr_blocks_stack",                    ext_attr_blocks_stack)
   , ("ext_trailing_attr_block_dropped",          ext_trailing_attr_block_dropped)
+  , ("ext_superscript_basic",                    ext_superscript_basic)
+  , ("ext_subscript_basic",                      ext_subscript_basic)
+  , ("ext_superscript_nested_subscript",         ext_superscript_nested_subscript)
+  , ("ext_subscript_braced_keeps_space",         ext_subscript_braced_keeps_space)
+  , ("ext_superscript_empty_is_literal",         ext_superscript_empty_is_literal)
+  , ("ext_subscript_unclosed_is_literal",        ext_subscript_unclosed_is_literal)
   ]
