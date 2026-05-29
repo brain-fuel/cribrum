@@ -20,6 +20,11 @@ path = "test/teaweb"
 ipkg = "teaweb-test.ipkg"
 test = "teaweb-test.ipkg"
 
+[custom.all.preprocess]
+type = "local"
+path = "tools/preprocess"
+ipkg = "preprocess.ipkg"
+
 [custom.all.render-doc]
 type = "local"
 path = "tools/render-doc"

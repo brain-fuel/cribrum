@@ -15,6 +15,7 @@ import Test.Cribrum.AA.Pass
 import Test.Cribrum.AA.Typed
 import Test.Cribrum.AA.Partition
 import Test.Cribrum.Pipeline.Anchor
+import Test.Cribrum.Preprocess
 import Test.Cribrum.Integration
 
 ||| Read a file relative to the repo root (the cwd when `pack test
@@ -48,5 +49,6 @@ main = do
     , Test.Cribrum.AA.Typed.group
     , Test.Cribrum.AA.Partition.group
     , Test.Cribrum.Pipeline.Anchor.group
+    , Test.Cribrum.Preprocess.group
     , Test.Cribrum.Integration.mkGroup readmeSrc planSrc
     ]

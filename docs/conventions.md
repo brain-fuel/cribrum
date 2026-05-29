@@ -146,6 +146,33 @@ guessed at and require an explicit convention annotation instead.
 
 ---
 
+## 3a. Source composition (`{% include: … %}`)
+
+A whole `.dj` document may be assembled from snippet files. Djot has no native
+include syntax, so this is a **textual pre-pass** (`tools/preprocess`, pure core
+`Cribrum.Preprocess`) run *before* `parseDoc`:
+
+```
+{% include: parts/intro.dj %}
+```
+
+- **Whole-line directive.** The trimmed line must be exactly
+  `{% include: PATH %}`. Paths are resolved **relative to the including file's
+  directory** (nested snippets resolve relative to their own location).
+- **One document, one `<main>`.** Because the spliced result is a single source
+  fed to one `parseDoc → elaborateDoc`, the output has exactly one `<main>` by
+  construction — splicing cannot create nested `<main>`.
+- **Snippets must not declare their own `<main>`** (no top-level `:::main` in a
+  snippet): the host document owns the single landmark. A stray one is caught
+  downstream — `elaborate`'s `unique-main` rule hard-errors — so this is a
+  documented authoring rule, not enforced by the preprocessor.
+- **Graceful degradation.** `{% include: … %}` is a valid Djot block comment, so
+  an *un-preprocessed* file simply drops the line rather than emitting garbage.
+- **Errors** (`tools/preprocess` exits non-zero): missing include, include
+  cycle, and depth-exceeded, each reported with the ancestor chain.
+
+---
+
 ## 4. Structural-AA enforcement boundary
 
 > Per plan.dj §central design commitment: **only structurally decidable**

@@ -26,3 +26,4 @@ modules = Cribrum.Node
         , Cribrum.AA.Promote
         , Cribrum.AA.Typed
         , Cribrum.Pipeline.Anchor
+        , Cribrum.Preprocess
