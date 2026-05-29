@@ -894,6 +894,38 @@ ext_raw_inline_round_trip_strict = oneShot $
       Right (Element "main" [] [Element "p" [] [Raw "<a>"]] ** _) => success
       Right (h ** _) => failWith Nothing ("unexpected tree: " ++ show h)
 
+||| Two adjacent ordered items with DIFFERENT delimiters (`1.` then `1)`)
+||| are two separate lists, not one — the reference parser starts a fresh
+||| list on a delimiter change. (Mutant-kill on the `delim x == delim y`
+||| same-list test; with it forced True the two items would merge into a
+||| single `<ol>`.)
+export
+ext_ordered_different_delims_split : Property
+ext_ordered_different_delims_split = oneShot $
+  case parseDoc "1. a\n1) b\n" of
+    Left e  => failWith Nothing ("parse failed: " ++ show e)
+    Right d => case elaborateDoc d of
+      Element "main" _ cs => length (filter isOl cs) === 2
+      other => failWith Nothing ("not a <main> root: " ++ show other)
+  where
+    isOl : HExpr -> Bool
+    isOl (Element "ol" _ _) = True
+    isOl _                  = False
+
+||| A decorator highlight whose body itself contains the marker char
+||| (`{=a=b=}` -> `<mark>a=b</mark>`): the closer is the two-char `=}`, so
+||| the lone interior `=` must NOT close the span. (Mutant-kill on
+||| `findClose2`'s `x == c1 && y == c2`; with `&&` weakened to `||` the
+||| span would close early at the interior `=`, dropping `b`.)
+export
+ext_highlight_interior_marker_closes_on_pair : Property
+ext_highlight_interior_marker_closes_on_pair = oneShot $
+  case parseDoc "{=a=b=}\n" of
+    Left e  => failWith Nothing ("parse failed: " ++ show e)
+    Right d => elaborateDoc d
+      === Element "main" []
+            [Element "p" [] [Element "mark" [] [Text "a=b"]]]
+
 export
 group : Group
 group = MkGroup "Cribrum.Elaborate"
@@ -970,4 +1002,7 @@ group = MkGroup "Cribrum.Elaborate"
   , ("ext_raw_inline_other_format_suppressed", ext_raw_inline_other_format_suppressed)
   , ("ext_raw_block_round_trip_strict",        ext_raw_block_round_trip_strict)
   , ("ext_raw_inline_round_trip_strict",       ext_raw_inline_round_trip_strict)
+  , ("ext_ordered_different_delims_split",      ext_ordered_different_delims_split)
+  , ("ext_highlight_interior_marker_closes_on_pair",
+        ext_highlight_interior_marker_closes_on_pair)
   ]
