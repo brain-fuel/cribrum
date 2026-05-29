@@ -351,13 +351,42 @@ ext_refdef_invisible = oneShot $
   elaborateDoc (MkDoc [RefDef "h" "https://example.org" Nothing])
     === Element "main" [] []
 
-||| Footnote-definition blocks are equally invisible (full footnote
-||| rendering arrives with the footnote slice).
+||| Footnote definitions are now *visible*: each elaborates to a
+||| semantic `<aside class="footnote" id="fn-<label>">` (convention §1),
+||| label-anchored so the matching `InlFootnoteRef` anchor can target it.
 export
-ext_footnotedef_invisible : Property
-ext_footnotedef_invisible = oneShot $
-  elaborateDoc (MkDoc [FootnoteDef emptyAttrs "n" []])
-    === Element "main" [] []
+ext_footnotedef_becomes_labelled_aside : Property
+ext_footnotedef_becomes_labelled_aside = oneShot $
+  elaborateDoc (MkDoc [FootnoteDef emptyAttrs "n" [para "a note"]])
+    === Element "main" []
+          [ Element "aside"
+              [ MkHAttr "class" (Str "footnote")
+              , MkHAttr "id" (Str "fn-n")
+              ]
+              [Element "p" [] [Text "a note"]] ]
+
+||| A footnote reference `[^label]` becomes a `<sup>` anchor pointing at
+||| the `fn-<label>` aside.
+export
+ext_footnote_ref_becomes_anchor : Property
+ext_footnote_ref_becomes_anchor = oneShot $
+  elaborateInline (InlFootnoteRef "n")
+    === Element "a" [MkHAttr "href" (Str "#fn-n")]
+          [Element "sup" [] [Text "n"]]
+
+||| A document pairing a footnote reference with its definition strictly
+||| elaborates — the emitted anchor + `<aside>` satisfy
+||| `IsValidHtml × StructuralAA` (anchor has a non-empty href and an
+||| accessible name via the `<sup>` label).
+export
+ext_footnote_ref_def_round_trip_strict : Property
+ext_footnote_ref_def_round_trip_strict = oneShot $
+  case elaborate (MkDoc [ Paragraph emptyAttrs
+                            [InlText "see ", InlFootnoteRef "n"]
+                        , FootnoteDef emptyAttrs "n" [para "the note"]
+                        ]) of
+    Right _ => success
+    Left  e => failWith Nothing ("expected Right; got " ++ show e)
 
 ||| A document with both a paragraph and a RefDef elaborates to a
 ||| `<main>` containing only the paragraph — the RefDef contributes
@@ -708,6 +737,39 @@ ext_span_id_role_lang_ride_through = oneShot $
           ]
           [Text "x"]
 
+--------------------------------------------------------------------------------
+-- Convention §3: main-wrapper inference with explicit override.
+--------------------------------------------------------------------------------
+
+||| Inference-with-override: when the whole document body is an explicit
+||| `:::main` (promoted to `<main>`), the inferred `<main>` wrapper steps
+||| aside — the document is the explicit landmark itself, not a `<main>`
+||| nested in a `<main>`.
+export
+ext_explicit_main_not_double_wrapped : Property
+ext_explicit_main_not_double_wrapped = oneShot $
+  elaborateDoc (MkDoc [divc ["main"] [para "x"]])
+    === Element "main" [] [Element "p" [] [Text "x"]]
+
+||| Consequence of the override: a `:::main`-rooted document strictly
+||| elaborates. Without the override it would emit `<main><main>…` and
+||| fail the `unique-main` structural rule.
+export
+ext_explicit_main_strict_no_nested_main : Property
+ext_explicit_main_strict_no_nested_main = oneShot $
+  case elaborate (MkDoc [divc ["main"] [para "x"]]) of
+    Right _ => success
+    Left  e => failWith Nothing ("expected Right; got " ++ show e)
+
+||| The wrapper still fires for ordinary bodies: a plain paragraph is
+||| wrapped in the inferred `<main>` (override only triggers on a sole
+||| explicit `<main>` child).
+export
+ext_plain_body_keeps_inferred_main : Property
+ext_plain_body_keeps_inferred_main = oneShot $
+  elaborateDoc (MkDoc [para "x"])
+    === Element "main" [] [Element "p" [] [Text "x"]]
+
 export
 group : Group
 group = MkGroup "Cribrum.Elaborate"
@@ -737,7 +799,9 @@ group = MkGroup "Cribrum.Elaborate"
         ext_table_with_header_and_alignment_emit)
   , ("ext_table_round_trip_strict",            ext_table_round_trip_strict)
   , ("ext_refdef_invisible",                   ext_refdef_invisible)
-  , ("ext_footnotedef_invisible",              ext_footnotedef_invisible)
+  , ("ext_footnotedef_becomes_labelled_aside", ext_footnotedef_becomes_labelled_aside)
+  , ("ext_footnote_ref_becomes_anchor",        ext_footnote_ref_becomes_anchor)
+  , ("ext_footnote_ref_def_round_trip_strict", ext_footnote_ref_def_round_trip_strict)
   , ("ext_paragraph_with_refdef_only_emits_paragraph",
         ext_paragraph_with_refdef_only_emits_paragraph)
   , ("pbt_strict_elaboration_total_on_simple_docs",
@@ -768,4 +832,7 @@ group = MkGroup "Cribrum.Elaborate"
   , ("ext_span_first_convention_wins_residual_classes_kept",
         ext_span_first_convention_wins_residual_classes_kept)
   , ("ext_span_id_role_lang_ride_through",     ext_span_id_role_lang_ride_through)
+  , ("ext_explicit_main_not_double_wrapped",   ext_explicit_main_not_double_wrapped)
+  , ("ext_explicit_main_strict_no_nested_main", ext_explicit_main_strict_no_nested_main)
+  , ("ext_plain_body_keeps_inferred_main",     ext_plain_body_keeps_inferred_main)
   ]

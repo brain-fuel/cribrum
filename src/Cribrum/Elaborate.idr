@@ -318,7 +318,13 @@ elaborateInline (InlImage _ ref xs) =
           EmDash   => "\x2014"
           Ellipsis => "\x2026"
 elaborateInline (InlMath _ s)      = Element "code" [] [Text s]
-elaborateInline (InlFootnoteRef l) = Text ("[" ++ l ++ "]")
+elaborateInline (InlFootnoteRef l) =
+  -- A footnote reference becomes a `<sup>` anchor targeting the
+  -- `<aside class="footnote" id="fn-<label>">` emitted for the matching
+  -- `FootnoteDef`. Label-anchored (no upstream-style renumbering); a
+  -- ref with no definition is simply a dangling intra-document link.
+  Element "a" [MkHAttr "href" (Str ("#fn-" ++ l))]
+    [Element "sup" [] [Text l]]
 elaborateInline (InlSymbol n)      = Text (":" ++ n ++ ":")
 elaborateInline (InlRaw _ s)       = Text s
 elaborateInline (InlSpan (MkAttrs ident classes pairs) xs) =
@@ -507,22 +513,33 @@ elaborateBlock (RefDef _ _ _) =
   -- Reference definitions don't render as visible blocks in Djot's HTML
   -- output; suppress as an empty comment.
   Comment "reference definition"
-elaborateBlock (FootnoteDef _ l _) =
-  Comment ("footnote: " ++ l)
+elaborateBlock (FootnoteDef _ l bs) =
+  -- Convention §1: a footnote definition becomes a semantic
+  -- `<aside class="footnote">`, anchored by label (`id="fn-<label>"`)
+  -- so the matching `InlFootnoteRef` anchor can target it. Cribrum's
+  -- label-anchored model deliberately diverges from upstream Djot's
+  -- numbered `<section role="doc-endnotes">` collection — see the
+  -- footnote rows in docs/conventions.md §1.
+  Element "aside"
+    [ MkHAttr "class" (Str "footnote")
+    , MkHAttr "id" (Str ("fn-" ++ l))
+    ]
+    (assert_total (map elaborateBlock bs))
 
 --------------------------------------------------------------------------------
 -- Top-level elaborate.
 --------------------------------------------------------------------------------
 
 ||| `True` for blocks that contribute *no* visible output in the
-||| rendered document. Reference and footnote definitions are
-||| structural markers consumed by the inline-link resolver — the
-||| reference Djot renderer emits nothing for them, and so does
-||| Cribrum (the elaborator otherwise injects HTML comments which
-||| would break exact-match conformance against the reference suite).
+||| rendered document. Reference definitions are structural markers
+||| consumed by the inline-link resolver — the reference Djot renderer
+||| emits nothing for them, and so does Cribrum (an injected HTML
+||| comment would break exact-match conformance against the reference
+||| suite). Footnote definitions, by contrast, now elaborate to a
+||| visible `<aside class="footnote">` (convention §1) and are NOT
+||| filtered here.
 isInvisibleBlock : Block -> Bool
 isInvisibleBlock (RefDef _ _ _)      = True
-isInvisibleBlock (FootnoteDef _ _ _) = True
 isInvisibleBlock _                   = False
 
 ||| Heading level of a block, if it is a `Heading`.
@@ -579,10 +596,20 @@ sectionize (b :: bs) = case headingBlockLevel b of
 ||| heading-level sequences inferred into nested `<section>` structure
 ||| (`sectionize`). Satisfies the no-`div`-soup commitment with a real
 ||| semantic root + landmark sectioning.
+|||
+||| Convention §3 "inference with override": the `<main>` wrapper is an
+||| *inference*. When the document body already supplies its own `<main>`
+||| landmark as its whole content (e.g. a top-level `:::main` fenced div,
+||| which `promoteDiv` turns into `<main>`), the explicit landmark wins
+||| and we emit it directly — wrapping it again would nest `<main>` in
+||| `<main>` and fail the `unique-main` structural rule. The narrower
+||| `{role=main}` override and mixed main+sibling layouts stay deferred.
 public export
 elaborateDoc : Doc -> HExpr
 elaborateDoc (MkDoc bs) =
-  Element "main" [] (sectionize (filter (not . isInvisibleBlock) bs))
+  case sectionize (filter (not . isInvisibleBlock) bs) of
+    [Element "main" attrs cs] => Element "main" attrs cs
+    children                  => Element "main" [] children
 
 ||| Strict elaboration: returns the HExpr together with proofs of validity
 ||| and structural accessibility. Per plan.dj §Governing principle, callers

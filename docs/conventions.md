@@ -45,7 +45,7 @@ honour.
 | Div (fenced)          | (see conventions §2)       | spike    | Convention class drives semantic-element promotion; else `<div>`. |
 | Pipe table            | `<table>`, `<thead>`, ...  | deferred | Column alignment becomes `style="text-align: ..."`. |
 | Reference link def    | (no visible output)        | deferred | Captured for link resolution. |
-| Footnote def          | `<aside class="footnote">` | deferred | Anchored by label. |
+| Footnote def          | `<aside class="footnote">` | spike    | `id="fn-<label>"`; label-anchored. Diverges from upstream Djot's numbered `<section role="doc-endnotes">` (see §3). |
 
 ### Inline constructs
 
@@ -66,7 +66,7 @@ honour.
 | Link                  | `<a href="...">`           | spike    | Currently passthrough; ref resolution deferred. |
 | Image                 | `<img>` (void)             | spike    | Alt source attribute deferred — see §4. |
 | Math (inline/display) | `<code>`                   | placeholder | MathJax-style `\\(...\\)` mapping later. |
-| Footnote reference    | `Text "[label]"`           | placeholder | Will become anchor to footnote def. |
+| Footnote reference    | `<a href="#fn-label"><sup>label</sup></a>` | spike | Intra-document anchor to the `fn-<label>` aside; no upstream-style renumbering. Dangling if no matching def. |
 | Symbol (`:name:`)     | `Text ":name:"`            | placeholder | Emoji/symbol table later. |
 | Raw inline            | `Text` (passthrough)       | spike    | Format gating deferred. |
 | Span                  | `<span>`                   | spike    | Class-driven semantic promotion — see §2. |
@@ -131,17 +131,18 @@ implements them.
 
 ## 3. Inference rules and the override mechanism
 
-| Inference (deferred)                            | Override |
-|-------------------------------------------------|----------|
-| Consecutive headings of decreasing level → nested `<section>` | `:::section` fenced div explicitly demarcates. |
-| Top-level heading + body → `<main>` wrapper     | `:::main` explicit; or `{role=main}`. |
-| Anchor in nav-region → `<nav>` landmark         | `:::nav`. |
+| Inference                                       | Status | Override |
+|-------------------------------------------------|--------|----------|
+| Consecutive headings of decreasing level → nested `<section>` | done (`sectionize`) | `:::section` fenced div explicitly demarcates. |
+| Document body → single `<main>` wrapper         | done (`elaborateDoc`) | A body that is itself an explicit `<main>` (top-level `:::main`) wins — the wrapper steps aside instead of nesting `<main>` in `<main>`. `{role=main}` + mixed main+sibling layouts deferred. |
+| "This region is a `<nav>`"                       | **not inferred** — explicit-only | `:::nav` (§2). Per plan.dj §central design commitment, nav semantics cannot be safely inferred from structure and *require* an explicit convention annotation. |
 
 The **inference with override** policy (plan.dj §central design commitment):
-elaboration infers semantic structure where it is safe and deterministic;
-anything inferred can be explicitly overridden by a convention annotation;
-ambiguous semantics that cannot be safely inferred require an explicit
-convention annotation.
+elaboration infers semantic structure where it is safe and deterministic
+(heading runs → `<section>`, document body → `<main>`); anything inferred can
+be explicitly overridden by a convention annotation; ambiguous semantics that
+cannot be safely inferred — canonically "this region is a `<nav>`" — are *not*
+guessed at and require an explicit convention annotation instead.
 
 ---
 

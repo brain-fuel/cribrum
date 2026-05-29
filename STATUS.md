@@ -187,7 +187,7 @@ Each module has:
 - **PBTs** (property-based tests via hedgehog) — invariants over generated
   inputs.
 
-## Mutation gate (215 mutants, 0 surviving)
+## Mutation gate (219 mutants, 0 surviving)
 
 ```
 $ test/mutation/run.sh                # changed-file scope (default)
@@ -294,8 +294,18 @@ through Cribrum's own pipeline (matching `README.dj`'s role).
   class wins and is consumed; remaining classes + `id`/`role`/`lang`/pairs
   ride through. Elaboration also wraps blocks in `<main>` and infers
   heading-level sequences into nested `<section>` landmarks (plan §1b).
-  §3 inference rules (nav-region, etc.) and footnote-def → `<aside>` remain
-  deferred.
+- **§3 inference + override**: the `<main>` wrapper is now overridable — a
+  document body that is itself an explicit `<main>` (top-level `:::main`) is
+  emitted directly rather than nested in a second `<main>` (which would fail
+  `unique-main`). Per plan.dj, `<nav>` is *not* inferred from structure; it is
+  explicit-only via `:::nav`. `{role=main}` override + mixed main+sibling
+  layouts stay deferred.
+- **Footnotes**: footnote definitions elaborate to `<aside class="footnote"`
+  ` id="fn-<label>">` and references `[^label]` to `<a href="#fn-label">`
+  `<sup>label</sup></a>` (convention §1) — label-anchored, deliberately
+  diverging from upstream Djot's numbered `<section role="doc-endnotes">`
+  (so the `footnotes-*` djot-ref corpus cases stay intentionally
+  non-baselined). Reference-link defs remain invisible.
 - **Ingest pipeline**: Both gates shipped — HTML content model (114
   elements, `Cribrum.Html.Model.Generated` from `ingest/content-model.ts`
   + `@webref/elements@2.6.0` cross-validation) AND the AA catalog

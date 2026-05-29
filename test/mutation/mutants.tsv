@@ -213,3 +213,7 @@ src/Cribrum/Elaborate.idr	  Nothing  => let (tag, cs') = promoteDiv cs in (tag, 
 src/Cribrum/Elaborate.idr	spanConventionTag "abbr" = Just "abbr"	spanConventionTag "abbr" = Nothing	elaborate: span .abbr not promoted (stays span)
 src/Cribrum/Elaborate.idr	promoteSpan []        = ("span", [])	promoteSpan []        = ("div", [])	elaborate: span fallthrough tag wrong (div not span)
 src/Cribrum/Elaborate.idr	let (tag, cs') = promoteSpan cs in (tag, c :: cs')	let (tag, cs') = promoteSpan cs in (tag, cs')	elaborate: promoteSpan drops non-convention classes
+src/Cribrum/Elaborate.idr	[Element "main" attrs cs] => Element "main" attrs cs	[Element "section" attrs cs] => Element "main" attrs cs	elaborate: main-override guard never matches (double-wraps explicit main)
+src/Cribrum/Elaborate.idr	MkHAttr "class" (Str "footnote")	MkHAttr "class" (Str "")	elaborate: footnote aside class dropped
+src/Cribrum/Elaborate.idr	MkHAttr "id" (Str ("fn-" ++ l))	MkHAttr "id" (Str l)	elaborate: footnote aside id missing fn- prefix
+src/Cribrum/Elaborate.idr	MkHAttr "href" (Str ("#fn-" ++ l))	MkHAttr "href" (Str ("#" ++ l))	elaborate: footnote ref href missing fn- anchor prefix
