@@ -8,7 +8,9 @@
 |||     wrongly attaches children to a void element they are silently
 |||     discarded by this renderer (the right place to catch this is
 |||     `IsValidHtml`'s content model in a later Phase 2 iteration).
-|||   - Text nodes are escaped: `&`, `<`, `>`, `"`, `'` are entitised.
+|||   - Text nodes are escaped: `&`, `<`, `>` are entitised (`"`/`'` are
+|||     literal in text and only escaped inside attribute values); the
+|||     smart-punctuation codepoints render as named entities.
 |||   - Comments render as `<!-- ... -->`; no escaping inside.
 |||   - Attribute values are surrounded by `"` and have `"`/`&` escaped.
 |||   - Handler-valued attributes (`AttrValue.Handler`) are rendered as a
@@ -30,8 +32,18 @@ escapeChar : Char -> String
 escapeChar '&'  = "&amp;"
 escapeChar '<'  = "&lt;"
 escapeChar '>'  = "&gt;"
-escapeChar '"'  = "&quot;"
-escapeChar '\'' = "&#39;"
+-- Text content only needs `&`/`<`/`>` entitised (matching the djot.js
+-- reference and the HTML spec); `"` and `'` are literal in text and are
+-- only escaped inside attribute values (see `escapeAttrValue`).
+-- Smart-punctuation codepoints are emitted as named entities to match the
+-- djot.js reference renderer (which never emits raw U+2018..U+2026 etc.).
+escapeChar '\x2018' = "&lsquo;"
+escapeChar '\x2019' = "&rsquo;"
+escapeChar '\x201C' = "&ldquo;"
+escapeChar '\x201D' = "&rdquo;"
+escapeChar '\x2013' = "&ndash;"
+escapeChar '\x2014' = "&mdash;"
+escapeChar '\x2026' = "&hellip;"
 escapeChar c    = singleton c
 
 public export

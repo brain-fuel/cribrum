@@ -129,6 +129,23 @@ findClose2 c1 c2 (x :: y :: rest)  =
       Nothing           => Nothing
 findClose2 _  _  _                 = Nothing
 
+||| Like `findClose`, but backslash-aware: a `\` and the character it
+||| escapes are carried into the inner content verbatim, so an escaped
+||| delimiter (`\_`, `\*`) never counts as the closer. Used for emphasis
+||| and strong, where Djot honours backslash escapes (verbatim does not,
+||| so that path keeps the plain `findClose`).
+findCloseEsc : Char -> List Char -> Maybe (List Char, List Char)
+findCloseEsc _ []                = Nothing
+findCloseEsc c ('\\' :: y :: xs) = case findCloseEsc c xs of
+  Just (ins, rest) => Just ('\\' :: y :: ins, rest)
+  Nothing          => Nothing
+findCloseEsc c (x :: xs) =
+  if x == c
+    then Just ([], xs)
+    else case findCloseEsc c xs of
+      Just (ins, rest) => Just (x :: ins, rest)
+      Nothing          => Nothing
+
 ||| Flush an accumulator of plain characters to an `InlText` (singleton
 ||| or empty). The accumulator is held in reverse order; flushing
 ||| reverses + packs.
@@ -136,17 +153,101 @@ flushAcc : List Char -> List Inline
 flushAcc []  = []
 flushAcc acc = [InlText (pack (reverse acc))]
 
-||| `True` iff a smart quote at this point should open (left-curly) vs
-||| close (right-curly). Open if there is no preceding character (start
-||| of the inline run) or the most-recently-seen character is
-||| whitespace or an opening punctuation form (`(`, `[`, `{`).
-|||
-||| `acc` is the reversed list of plain characters already buffered, so
-||| `head acc` is the most-recently-seen character.
-isOpenContext : List Char -> Bool
-isOpenContext []        = True
-isOpenContext (c :: _)  =
-  isSpace c || c == '(' || c == '[' || c == '{'
+||| `True` iff `c` is an ASCII punctuation character — exactly the set
+||| Djot lets a backslash escape (``!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~``).
+||| A backslash before one of these yields the literal character (and
+||| suppresses any smart-punctuation / markup interpretation of it); a
+||| backslash before anything else stays a literal backslash.
+isAsciiPunct : Char -> Bool
+isAsciiPunct c =
+  let n = ord c
+   in (n >= 0x21 && n <= 0x2F)   -- ! " # $ % & ' ( ) * + , - . /
+   || (n >= 0x3A && n <= 0x40)   -- : ; < = > ? @
+   || (n >= 0x5B && n <= 0x60)   -- [ \ ] ^ _ `
+   || (n >= 0x7B && n <= 0x7E)   -- { | } ~
+
+||| Split a leading run of identical characters `m` off `cs`, returning
+||| (runLength, rest). The first char is assumed already consumed, so the
+||| count starts at 1.
+spanRun : Char -> List Char -> (Nat, List Char)
+spanRun m cs = go 1 cs
+  where
+    go : Nat -> List Char -> (Nat, List Char)
+    go n (c :: rest) = if c == m then go (S n) rest else (n, c :: rest)
+    go n []          = (n, [])
+
+||| Render a run of `n` hyphens as Djot smart dashes. Djot's rule:
+||| a run divisible by 3 is all em-dashes; else divisible by 2 is all
+||| en-dashes; else (n ≡ 2 mod 3) is `(n-2)/3` em-dashes + one en-dash;
+||| else (n ≡ 1 mod 3) is `(n-4)/3` em-dashes + two en-dashes. A single
+||| hyphen (n = 1) is left literal.
+dashRun : Nat -> List Inline
+dashRun 0 = []
+dashRun 1 = [InlText "-"]
+dashRun n =
+  let i  = the Integer (cast n)
+      m3 = i `mod` 3
+      m2 = i `mod` 2
+   in if m3 == 0
+        then replicate (integerToNat (i `div` 3)) (InlSmart EmDash)
+        else if m2 == 0
+          then replicate (integerToNat (i `div` 2)) (InlSmart EnDash)
+          else if m3 == 2
+            then replicate (integerToNat ((i - 2) `div` 3)) (InlSmart EmDash)
+                   ++ [InlSmart EnDash]
+            else replicate (integerToNat ((i - 4) `div` 3)) (InlSmart EmDash)
+                   ++ [InlSmart EnDash, InlSmart EnDash]
+
+||| `True` iff the preceding character (head of the reversed accumulator
+||| `acc`) is "open-ish" — start-of-run, whitespace, or an opening
+||| punctuation form (`(`, `[`, `{`). This is the left side of the smart
+||| quote flanking test.
+beforeOpens : List Char -> Bool
+beforeOpens []       = True
+beforeOpens (c :: _) = isSpace c || c == '(' || c == '[' || c == '{'
+
+||| `True` iff the following character (head of `cs`) is "close-ish" —
+||| end-of-run, whitespace, or a closing punctuation form. This is the
+||| right side of the flanking test; a quote followed by such a char
+||| cannot open.
+afterCloses : List Char -> Bool
+afterCloses []       = True
+afterCloses (c :: _) =
+  isSpace c || c == ')' || c == ']' || c == '}'
+  || c == '.' || c == ',' || c == '!' || c == '?' || c == ';' || c == ':'
+
+||| `True` iff the run beginning at `cs` is a Djot elision contraction
+||| (`'tis`, `'twas`, `'em`, `'n'`, `'cause`, …) where a leading single
+||| quote is the apostrophe (right single quote) rather than an opener.
+||| `cs` is the character list immediately after the `'`.
+isElision : List Char -> Bool
+isElision cs =
+  let w = pack (map toLower (takeWhile isAlpha cs))
+   in w == "tis" || w == "twas" || w == "twere" || w == "til"
+   || w == "round" || w == "bout" || w == "cause" || w == "em"
+   || w == "n" || w == "nuff"
+
+||| Decide a double-quote (`"`) orientation. It opens (left double quote)
+||| only when the char before is open-ish and the char after is not
+||| close-ish; otherwise it closes.
+doubleQuote : List Char -> List Char -> SmartPunct
+doubleQuote acc cs =
+  if beforeOpens acc && not (afterCloses cs) then LDQuote else RDQuote
+
+||| Decide a single-quote (`'`) orientation. Djot apostrophe special
+||| cases win first: a `'` directly before a digit (`'70s`) or an elision
+||| word (`'tis`) is always a right single quote. Otherwise it opens only
+||| when the char before is open-ish and the char after is not close-ish.
+singleQuote : List Char -> List Char -> SmartPunct
+singleQuote acc cs =
+  let followedByDigit = case cs of
+                          (d :: _) => isDigit d
+                          []       => False
+   in if followedByDigit || isElision cs
+        then RSQuote
+        else if beforeOpens acc && not (afterCloses cs)
+          then LSQuote
+          else RSQuote
 
 ||| Peel a Djot hard-break marker off the reversed plain-text accumulator.
 ||| The marker is a literal `\\` optionally followed (in source order) by
@@ -207,19 +308,6 @@ findVerbatimClose n = go []
         then Just (reverse acc, after)
         else assert_total (go (reverse ticks ++ acc) after)
     go acc (c :: cs)         = assert_total (go (c :: acc) cs)
-
-||| `True` iff `c` is ASCII punctuation per Djot (`!"#$%&'()*+,-./:;<=>?@[\]^_\`{|}~`).
-||| Djot backslash escapes consume punctuation; non-punctuation chars
-||| keep the backslash literal.
-isAsciiPunct : Char -> Bool
-isAsciiPunct c =
-     c == '!' || c == '"' || c == '#' || c == '$' || c == '%'
-  || c == '&' || c == '\'' || c == '(' || c == ')' || c == '*'
-  || c == '+' || c == ',' || c == '-' || c == '.' || c == '/'
-  || c == ':' || c == ';' || c == '<' || c == '=' || c == '>'
-  || c == '?' || c == '@' || c == '[' || c == '\\' || c == ']'
-  || c == '^' || c == '_' || c == '`' || c == '{' || c == '|'
-  || c == '}' || c == '~'
 
 ||| Strip one leading + one trailing space from `body` iff the body
 ||| both begins and ends with a space AND is not entirely whitespace.
@@ -324,6 +412,17 @@ mutual
   parseInlinesAcc : List Char -> List Char -> List Inline
   parseInlinesAcc acc [] = flushAcc acc
   parseInlinesAcc acc (c :: cs) = case c of
+    -- Backslash escape (Djot): `\` + an ASCII-punctuation char emits that
+    -- character literally and suppresses any markup / smart-punctuation
+    -- meaning it would otherwise carry. The escaped char joins the plain
+    -- accumulator so a later marker scan never sees it. A backslash before
+    -- a non-punctuation char (or at end of the run) stays literal.
+    '\\' => case cs of
+      (p :: rest) =>
+        if isAsciiPunct p
+          then assert_total (parseInlinesAcc (p :: acc) rest)
+          else assert_total (parseInlinesAcc ('\\' :: acc) cs)
+      [] => flushAcc ('\\' :: acc)
     -- Emphasis / strong flanking rule (Djot): the marker is emphasised
     -- iff the opener and closer agree on their adjacent-whitespace
     -- status. Both have inside-whitespace (`_ a _`) → emphasis; both
@@ -331,7 +430,7 @@ mutual
     -- (`_ a_` or `_a _`) → marker stays literal. Empty body always
     -- fails. On any rule failure the marker joins the plain-text
     -- accumulator and parsing continues.
-    '_' => case findClose '_' cs of
+    '_' => case findCloseEsc '_' cs of
       Just (inner, after) =>
         if inner == [] || openerBlocked cs /= closerBlocked inner
           then assert_total (parseInlinesAcc ('_' :: acc) cs)
@@ -339,7 +438,7 @@ mutual
             ++ [InlEmph (assert_total (parseInlinesAcc [] inner))]
             ++ assert_total (parseInlinesAcc [] after)
       Nothing => assert_total (parseInlinesAcc ('_' :: acc) cs)
-    '*' => case findClose '*' cs of
+    '*' => case findCloseEsc '*' cs of
       Just (inner, after) =>
         if inner == [] || openerBlocked cs /= closerBlocked inner
           then assert_total (parseInlinesAcc ('*' :: acc) cs)
@@ -397,15 +496,6 @@ mutual
               ++ assert_total (parseInlinesAcc [] after)
         Nothing => assert_total (parseInlinesAcc ('{' :: acc) cs)
       _ => assert_total (parseInlinesAcc ('{' :: acc) cs)
-    -- Djot backslash escape: `\<punct>` -> literal punct (drop the `\`).
-    -- `\<non-punct>` keeps both characters literal. A trailing `\` with
-    -- nothing after stays literal too.
-    '\\' => case cs of
-      (n :: rest) =>
-        if isAsciiPunct n
-          then assert_total (parseInlinesAcc (n :: acc) rest)
-          else assert_total (parseInlinesAcc ('\\' :: acc) cs)
-      []          => assert_total (parseInlinesAcc ('\\' :: acc) cs)
     '`' =>
       let (more, afterOpen) = takeBacktickRun cs
           openerLen         = S (length more)
@@ -489,29 +579,25 @@ mutual
           else assert_total (parseInlinesAcc ('<' :: acc) cs)
       Nothing => assert_total (parseInlinesAcc ('<' :: acc) cs)
     -- Smart punctuation: dash runs, ellipsis, and orientation-aware
-    -- curly quotes. Order matters — longer runs match first so `---`
-    -- becomes an em-dash, not en-dash + literal `-`.
-    '-' => case cs of
-      ('-' :: '-' :: rest) =>
-        flushAcc acc ++ [InlSmart EmDash]
-          ++ assert_total (parseInlinesAcc [] rest)
-      ('-' :: rest) =>
-        flushAcc acc ++ [InlSmart EnDash]
-          ++ assert_total (parseInlinesAcc [] rest)
-      _ => assert_total (parseInlinesAcc ('-' :: acc) cs)
+    -- curly quotes. The full hyphen run is consumed and split into
+    -- em-/en-dashes per `dashRun`; a lone hyphen stays literal.
+    '-' => case spanRun '-' cs of
+      (n, rest) =>
+        if n == 1
+          then assert_total (parseInlinesAcc ('-' :: acc) cs)
+          else flushAcc acc ++ dashRun n
+                 ++ assert_total (parseInlinesAcc [] rest)
     '.' => case cs of
       ('.' :: '.' :: rest) =>
         flushAcc acc ++ [InlSmart Ellipsis]
           ++ assert_total (parseInlinesAcc [] rest)
       _ => assert_total (parseInlinesAcc ('.' :: acc) cs)
     '"' =>
-      let sp = if isOpenContext acc then LDQuote else RDQuote
-       in flushAcc acc ++ [InlSmart sp]
-            ++ assert_total (parseInlinesAcc [] cs)
+      flushAcc acc ++ [InlSmart (doubleQuote acc cs)]
+        ++ assert_total (parseInlinesAcc [] cs)
     '\'' =>
-      let sp = if isOpenContext acc then LSQuote else RSQuote
-       in flushAcc acc ++ [InlSmart sp]
-            ++ assert_total (parseInlinesAcc [] cs)
+      flushAcc acc ++ [InlSmart (singleQuote acc cs)]
+        ++ assert_total (parseInlinesAcc [] cs)
     -- Line break inside a paragraph body. The paragraph driver joins
     -- continuation lines with literal '\n' so multi-line constructs
     -- (verbatim spans) can swallow the newline naturally; outside such

@@ -833,13 +833,85 @@ ext_smart_emdash_wins_over_endash = oneShot $
                    , InlSmart EnDash, InlText "z"
                    ]])
 
-||| Four dashes = em-dash + literal `-`. Six dashes = two em-dashes.
+||| Four dashes = two en-dashes (Djot run rule: divisible by 2 -> en).
 export
 ext_smart_four_dashes : Property
 ext_smart_four_dashes = oneShot $
   parseDoc "a----b"
     === ok (doc [paraMulti
-                   [InlText "a", InlSmart EmDash, InlText "-b"]])
+                   [ InlText "a", InlSmart EnDash, InlSmart EnDash
+                   , InlText "b"
+                   ]])
+
+||| Five dashes = one em-dash + one en-dash (5 = 3 + 2).
+export
+ext_smart_five_dashes : Property
+ext_smart_five_dashes = oneShot $
+  parseDoc "a-----b"
+    === ok (doc [paraMulti
+                   [ InlText "a", InlSmart EmDash, InlSmart EnDash
+                   , InlText "b"
+                   ]])
+
+||| Seven dashes = one em-dash + two en-dashes (7 = 3 + 2 + 2).
+export
+ext_smart_seven_dashes : Property
+ext_smart_seven_dashes = oneShot $
+  parseDoc "a-------b"
+    === ok (doc [paraMulti
+                   [ InlText "a", InlSmart EmDash
+                   , InlSmart EnDash, InlSmart EnDash, InlText "b"
+                   ]])
+
+||| A single hyphen stays literal.
+export
+ext_smart_single_hyphen_literal : Property
+ext_smart_single_hyphen_literal = oneShot $
+  parseDoc "a-b" === ok (doc [para "a-b"])
+
+||| `'` directly before a digit is an apostrophe (`'70s`), not an opener.
+export
+ext_smart_apostrophe_before_digit : Property
+ext_smart_apostrophe_before_digit = oneShot $
+  parseDoc "the '70s"
+    === ok (doc [paraMulti
+                   [InlText "the ", InlSmart RSQuote, InlText "70s"]])
+
+||| `'` before a known elision word (`'tis`) is an apostrophe even at
+||| start-of-run, where it would otherwise open.
+export
+ext_smart_apostrophe_elision : Property
+ext_smart_apostrophe_elision = oneShot $
+  parseDoc "'tis"
+    === ok (doc [paraMulti
+                   [InlSmart RSQuote, InlText "tis"]])
+
+||| Backslash before ASCII punctuation emits the literal char and
+||| suppresses smart processing: `\"` is a plain `"`, not a curly quote.
+export
+ext_escape_double_quote_literal : Property
+ext_escape_double_quote_literal = oneShot $
+  parseDoc "a\\\"b" === ok (doc [para "a\"b"])
+
+||| Escaped hyphens stay literal (no dash promotion).
+export
+ext_escape_hyphens_literal : Property
+ext_escape_hyphens_literal = oneShot $
+  parseDoc "x\\-\\-y" === ok (doc [para "x--y"])
+
+||| A backslash before a non-punctuation char stays a literal backslash.
+export
+ext_escape_nonpunct_keeps_backslash : Property
+ext_escape_nonpunct_keeps_backslash = oneShot $
+  parseDoc "a\\b" === ok (doc [para "a\\b"])
+
+||| Escaped emphasis marker inside a span does not close it: `_\__`
+||| emphasises a literal underscore.
+export
+ext_emph_escaped_marker_inside : Property
+ext_emph_escaped_marker_inside = oneShot $
+  parseDoc "_\\__"
+    === ok (doc [paraMulti [InlEmph [InlText "_"]]])
 
 export
 ext_smart_ellipsis : Property
@@ -1493,6 +1565,15 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_smart_emdash",                         ext_smart_emdash)
   , ("ext_smart_emdash_wins_over_endash",        ext_smart_emdash_wins_over_endash)
   , ("ext_smart_four_dashes",                    ext_smart_four_dashes)
+  , ("ext_smart_five_dashes",                    ext_smart_five_dashes)
+  , ("ext_smart_seven_dashes",                   ext_smart_seven_dashes)
+  , ("ext_smart_single_hyphen_literal",          ext_smart_single_hyphen_literal)
+  , ("ext_smart_apostrophe_before_digit",        ext_smart_apostrophe_before_digit)
+  , ("ext_smart_apostrophe_elision",             ext_smart_apostrophe_elision)
+  , ("ext_escape_double_quote_literal",          ext_escape_double_quote_literal)
+  , ("ext_escape_hyphens_literal",               ext_escape_hyphens_literal)
+  , ("ext_escape_nonpunct_keeps_backslash",      ext_escape_nonpunct_keeps_backslash)
+  , ("ext_emph_escaped_marker_inside",           ext_emph_escaped_marker_inside)
   , ("ext_smart_ellipsis",                       ext_smart_ellipsis)
   , ("ext_smart_two_dots_is_literal",            ext_smart_two_dots_is_literal)
   , ("ext_smart_double_quote_orientation",       ext_smart_double_quote_orientation)

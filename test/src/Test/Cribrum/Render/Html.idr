@@ -21,11 +21,30 @@ ext_text_escaped : Property
 ext_text_escaped = oneShot $
   renderHtml (Text "a < b & c") === "a &lt; b &amp; c"
 
+||| In text content `"` and `'` are literal (only `&`/`<`/`>` are
+||| entitised) — matching the djot.js reference and the HTML spec. Quote
+||| escaping is confined to attribute values (see `ext_attr_value_escaped`).
 export
-ext_text_quotes_escaped : Property
-ext_text_quotes_escaped = oneShot $
+ext_text_quotes_literal : Property
+ext_text_quotes_literal = oneShot $
   renderHtml (Text "she said \"hi\" & it's nice")
-    === "she said &quot;hi&quot; &amp; it&#39;s nice"
+    === "she said \"hi\" &amp; it's nice"
+
+||| Smart-punctuation codepoints render as named HTML entities, matching
+||| djot.js (which never emits raw U+2018..U+2026 etc.).
+export
+ext_text_smart_punct_entities : Property
+ext_text_smart_punct_entities = oneShot $
+  -- Build the input from explicit codepoints: a string literal like
+  -- `"\x201Ca"` would have Idris read `201Ca` as one greedy hex escape
+  -- (U+201CA) rather than U+201C followed by `a`.
+  renderHtml (Text (pack
+    [ chr 0x201C, 'a', chr 0x201D, ' '
+    , chr 0x2018, 'b', chr 0x2019, ' '
+    , 'c', chr 0x2013, 'd', ' '
+    , 'e', chr 0x2014, 'f', ' '
+    , 'g', chr 0x2026 ]))
+    === "&ldquo;a&rdquo; &lsquo;b&rsquo; c&ndash;d e&mdash;f g&hellip;"
 
 export
 ext_comment_unescaped : Property
@@ -147,8 +166,9 @@ escapeCases =
   , ("<",        "&lt;")
   , (">",        "&gt;")
   , ("&",        "&amp;")
-  , ("\"",       "&quot;")
-  , ("'",        "&#39;")
+  -- `"` and `'` are literal in text content (only escaped in attributes).
+  , ("\"",       "\"")
+  , ("'",        "'")
   , ("a<b>c&d",  "a&lt;b&gt;c&amp;d")
   ]
 
@@ -203,7 +223,8 @@ export
 group : Group
 group = MkGroup "Cribrum.Render.Html"
   [ ("ext_text_escaped",                  ext_text_escaped)
-  , ("ext_text_quotes_escaped",           ext_text_quotes_escaped)
+  , ("ext_text_quotes_literal",           ext_text_quotes_literal)
+  , ("ext_text_smart_punct_entities",     ext_text_smart_punct_entities)
   , ("ext_comment_unescaped",             ext_comment_unescaped)
   , ("ext_raw_unescaped_passthrough",     ext_raw_unescaped_passthrough)
   , ("ext_empty_p",                       ext_empty_p)

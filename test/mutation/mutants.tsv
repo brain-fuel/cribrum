@@ -213,7 +213,6 @@ src/Cribrum/Elaborate.idr	  Nothing  => let (tag, cs') = promoteDiv cs in (tag, 
 src/Cribrum/Elaborate.idr	spanConventionTag "abbr" = Just "abbr"	spanConventionTag "abbr" = Nothing	elaborate: span .abbr not promoted (stays span)
 src/Cribrum/Elaborate.idr	promoteSpan []        = ("span", [])	promoteSpan []        = ("div", [])	elaborate: span fallthrough tag wrong (div not span)
 src/Cribrum/Elaborate.idr	let (tag, cs') = promoteSpan cs in (tag, c :: cs')	let (tag, cs') = promoteSpan cs in (tag, cs')	elaborate: promoteSpan drops non-convention classes
-src/Cribrum/Elaborate.idr	[Element "main" attrs cs] => Element "main" attrs cs	[Element "section" attrs cs] => Element "main" attrs cs	elaborate: main-override guard never matches (double-wraps explicit main)
 src/Cribrum/Elaborate.idr	MkHAttr "class" (Str "footnote")	MkHAttr "class" (Str "")	elaborate: footnote aside class dropped
 src/Cribrum/Elaborate.idr	MkHAttr "id" (Str ("fn-" ++ l))	MkHAttr "id" (Str l)	elaborate: footnote aside id missing fn- prefix
 src/Cribrum/Elaborate.idr	MkHAttr "href" (Str ("#fn-" ++ l))	MkHAttr "href" (Str ("#" ++ l))	elaborate: footnote ref href missing fn- anchor prefix
@@ -233,3 +232,12 @@ src/Cribrum/Djot/Parser.idr	'~' => case findClose '~' cs of	'~' => case findClos
 src/Cribrum/Djot/Parser.idr	Nothing => assert_total (parseInlinesAcc ('^' :: acc) cs)	Nothing => flushAcc acc ++ [InlSuper (assert_total (parseInlinesAcc [] cs))]	parser: unclosed superscript no longer falls back to literal
 src/Cribrum/Djot/Parser.idr	if x == c1 && y == c2	if x == c1 || y == c2	parser: findClose2 pair match && -> || (braced sub/sup closer wrong)
 src/Cribrum/Djot/Parser.idr	findClose2 c1 c2 (y :: rest)	findClose2 c1 c2 rest	parser: findClose2 recursion drops a char (braced sub/sup mis-scans)
+src/Cribrum/Djot/Parser.idr	then LDQuote else RDQuote	then RDQuote else LDQuote	parser: double-quote orientation flipped (open<->close)
+src/Cribrum/Djot/Parser.idr	then LSQuote	then RSQuote	parser: single-quote opener emits close-quote instead of open
+src/Cribrum/Djot/Parser.idr	(d :: _) => isDigit d	(d :: _) => False	parser: apostrophe-before-digit special case disabled
+src/Cribrum/Djot/Parser.idr	if m2 == 0	if m2 == 1	parser: dash-run even-divisor branch inverted (4 dashes wrong)
+src/Cribrum/Djot/Parser.idr	else if m3 == 2	else if m3 == 1	parser: dash-run mod-3==2 branch swapped (5/7 dashes wrong)
+src/Cribrum/Djot/Parser.idr	if isAsciiPunct p	if False	parser: backslash escape never recognises punctuation (no escaping)
+src/Cribrum/Djot/Parser.idr	findCloseEsc c ('\\' :: y :: xs)	findCloseEsc c ('@' :: y :: xs)	parser: emphasis closer scan stops skipping backslash escapes
+src/Cribrum/Render/Html.idr	escapeChar '\x2014' = "&mdash;"	escapeChar '\x2014' = "&ndash;"	render: em-dash codepoint emitted as en-dash entity
+src/Cribrum/Render/Html.idr	escapeChar '\x2018' = "&lsquo;"	escapeChar '\x2018' = "&rsquo;"	render: left single quote codepoint emitted as right-quote entity

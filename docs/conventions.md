@@ -55,8 +55,8 @@ honour.
 | Soft line break       | `Text " "`                 | spike    | Single space — standard Djot HTML behaviour. |
 | Hard line break       | `<br>`                     | spike    | Void element. |
 | Comment               | `Comment`                  | spike    | HTML comment node. |
-| Emphasis              | `<em>`                     | spike    | |
-| Strong                | `<strong>`                 | spike    | |
+| Emphasis              | `<em>`                     | spike    | Flanking by inside-whitespace agreement; closer scan skips backslash-escaped markers (`_\__` → `<em>_</em>`). |
+| Strong                | `<strong>`                 | spike    | As emphasis (`*`). |
 | Highlighted           | `<mark>`                   | spike    | |
 | Superscript           | `<sup>`                    | spike    | `^x^`; braced `{^ x ^}` keeps inner whitespace. No flanking restriction. |
 | Subscript             | `<sub>`                    | spike    | `~x~`; braced `{~ x ~}` keeps inner whitespace. No flanking restriction. |
@@ -70,7 +70,8 @@ honour.
 | Symbol (`:name:`)     | `Text ":name:"`            | placeholder | Emoji/symbol table later. |
 | Raw inline            | `Raw` (passthrough)        | spike    | `` `…`{=html} `` injects its content verbatim as an unescaped `Raw` node; any other format is suppressed. A `{=fmt …}` brace carrying anything beyond the bare `=fmt` token falls back to ordinary verbatim. |
 | Span                  | `<span>`                   | spike    | Class-driven semantic promotion — see §2. |
-| Smart punctuation     | Unicode `Text`             | spike    | “ ” ‘ ’ – — … |
+| Smart punctuation     | Unicode `Text` → named entity | spike    | Quote orientation by before/after flanking; `'`+digit/elision (`'70s`, `'tis`) is apostrophe. Dash runs split per Djot (÷3 em, ÷2 en, else em+en mix). Rendered as `&ldquo;`/`&rsquo;`/`&ndash;`/`&mdash;`/`&hellip;` (matches djot.js). |
+| Backslash escape      | literal char in `Text`     | spike    | `\` + ASCII punctuation → literal char, suppresses markup/smart processing; `\` + other → literal `\`. (`\ `=space hard-break/nbsp deferred.) |
 
 ---
 
