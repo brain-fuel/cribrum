@@ -60,10 +60,13 @@
 > normalises whitespace + strips the `<main>` wrapper, and compares
 > against the expected reference output. A baseline file
 > (`test/djot-ref/baseline.txt`) lists currently-passing tests;
-> regressions fail the gate, additions are tracked. **116 / 246**
+> regressions fail the gate, additions are tracked. **165 / 246**
 > upstream-ingested tests now pass at the baseline (full `jgm/djot`
-> corpus ingestion shipped; the latest +3 are the `raw-*` cases — see the
-> raw-passthrough note below). **Step 11 parser remainder** (P5.4
+> corpus ingestion shipped). The jump from 116 -> 165 came from four
+> conformance slices: raw passthrough (`raw-*`), super/subscript
+> (`super-subscript-*`), smart-punctuation + emphasis + escapes
+> (`smart-*`/`emphasis-*`/`escapes-*`), and an indentation-aware list
+> parser (`lists-*`/`task-lists-*`). **Step 11 parser remainder** (P5.4
 > remainder): tight ul/ol list collapse (single-`Paragraph` items
 > drop their `<p>` wrap in `<li>` for tight lists, matching the
 > reference renderer); footnote refs (`[^label]` parses to
@@ -171,16 +174,16 @@ $ make test-fast        # cribrum + teaweb suites
 $ make test             # adds ingest drift gate + mutation gate
 ```
 
-Counts per group: 18 Node + 16 Surface + 130 Parser + 20 Model + 52 Valid
-+ 41 Elaborate + 18 Render.Html + 1 Render.Dom + 56 AA.Pass + 88 AA.Typed
-+ 5 AA.Partition + 17 Pipeline.Anchor + 6 Integration (real README.dj +
-plan.dj read at test time, plus pipeline determinism check) = 468 Cribrum.
-10 TEAWeb.Html + 9 TEAWeb.Html.Typed + 10 TEAWeb.Event + 6 TEAWeb.Cmd
-+ 14 TEAWeb.Sub + 9 TEAWeb.Program = 58 TEAWeb. Plus the djot-ref
-reference-suite gate (`tools/run-djotref/`, 246 corpus tests against a
-116-test baseline; separate harness from the in-suite tests).
-**Total: 526 in-suite tests across 19 groups, plus 246 djot-ref tests
-(116 passing, 130 expected-fail under baseline).**
+Counts per group: 18 Node + 16 Surface + 153 Parser + 20 Model + 52 Valid
++ 65 Elaborate + 19 Render.Html + 1 Render.Dom + 56 AA.Pass + 88 AA.Typed
++ 5 AA.Partition + 17 Pipeline.Anchor + 19 Preprocess + 6 Integration (real
+README.dj + plan.dj read at test time, plus pipeline determinism check) =
+535 Cribrum. 10 TEAWeb.Html + 9 TEAWeb.Html.Typed + 10 TEAWeb.Event
++ 6 TEAWeb.Cmd + 14 TEAWeb.Sub + 9 TEAWeb.Program = 58 TEAWeb. Plus the
+djot-ref reference-suite gate (`tools/run-djotref/`, 246 corpus tests
+against a 165-test baseline; separate harness from the in-suite tests).
+**Total: 593 in-suite tests, plus 246 djot-ref tests (165 passing,
+81 expected-fail under baseline).**
 
 Each module has:
 - **EXTs** (example tests) — canonical cases for each behaviour.
