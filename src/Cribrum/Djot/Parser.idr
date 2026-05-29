@@ -688,6 +688,12 @@ data LineGroup : Type where
   ||| continuation lines concatenated; the title parser runs over it
   ||| at `groupToBlock` time.
   RefDefGroup : (label : String) -> (rawBody : String) -> LineGroup
+  ||| A list run: the opening list-item line plus all continuation
+  ||| lines (indented continuations, sub-items, and blank lines that
+  ||| bridge into a still-open item). Carried verbatim so the
+  ||| indentation-aware list parser can split items, detect tight vs
+  ||| loose, recover nested sublists, and recurse into item bodies.
+  ListGroup : List1 String -> LineGroup
 
 ||| `True` iff the line starts with `>` followed by space, OR is exactly `>`
 ||| (an empty quote line — Djot allows this).
@@ -826,6 +832,176 @@ isIndentedLine : String -> Bool
 isIndentedLine s = case unpack s of
   (' ' :: _) => True
   _          => False
+
+--------------------------------------------------------------------------------
+-- List markers (number-style + delimiter recognition).
+--
+-- Djot ordered lists support five number styles (decimal, lower/upper
+-- roman, lower/upper alpha) crossed with three delimiters (`1.`, `1)`,
+-- `(1)`). Unordered lists use `-`, `*`, `+`. A list ends when the next
+-- item's marker has a different number style or delimiter (per the
+-- reference parser); a single ambiguous roman/alpha letter (`i`, `v`,
+-- `x`, ...) is resolved by looking at the rest of the items, defaulting
+-- to roman when still ambiguous.
+--------------------------------------------------------------------------------
+
+||| Ordered-list delimiter shape.
+data Delim = DPeriod | DParen | DParens
+
+Eq Delim where
+  DPeriod == DPeriod = True
+  DParen  == DParen  = True
+  DParens == DParens = True
+  _       == _       = False
+
+||| Possible interpretations of a parsed ordered marker's number style.
+||| A pure-decimal marker is `PDecimal`; a single roman/alpha-ambiguous
+||| letter is `PAmbig` (case carried); an unambiguous roman is `PRoman`;
+||| an unambiguous alpha is `PAlpha`.
+data PossStyle
+  = PDecimal
+  | PRoman Bool
+  | PAlpha Bool
+  | PAmbig Bool
+
+||| A parsed ordered-list marker.
+record OrdMarker where
+  constructor MkOrd
+  poss  : PossStyle
+  delim : Delim
+  start : Nat
+  core  : List Char  -- the alphanumeric core, for style-dependent start
+  width : Nat  -- characters consumed including the trailing space
+
+||| Roman-numeral letter value (lower or upper), or 0 if not a roman letter.
+romanVal : Char -> Nat
+romanVal c = case toLower c of
+  'i' => 1
+  'v' => 5
+  'x' => 10
+  'l' => 50
+  'c' => 100
+  'd' => 500
+  'm' => 1000
+  _   => 0
+
+||| `True` iff `c` is a roman-numeral letter.
+isRomanLetter : Char -> Bool
+isRomanLetter c = romanVal c > 0
+
+||| Convert a roman-numeral string to its integer value (subtractive
+||| notation). Assumes every char is a roman letter.
+romanToNat : List Char -> Nat
+romanToNat = go
+  where
+    go : List Char -> Nat
+    go []        = 0
+    go [c]       = romanVal c
+    go (c :: d :: rest) =
+      let vc = romanVal c
+          vd = romanVal d
+       in if vc < vd
+            then (vd `minus` vc) + assert_total (go rest)
+            else vc + assert_total (go (d :: rest))
+
+||| Alpha-marker value: `a`/`A` = 1 .. `z`/`Z` = 26.
+alphaToNat : Char -> Nat
+alphaToNat c =
+  let lc = toLower c
+   in if lc >= 'a' && lc <= 'z'
+        then S (integerToNat (cast (ord lc - ord 'a')))
+        else 0
+
+||| `True` iff `c` is an ASCII letter.
+isAsciiLetter : Char -> Bool
+isAsciiLetter c = let lc = toLower c in lc >= 'a' && lc <= 'z'
+
+||| Span leading characters satisfying `p`.
+spanWhile : (Char -> Bool) -> List Char -> (List Char, List Char)
+spanWhile p []        = ([], [])
+spanWhile p (c :: cs) =
+  if p c then let (a, b) = spanWhile p cs in (c :: a, b)
+         else ([], c :: cs)
+
+||| Classify the alphanumeric core of an ordered marker (no delimiters)
+||| into `(PossStyle, start)`. `core` is non-empty.
+classifyOrdCore : List Char -> Maybe (PossStyle, Nat)
+classifyOrdCore core =
+  if all isDigit core
+    then Just (PDecimal, integerToNat (cast (pack core)))
+    else
+      let lower   = all (\c => c == toLower c) core
+          allRoman = all isRomanLetter core
+       in case core of
+            [c] => if isAsciiLetter c
+                     then if isRomanLetter c
+                            then Just (PAmbig lower, alphaToNat c)
+                            else Just (PAlpha lower, alphaToNat c)
+                     else Nothing
+            _   => if allRoman
+                     then Just (PRoman lower, romanToNat core)
+                     else Nothing
+
+||| Parse an ordered-list marker at the start of `cs`. Recognises the
+||| `(x)` paren form first, then a `core` followed by `.` / `)`. The
+||| trailing single space is required and counted in `width`.
+parseOrdMarker : List Char -> Maybe (OrdMarker, List Char)
+parseOrdMarker ('(' :: rest) =
+  let (core, after) = spanWhile isAlphaNum rest
+   in case after of
+        (')' :: ' ' :: body) => case classifyOrdCore core of
+          Just (ps, st) =>
+            Just (MkOrd ps DParens st core (length core + 3), body)
+          Nothing => Nothing
+        _ => Nothing
+parseOrdMarker cs =
+  let (core, after) = spanWhile isAlphaNum cs
+   in case (core, after) of
+        ([], _)               => Nothing
+        (_, '.' :: ' ' :: body) => case classifyOrdCore core of
+          Just (ps, st) => Just (MkOrd ps DPeriod st core (length core + 2), body)
+          Nothing       => Nothing
+        (_, ')' :: ' ' :: body) => case classifyOrdCore core of
+          Just (ps, st) => Just (MkOrd ps DParen st core (length core + 2), body)
+          Nothing       => Nothing
+        _                     => Nothing
+
+||| A list-item marker: either an unordered bullet or an ordered marker.
+data Marker = MUnordered Char | MOrdered OrdMarker
+
+||| Parse a list marker at the start of a *trimmed* (left-stripped)
+||| line. Returns `(marker, contentColumn, body)` where `contentColumn`
+||| is the number of characters the marker occupies (so the content of
+||| continuation lines must be indented by `leadIndent + contentColumn`
+||| to belong to this item). `body` is the text after the marker.
+parseMarker : List Char -> Maybe (Marker, Nat, String)
+parseMarker ('-' :: ' ' :: rest) = Just (MUnordered '-', 2, pack rest)
+parseMarker ('*' :: ' ' :: rest) = Just (MUnordered '*', 2, pack rest)
+parseMarker ('+' :: ' ' :: rest) = Just (MUnordered '+', 2, pack rest)
+parseMarker cs = case parseOrdMarker cs of
+  Just (m, body) => Just (MOrdered m, width m, pack body)
+  Nothing        => Nothing
+
+||| Count leading spaces of a line.
+leadingSpaces : String -> Nat
+leadingSpaces s = go 0 (unpack s)
+  where
+    go : Nat -> List Char -> Nat
+    go n (' ' :: cs) = go (S n) cs
+    go n _           = n
+
+||| `True` iff `s` (at any indentation) opens a list item.
+isListOpener : String -> Bool
+isListOpener s = case parseMarker (unpack (pack (drop (leadingSpaces s) (unpack s)))) of
+  Just _  => True
+  Nothing => False
+
+
+||| Whether two markers can belong to the same list given a *resolution*
+||| of ambiguity is decided later; this is the structural same-family
+||| test used while grouping lines (any list opener continues a list
+||| run). The actual split-into-distinct-lists logic lives in the list
+||| block builder.
 
 ||| `True` iff `s` starts (after optional whitespace) with the Djot
 ||| block-comment opener `{%`.
@@ -1241,6 +1417,33 @@ groupLines xs = go [] [] xs
     stripQuoteOrLazy : String -> String
     stripQuoteOrLazy s = if isQuotePrefixed s then stripQuotePrefix s else s
 
+    -- Greedily collect the continuation of a list run. A continuation
+    -- line is kept when it is: a blank that bridges to further list
+    -- content; an indented line; a list opener at any indent; or a
+    -- column-0 plain line that lazily continues the preceding paragraph
+    -- (only when the previous collected line was non-blank). The run
+    -- ends at a column-0 plain line that follows a blank line (`prevBlank`).
+    -- `prevBlank` records whether the last collected line was blank.
+    collectList : (prevBlank : Bool) -> List String -> (List String, List String)
+    collectList _ []        = ([], [])
+    collectList pb (l :: ls) =
+      if isBlankLine l
+        then case ls of
+          [] => ([], [])
+          (l' :: _) =>
+            if isIndentedLine l' || isListOpener l'
+              then let (more, rest) = collectList True ls
+                    in (l :: more, rest)
+              else ([], l :: ls)
+        else if isIndentedLine l || isListOpener l
+          then let (more, rest) = collectList False ls
+                in (l :: more, rest)
+          else if not pb  -- lazy paragraph continuation at column 0
+            then let (more, rest) = collectList False ls
+                  in (l :: more, rest)
+          else ([], l :: ls)
+
+
     -- Consume a block-comment run starting at line `x` (already
     -- known to satisfy `isBlockCommentStart`). The run extends to the
     -- first line containing `%}` (inclusive). Returns the input list
@@ -1324,13 +1527,20 @@ groupLines xs = go [] [] xs
                                     body       = openerRest :: map (dropLeadingSpaces 2) rest
                                     fn         = FootnoteGroup label body
                                  in assert_total (go [] (fn :: acc') rs)
-                              else if isDefListOpener x
+                              else if isListOpener x && not (isThematicBreak x)
+                                                      && isNil cur
                                 then
-                                  let (rest, rs) = collectDefList xs
+                                  let (rest, rs) = collectList False xs
                                       acc'       = flushNormal (reverse cur) acc
-                                      defList    = DefListGroup (x ::: rest)
-                                   in assert_total (go [] (defList :: acc') rs)
-                                else go (x :: cur) acc xs
+                                      listG      = ListGroup (x ::: rest)
+                                   in assert_total (go [] (listG :: acc') rs)
+                                else if isDefListOpener x
+                                  then
+                                    let (rest, rs) = collectDefList xs
+                                        acc'       = flushNormal (reverse cur) acc
+                                        defList    = DefListGroup (x ::: rest)
+                                     in assert_total (go [] (defList :: acc') rs)
+                                  else go (x :: cur) acc xs
 
 --------------------------------------------------------------------------------
 -- Group -> Block.
@@ -1355,67 +1565,107 @@ parseTaskMarker ('[' :: 'x' :: ']' :: ' ' :: rest) = Just (True,  pack rest)
 parseTaskMarker ('[' :: 'X' :: ']' :: ' ' :: rest) = Just (True,  pack rest)
 parseTaskMarker _                                  = Nothing
 
-||| Recognise a list-item line. Returns `(style, body, checked)` where
-||| `body` is the inline content (everything after the marker — and the
-||| task-checkbox token, when present) and `checked` is `Just bool`
-||| only for `TaskList` items.
-isListLine : String -> Maybe (ListStyle, String, Maybe Bool)
-isListLine s = case unpack s of
-  ('-' :: ' ' :: rest) => Just (taskOr UnorderedDash     rest)
-  ('*' :: ' ' :: rest) => Just (taskOr UnorderedAsterisk rest)
-  ('+' :: ' ' :: rest) => Just (taskOr UnorderedPlus     rest)
-  cs                   => case parseOrderedMarker cs of
-    Just (digits, body) => Just (OrderedDecimal, pack body, Nothing)
-    Nothing             => Nothing
-  where
-    -- If `rest` opens with a task-list checkbox, the item becomes a
-    -- TaskList item (the bullet flavour collapses — TaskList is its
-    -- own ListStyle per `Cribrum.Djot.Surface`). Otherwise the bullet
-    -- flavour is kept and the item is a regular unordered item.
-    taskOr : ListStyle -> List Char -> (ListStyle, String, Maybe Bool)
-    taskOr fallback rest = case parseTaskMarker rest of
-      Just (checked, body) => (TaskList, body,     Just checked)
-      Nothing              => (fallback, pack rest, Nothing)
+||| The list-level descriptor derived from a marker for same-list
+||| comparison: an unordered list is keyed by its bullet character; an
+||| ordered list by its resolved number-style + delimiter. Two adjacent
+||| items continue the same list iff their descriptors are equal (per
+||| the reference parser, a change of bullet char or ordered
+||| style/delimiter starts a fresh list).
+data ListKind
+  = KUnordered Char
+  | KOrdered PossStyle Delim
 
-    -- Consume one or more digits followed by ". ". Returns
-    -- `(digits, rest-after-space)` on success.
-    spanDigits : List Char -> (List Char, List Char)
-    spanDigits []        = ([], [])
-    spanDigits (c :: cs) =
-      if c >= '0' && c <= '9'
-        then let (ds, r) = spanDigits cs in (c :: ds, r)
-        else ([], c :: cs)
+||| The `ListStyle` (surface enum) implied by a resolved `PossStyle`.
+||| An ambiguous single roman/alpha letter defaults to roman.
+possToStyle : PossStyle -> ListStyle
+possToStyle PDecimal      = OrderedDecimal
+possToStyle (PRoman True)  = OrderedRomanLower
+possToStyle (PRoman False) = OrderedRomanUpper
+possToStyle (PAlpha True)  = OrderedAlphaLower
+possToStyle (PAlpha False) = OrderedAlphaUpper
+possToStyle (PAmbig True)  = OrderedRomanLower
+possToStyle (PAmbig False) = OrderedRomanUpper
 
-    parseOrderedMarker : List Char -> Maybe (List Char, List Char)
-    parseOrderedMarker chars = case spanDigits chars of
-      ([], _)               => Nothing
-      (digits, '.' :: ' ' :: rest) => Just (digits, rest)
-      _                     => Nothing
+||| Combine two possible-style classifications of adjacent ordered
+||| markers into the narrower interpretation, used to resolve a leading
+||| ambiguous roman/alpha letter against later items. Returns `Nothing`
+||| when the two are genuinely incompatible (different number families)
+||| — that breaks the list. Decimal only unifies with decimal.
+unifyPoss : PossStyle -> PossStyle -> Maybe PossStyle
+unifyPoss PDecimal PDecimal = Just PDecimal
+unifyPoss (PRoman l) (PRoman _) = Just (PRoman l)
+unifyPoss (PAlpha l) (PAlpha _) = Just (PAlpha l)
+unifyPoss (PAmbig l) (PAmbig _) = Just (PAmbig l)
+unifyPoss (PAmbig l) (PRoman _) = Just (PRoman l)
+unifyPoss (PRoman l) (PAmbig _) = Just (PRoman l)
+unifyPoss (PAmbig l) (PAlpha _) = Just (PAlpha l)
+unifyPoss (PAlpha l) (PAmbig _) = Just (PAlpha l)
+unifyPoss _ _ = Nothing
 
-||| Pair a list-item line with its (style, parsed content). Each item
-||| holds a single `Paragraph` of the line's inline content. Multi-line
-||| / loose / nested items arrive in later slices.
-parseListItem : String -> Maybe (ListStyle, ListItem)
-parseListItem line = case isListLine line of
-  Just (style, body, checked) =>
-    Just (style, MkLI emptyAttrs checked Nothing
-                      [Paragraph emptyAttrs (parseInlineLine body)])
-  Nothing => Nothing
+||| `True` iff two markers continue the same list. The number-style is
+||| resolved leniently (ambiguous roman/alpha letters match either), but
+||| the delimiter and bullet character must match exactly.
+sameList : Marker -> Marker -> Bool
+sameList (MUnordered a) (MUnordered b) = a == b
+sameList (MOrdered x) (MOrdered y) =
+  delim x == delim y && (case unifyPoss (poss x) (poss y) of
+                           Just _  => True
+                           Nothing => False)
+sameList _ _ = False
 
-||| Try to build a `ListBlock` from a run of consecutive lines. All lines
-||| must be list items AND share the same style (per Djot, mixed markers
-||| break the run). Returns `Nothing` if the first line isn't a list
-||| item OR any subsequent line doesn't match.
-tryParseList : List1 String -> Maybe Block
-tryParseList (l ::: ls) = do
-  (style, firstItem) <- parseListItem l
-  rest <- traverse (matchSameStyle style) ls
-  pure (ListBlock emptyAttrs style Nothing True (firstItem :: rest))
-  where
-    matchSameStyle : ListStyle -> String -> Maybe ListItem
-    matchSameStyle want line = do
-      (got, item) <- parseListItem line
-      if got == want then Just item else Nothing
+||| `True` iff `m` is compatible with a `PossStyle` already resolved for
+||| the list. Used once the list's number-style is fixed (e.g. by the
+||| second item) so a later item whose only interpretation diverges
+||| breaks the list — `I.`/`II.` fixes upper-roman, after which `E.`
+||| (alpha-only) starts a new list.
+possMatches : PossStyle -> PossStyle -> Bool
+possMatches PDecimal      PDecimal     = True
+possMatches (PRoman _)    (PRoman _)   = True
+possMatches (PRoman _)    (PAmbig _)   = True
+possMatches (PAlpha _)    (PAlpha _)   = True
+possMatches (PAlpha _)    (PAmbig _)   = True
+possMatches (PAmbig _)    p            = case p of
+  PDecimal => False
+  _        => True
+possMatches _             _            = False
+
+||| Resolved-style sibling test: a marker continues the list iff its
+||| delimiter matches and its possible-style is compatible with the
+||| list's already-resolved style.
+sameResolvedList : PossStyle -> Delim -> Marker -> Bool
+sameResolvedList _  _ (MUnordered _) = False
+sameResolvedList ps d (MOrdered y)   = d == delim y && possMatches ps (poss y)
+
+||| Resolve the surface `ListStyle` of an ordered list given its first
+||| item's marker and the (possibly disambiguating) second item, when
+||| present.
+resolveStyle : Marker -> Maybe Marker -> ListStyle
+resolveStyle (MUnordered c) _ = case c of
+  '-' => UnorderedDash
+  '*' => UnorderedAsterisk
+  _   => UnorderedPlus
+resolveStyle (MOrdered x) (Just (MOrdered y)) =
+  case unifyPoss (poss x) (poss y) of
+    Just ps => possToStyle ps
+    Nothing => possToStyle (poss x)
+resolveStyle (MOrdered x) _ = possToStyle (poss x)
+
+||| The HTML `start` value for an ordered list given its *resolved*
+||| `ListStyle` and first marker, or `Nothing` when the value is 1 (the
+||| default, which the reference renderer omits). The numeric value is
+||| recomputed from the resolved style so an ambiguous leading roman/
+||| alpha letter (`i`) yields the right number (roman `i` = 1, alpha
+||| `i` = 9). Unordered lists never carry a start.
+markerStart : ListStyle -> Marker -> Maybe Nat
+markerStart _ (MUnordered _) = Nothing
+markerStart style (MOrdered x) =
+  let n = case style of
+            OrderedRomanLower => romanToNat (core x)
+            OrderedRomanUpper => romanToNat (core x)
+            OrderedAlphaLower => case core x of (c :: _) => alphaToNat c; [] => start x
+            OrderedAlphaUpper => case core x of (c :: _) => alphaToNat c; [] => start x
+            _                 => start x
+   in if n == 1 then Nothing else Just n
 
 ||| Find the first `]` in `xs` and return `(before, after-the-bracket)`,
 ||| or `Nothing` if no `]` exists. Used to extract a reference label
@@ -1533,8 +1783,9 @@ splitHeadings lvl opener more =
 |||
 ||| Order matters: thematic break is checked first (a single `---` line is
 ||| not a heading and not a paragraph); then reference definition
-||| (single-line `[ref]: url`); then list block; everything else falls
-||| through to paragraph.
+||| (single-line `[ref]: url`); everything else falls through to
+||| paragraph. Headings are split out by `normalGroupToBlocks`; lists
+||| never reach here — they are captured as `ListGroup`s by `groupLines`.
 normalGroupToBlock : List1 String -> Block
 normalGroupToBlock (l ::: ls) =
   if isNil ls && isThematicBreak l
@@ -1542,12 +1793,8 @@ normalGroupToBlock (l ::: ls) =
     else if isNil ls
       then case parseRefDef l of
         Just (label, url, title) => RefDef label url title
-        Nothing => case tryParseList (l ::: ls) of
-          Just listBlock => listBlock
-          Nothing => Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
-      else case tryParseList (l ::: ls) of
-        Just listBlock => listBlock
         Nothing => Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
+      else Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
 
 ||| Convert one NORMAL line group into a block sequence. A group whose
 ||| first line is an ATX heading marker yields one or more `Heading`
@@ -1701,7 +1948,193 @@ tableGroupToBlock (l ::: ls) = case ls of
     let row = makeRow False [] l
      in Table emptyAttrs Nothing [row]
 
+--------------------------------------------------------------------------------
+-- List item splitting + loose/tight detection.
+--------------------------------------------------------------------------------
+
+||| The marker of a line at its own indentation, if any.
+lineMarker : String -> Maybe Marker
+lineMarker s =
+  let ind = leadingSpaces s
+   in case parseMarker (drop ind (unpack s)) of
+        Just (m, _, _) => Just m
+        Nothing        => Nothing
+
+||| `True` iff `x` (a non-blank line) begins a *new sibling item* of a
+||| list whose markers sit at `markerIndent`: its indentation is
+||| `<= markerIndent` and its marker continues the list per `continues`.
+isSiblingMarker : (markerIndent : Nat) -> (continues : Marker -> Bool)
+               -> String -> Bool
+isSiblingMarker mi continues x = case lineMarker x of
+  Just m  => leadingSpaces x <= mi && continues m
+  Nothing => False
+
+||| Split a list group's lines into per-item runs plus the leftover
+||| lines that belong to a *different* list (a base-level marker of a
+||| different family) or fall outside the list entirely. The opener line
+||| of each item starts a fresh run; subsequent blank, indented, or lazy
+||| (column-0 plain text immediately continuing a paragraph) lines accrue
+||| to it. A same-family base-level marker opens the next sibling item.
+||| `prevBlank` tracks whether the previous line was blank, so a column-0
+||| plain line is treated as a lazy continuation only when it directly
+||| follows non-blank content. Single structural pass.
+splitItems :
+     (markerIndent : Nat) -> (continues : Marker -> Bool)
+  -> List String -> (List (List String), List String)
+splitItems mi continues allLines = go False [] [] allLines
+  where
+    flush : List String -> List (List String) -> List (List String)
+    flush []  acc = acc
+    flush cur acc = reverse cur :: acc
+
+    go : (prevBlank : Bool) -> (cur : List String) -> (acc : List (List String))
+       -> List String -> (List (List String), List String)
+    go pb cur acc []        = (reverse (flush cur acc), [])
+    go pb cur acc (x :: xs) =
+      if isBlankLine x
+        then go True (x :: cur) acc xs
+        else if isSiblingMarker mi continues x
+          then go False [x] (flush cur acc) xs   -- next sibling item
+          else if leadingSpaces x > mi
+            then go False (x :: cur) acc xs       -- indented continuation
+            else case lineMarker x of
+              -- A base-level marker of a different family ends this list
+              -- and starts a new one: hand the remainder back as leftover.
+              Just _  => (reverse (flush cur acc), x :: xs)
+              Nothing =>
+                if not pb
+                  then go False (x :: cur) acc xs -- lazy paragraph cont.
+                  else (reverse (flush cur acc), x :: xs)  -- blank then text
+
+||| `True` iff a single item's lines contain a blank line that forces
+||| the list loose. Trailing blanks are ignored. A blank line that is
+||| immediately followed (skipping further blanks) by an indented
+||| sub-list opener does NOT force loose — per Djot, a blank line before
+||| a nested list keeps the parent tight.
+itemHasInnerBlank : List String -> Bool
+itemHasInnerBlank run =
+  let trimmed = reverse (dropWhile isBlankLine (reverse run))
+   in go trimmed
+  where
+    go : List String -> Bool
+    go []        = False
+    go (x :: xs) =
+      if isBlankLine x
+        then case dropWhile isBlankLine xs of
+               (y :: _) => if isListOpener y && isIndentedLine y
+                             then go xs        -- blank before sub-list: tight
+                             else True         -- blank before plain block: loose
+               []       => go xs
+        else go xs
+
 mutual
+  ||| Build one or more `ListBlock`s from a `ListGroup`'s raw lines. A
+  ||| single group may contain several adjacent lists (when the marker
+  ||| family changes, e.g. `-` then `+`, or roman then alpha): the first
+  ||| list is built here and the leftover lines are re-grouped. Splits
+  ||| into items by indentation, resolves number-style + start, detects
+  ||| tight vs loose, and recurses into each item's dedented body.
+  ||| Task-list items are recognised when an item body opens with a
+  ||| `[ ]` / `[x]` checkbox.
+  listGroupToBlocks : List1 String -> List Block
+  listGroupToBlocks (l ::: ls) =
+    let mi = leadingSpaces l
+        afterMi = drop mi (unpack l)
+     in case parseMarker afterMi of
+          Nothing => [Paragraph emptyAttrs (parseInlineLine l)]  -- impossible
+          Just (first, mw, _) =>
+            let ci = mi + mw
+                -- Phase 1: a lenient split (ambiguous roman/alpha letters
+                -- match either) to find the second item, which fixes the
+                -- ordered number-style.
+                (lenientRuns, _) = splitItems mi (sameList first) (l :: ls)
+                secondMarker : Maybe Marker
+                secondMarker = case lenientRuns of
+                  (_ :: (s :: _) :: _) =>
+                    let si = leadingSpaces s
+                     in case parseMarker (drop si (unpack s)) of
+                          Just (m2, _, _) => Just m2
+                          Nothing         => Nothing
+                  _ => Nothing
+                style0 = resolveStyle first secondMarker
+                -- Phase 2: the real split, using the *resolved* style so
+                -- a later item whose only interpretation diverges (e.g.
+                -- `E.` after roman `I.`/`II.`) breaks the list.
+                continues : Marker -> Bool
+                continues m = case first of
+                  MUnordered _ => sameList first m
+                  MOrdered x   => case style0 of
+                    OrderedDecimal    => sameResolvedList PDecimal (delim x) m
+                    OrderedRomanLower => sameResolvedList (PRoman True)  (delim x) m
+                    OrderedRomanUpper => sameResolvedList (PRoman False) (delim x) m
+                    OrderedAlphaLower => sameResolvedList (PAlpha True)  (delim x) m
+                    OrderedAlphaUpper => sameResolvedList (PAlpha False) (delim x) m
+                    _                 => sameList first m
+                splitResult = splitItems mi continues (l :: ls)
+                itemRuns = fst splitResult
+                leftover = snd splitResult
+                start0 = markerStart style0 first
+                -- Loose if any item is separated from the next by a
+                -- blank line, or any item has a loose-forcing inner blank.
+                -- A trailing blank that follows a *nested sub-list* line
+                -- is absorbed by that sub-list and does not loosen the
+                -- outer list (matches the reference parser).
+                trailingBlankSeparates : List String -> Bool
+                trailingBlankSeparates r =
+                  case reverse r of
+                    (b :: more) =>
+                      isBlankLine b &&
+                      (case dropWhile isBlankLine more of
+                         (lastNonBlank :: _) =>
+                           not (isListOpener lastNonBlank
+                                && isIndentedLine lastNonBlank)
+                         [] => False)
+                    [] => False
+                hasSep : List (List String) -> Bool
+                hasSep []           = False
+                hasSep [_]          = False
+                hasSep (r :: rest)  = trailingBlankSeparates r || hasSep rest
+                anyInner = any itemHasInnerBlank itemRuns
+                loose    = hasSep itemRuns || anyInner
+                tight    = not loose
+                items    = map (assert_total (mkItem ci tight)) itemRuns
+                -- Promote to a TaskList when every item is a checkbox.
+                isTaskItem : ListItem -> Bool
+                isTaskItem i = case checked i of
+                  Just _  => True
+                  Nothing => False
+                allTask = case items of
+                  [] => False
+                  _  => all isTaskItem items
+                style = if allTask then TaskList else style0
+                thisList = ListBlock emptyAttrs style start0 tight items
+                more : List Block
+                more = case leftover of
+                         []        => []
+                         (x :: xs) =>
+                           assert_total (groupsToBlocks (groupLines (x :: xs)))
+             in thisList :: more
+
+  ||| Build one `ListItem` from a single item's raw lines. The opener
+  ||| line's marker is stripped; continuation lines are dedented by the
+  ||| content indent. A leading `[ ]`/`[x]` checkbox promotes the item
+  ||| to a task item (the checkbox is consumed from the body).
+  mkItem : (contentIndent : Nat) -> (tight : Bool) -> List String -> ListItem
+  mkItem ci tight run = case run of
+    [] => MkLI emptyAttrs Nothing Nothing []
+    (opener :: rest) =>
+      let mi      = leadingSpaces opener
+          body0   = case parseMarker (drop mi (unpack opener)) of
+                      Just (_, _, b) => b
+                      Nothing        => opener
+          (checkedFlag, body) = case parseTaskMarker (unpack body0) of
+            Just (c, b) => (Just c, b)
+            Nothing     => (Nothing, body0)
+          contLines = map (dropLeadingSpaces ci) rest
+          bodyLines = body :: contLines
+          blocks    = assert_total (parseBodyBlocks bodyLines)
+       in MkLI emptyAttrs checkedFlag Nothing blocks
+
   ||| Build a `Definition`-style `ListBlock` from a `DefListGroup`'s
   ||| raw lines. Each per-item run becomes a `ListItem` whose `term` is
   ||| the inline parse of the term paragraph and whose `content` is
@@ -1762,6 +2195,9 @@ mutual
       _            => CodeBlock emptyAttrs info b
   groupToBlock (TableGroup rows)  = tableGroupToBlock rows
   groupToBlock (DefListGroup rs)  = defListGroupToBlock rs
+  groupToBlock (ListGroup rs)     = case listGroupToBlocks rs of
+    (b :: _) => b
+    []       => Paragraph emptyAttrs []
   groupToBlock (FootnoteGroup l body) = footnoteGroupToBlock l body
   groupToBlock (AttrPrefixGroup _) = Paragraph emptyAttrs []
   groupToBlock (DivGroup attrs gs) =
@@ -1797,6 +2233,15 @@ mutual
       go pend (NormalGroup g :: gs)           =
         attachHead pend (normalGroupToBlocks g)
           ++ assert_total (go emptyAttrs gs)
+      -- A list group can expand to several adjacent lists; the pending
+      -- attribute prefix attaches to the first.
+      go pend (ListGroup rs :: gs)            =
+        let bs = assert_total (listGroupToBlocks rs)
+            bs' = case bs of
+                    []        => []
+                    (b :: r)  =>
+                      (if isEmpty pend then b else applyAttrsToBlock pend b) :: r
+         in bs' ++ assert_total (go emptyAttrs gs)
       go pend (g :: gs)                       =
         let b = assert_total (groupToBlock g)
          in (if isEmpty pend then b else applyAttrsToBlock pend b)

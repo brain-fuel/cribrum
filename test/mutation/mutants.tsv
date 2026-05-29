@@ -241,3 +241,11 @@ src/Cribrum/Djot/Parser.idr	if isAsciiPunct p	if False	parser: backslash escape 
 src/Cribrum/Djot/Parser.idr	findCloseEsc c ('\\' :: y :: xs)	findCloseEsc c ('@' :: y :: xs)	parser: emphasis closer scan stops skipping backslash escapes
 src/Cribrum/Render/Html.idr	escapeChar '\x2014' = "&mdash;"	escapeChar '\x2014' = "&ndash;"	render: em-dash codepoint emitted as en-dash entity
 src/Cribrum/Render/Html.idr	escapeChar '\x2018' = "&lsquo;"	escapeChar '\x2018' = "&rsquo;"	render: left single quote codepoint emitted as right-quote entity
+src/Cribrum/Djot/Parser.idr	&& isNil cur	&& True	list: a list marker wrongly interrupts an open paragraph (1865. starts a list)
+src/Cribrum/Djot/Parser.idr	delim x == delim y	True	list: ordered markers with different delimiters wrongly join one list
+src/Cribrum/Djot/Parser.idr	leadingSpaces x > mi	leadingSpaces x >= mi	list: continuation-indent test off-by-one (marker-level lines wrongly nested)
+src/Cribrum/Djot/Parser.idr	isListOpener y && isIndentedLine y	False	list: blank-before-sublist never keeps list tight (always loose)
+src/Cribrum/Djot/Parser.idr	if n == 1 then Nothing else Just n	Just n	list: start=1 no longer suppressed (emits redundant start="1")
+src/Cribrum/Djot/Parser.idr	if allTask then TaskList else style0	style0	list: all-checkbox items never promoted to a task list
+src/Cribrum/Elaborate.idr	if tag == "ol" then olAttrs else []	[]	elaborate: ordered lists never emit start/type attributes
+src/Cribrum/Elaborate.idr	OrderedRomanLower => [MkHAttr "type" (Str "i")]	OrderedRomanLower => []	elaborate: lower-roman ordered list drops type="i"

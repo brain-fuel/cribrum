@@ -421,7 +421,7 @@ elaborateBlock (RawBlock fmt body) =
   -- blocks inject their body verbatim as a `Raw` passthrough node; raw
   -- blocks tagged with any other format are suppressed (no output).
   if fmt == "html" then Raw body else Text ""
-elaborateBlock (ListBlock _ style _ tight items) =
+elaborateBlock (ListBlock _ style start tight items) =
   let tag = case style of
               OrderedDecimal     => "ol"
               OrderedRomanLower  => "ol"
@@ -433,15 +433,36 @@ elaborateBlock (ListBlock _ style _ tight items) =
               UnorderedPlus      => "ul"
               TaskList           => "ul"
               Definition         => "dl"
-      -- Tight list collapse: when the list is tight AND an item body is
-      -- exactly one `Paragraph`, drop the `<p>` wrap so the gate matches
-      -- the reference renderer (which emits inline content directly in
-      -- `<li>` for tight items). TaskList is always treated as tight by
-      -- the reference renderer. Loose items keep their `<p>` wrap.
+      -- Ordered lists emit a `type=` attribute for non-decimal number
+      -- styles (`a`/`A`/`i`/`I`) and a `start=` attribute when the first
+      -- marker is not 1. The reference renderer omits both for plain
+      -- decimal lists starting at 1.
+      typeAttr : List HAttr
+      typeAttr = case style of
+        OrderedRomanLower => [MkHAttr "type" (Str "i")]
+        OrderedRomanUpper => [MkHAttr "type" (Str "I")]
+        OrderedAlphaLower => [MkHAttr "type" (Str "a")]
+        OrderedAlphaUpper => [MkHAttr "type" (Str "A")]
+        _                 => []
+      startAttr : List HAttr
+      startAttr = case start of
+        Just n  => [MkHAttr "start" (Str (show n))]
+        Nothing => []
+      olAttrs : List HAttr
+      olAttrs = startAttr ++ typeAttr
+      -- Tight list collapse: in a tight list the reference renderer
+      -- emits a `<li>`'s paragraph content inline (no `<p>` wrap), while
+      -- non-paragraph children (e.g. a nested sub-list) render normally.
+      -- A tight item is thus the flattened concatenation of: inline
+      -- content for each direct `Paragraph`, and the elaborated form of
+      -- every other block. TaskList items are always treated as tight.
+      -- Loose items keep their `<p>` wrap (this helper is not used).
       unwrapTight : List Block -> List HExpr
-      unwrapTight [Paragraph _ inls] = map elaborateInline inls
-      unwrapTight bs                 =
-        assert_total (map elaborateBlock bs)
+      unwrapTight []                       = []
+      unwrapTight (Paragraph _ inls :: bs) =
+        map elaborateInline inls ++ assert_total (unwrapTight bs)
+      unwrapTight (b :: bs)                =
+        assert_total (elaborateBlock b) :: assert_total (unwrapTight bs)
 
       -- TaskList items carry `checked = Just bool`. The reference
       -- renderer adds a `class="checked"` / `"unchecked"` attribute
@@ -460,7 +481,10 @@ elaborateBlock (ListBlock _ style _ tight items) =
 
       elabTaskItem : ListItem -> HExpr
       elabTaskItem i =
-        Element "li" (taskLiAttrs (checked i)) (unwrapTight (content i))
+        Element "li" (taskLiAttrs (checked i))
+          (if tight
+             then unwrapTight (content i)
+             else assert_total (map elaborateBlock (content i)))
 
       -- Definition items decompose into one `<dt>` (term) and an
       -- optional `<dd>` (body) sibling pair. Items with no body emit
@@ -485,7 +509,8 @@ elaborateBlock (ListBlock _ style _ tight items) =
         Definition =>
           Element "dl" [] (concatMap defPair items)
         _          =>
-          Element tag [] (map elabItem items)
+          let attrs = if tag == "ol" then olAttrs else []
+           in Element tag attrs (map elabItem items)
 elaborateBlock (Table _ _ rows) =
   -- Emit `<table>` with `<thead>` for header rows (set by the parser
   -- when an alignment row was present) and `<tbody>` for the body

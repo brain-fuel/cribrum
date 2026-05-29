@@ -36,10 +36,10 @@ honour.
 | Heading (level n)     | `<h1>`...`<h6>`            | spike    | Levels 1..6; >6 currently parses as paragraph. |
 | Thematic break        | `<hr>`                     | spike    | `---` / `***`, 3+ chars, surrounding ws ok. |
 | Block quote           | `<blockquote>`             | spike    | Lines prefixed `> `; recursive nesting supported. |
-| List (unordered)      | `<ul>` + `<li>`            | deferred | Marker `-` / `*` / `+`. |
-| List (ordered)        | `<ol>` + `<li>`            | deferred | Decimal / roman / alpha; `start` carried. |
-| List (task)           | `<ul>` + `<li>` w/ checkbox| deferred | Renders `<input type="checkbox" disabled>` first child. |
-| List (definition)     | `<dl>` + `<dt>` + `<dd>`   | deferred | `term` carried separately. |
+| List (unordered)      | `<ul>` + `<li>`            | done     | Marker `-` / `*` / `+`; nested sub-lists, multi-paragraph items, lazy continuation, tight/loose detection (blank before a sub-list stays tight). A bullet-family change starts a new list. |
+| List (ordered)        | `<ol>` + `<li>`            | done     | Decimal / lower+upper roman / lower+upper alpha; delimiters `1.` `1)` `(1)`. `start` carried + emitted (omitted when 1); non-decimal styles emit `type=` (`a`/`A`/`i`/`I`). Ambiguous leading roman/alpha letter resolved against the second item, defaulting to roman. A marker an ordered value ≠ 1 cannot interrupt an open paragraph. |
+| List (task)           | `<ul class="task-list">` + `<li class="checked\|unchecked">` | done | Promoted when every item is a `[ ]`/`[x]` checkbox; loose task lists keep the `<p>` wrap. |
+| List (definition)     | `<dl>` + `<dt>` + `<dd>`   | done     | `term` carried separately. |
 | Code block (fenced)   | `<pre><code>`              | spike    | `info` string parsed but not yet promoted to language class (deferred). |
 | Raw block             | `Raw` (passthrough)        | spike    | `=html` fenced block (`` ``` =html ``) injects its body verbatim as an unescaped `Raw` node; any other format is suppressed (no output). |
 | Div (fenced)          | (see conventions §2)       | spike    | Convention class drives semantic-element promotion; else `<div>`. |

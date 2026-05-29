@@ -574,6 +574,50 @@ ext_loose_ul_keeps_paragraph_wrap = oneShot $
               [ Element "li" [] [Element "p" [] [Text "one"]]
               ]]
 
+||| An ordered list whose first marker is not 1 emits a `start=`
+||| attribute. Pins the `startAttr` branch of the `ListBlock` elaborator.
+export
+ext_ordered_list_emits_start : Property
+ext_ordered_list_emits_start = oneShot $
+  elaborateDoc
+    (doc [ListBlock emptyAttrs OrderedDecimal (Just 4) True
+            [ MkLI emptyAttrs Nothing Nothing
+                [Paragraph emptyAttrs [InlText "one"]]
+            ]])
+    === Element "main" []
+          [ Element "ol" [MkHAttr "start" (Str "4")]
+              [ Element "li" [] [Text "one"] ]]
+
+||| A lower-roman ordered list emits `type="i"`, and `start` + `type`
+||| appear in that order. Pins `typeAttr` and the `startAttr ++ typeAttr`
+||| ordering in `olAttrs`.
+export
+ext_ordered_list_emits_type_and_start : Property
+ext_ordered_list_emits_type_and_start = oneShot $
+  elaborateDoc
+    (doc [ListBlock emptyAttrs OrderedRomanLower (Just 41) True
+            [ MkLI emptyAttrs Nothing Nothing
+                [Paragraph emptyAttrs [InlText "one"]]
+            ]])
+    === Element "main" []
+          [ Element "ol"
+              [ MkHAttr "start" (Str "41"), MkHAttr "type" (Str "i") ]
+              [ Element "li" [] [Text "one"] ]]
+
+||| An unordered list never carries `start`/`type` even when the AST
+||| (defensively) records a start. Pins the `tag == "ol"` guard.
+export
+ext_unordered_list_no_ol_attrs : Property
+ext_unordered_list_no_ol_attrs = oneShot $
+  elaborateDoc
+    (doc [ListBlock emptyAttrs UnorderedDash Nothing True
+            [ MkLI emptyAttrs Nothing Nothing
+                [Paragraph emptyAttrs [InlText "x"]]
+            ]])
+    === Element "main" []
+          [ Element "ul" []
+              [ Element "li" [] [Text "x"] ]]
+
 ||| Attribute emission order is class first, then id, then key=val
 ||| pairs. Pins `attrsToHAttrs`' concatenation order so a mutant
 ||| flipping `classAttr ++ idAttr ++ others` to `idAttr ++ classAttr`
@@ -892,6 +936,9 @@ group = MkGroup "Cribrum.Elaborate"
   , ("ext_definition_list_emits_dl_dt_dd",     ext_definition_list_emits_dl_dt_dd)
   , ("ext_tight_ul_collapses_paragraph_wrap",  ext_tight_ul_collapses_paragraph_wrap)
   , ("ext_loose_ul_keeps_paragraph_wrap",      ext_loose_ul_keeps_paragraph_wrap)
+  , ("ext_ordered_list_emits_start",           ext_ordered_list_emits_start)
+  , ("ext_ordered_list_emits_type_and_start",  ext_ordered_list_emits_type_and_start)
+  , ("ext_unordered_list_no_ol_attrs",         ext_unordered_list_no_ol_attrs)
   , ("ext_attrs_emit_class_before_id",         ext_attrs_emit_class_before_id)
   , ("ext_div_nav_promotes_and_consumes_class", ext_div_nav_promotes_and_consumes_class)
   , ("ext_div_aside_promotes",                 ext_div_aside_promotes)

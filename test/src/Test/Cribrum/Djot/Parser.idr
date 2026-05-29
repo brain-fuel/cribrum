@@ -1321,14 +1321,15 @@ ext_unordered_list_dash_dash_dash = oneShot $
 export
 ext_mixed_markers_break_list : Property
 ext_mixed_markers_break_list = oneShot $
-  -- A run mixing `-` and `*` markers in adjacent lines breaks list
-  -- grouping back to paragraph (Djot disallows mixed-marker runs).
+  -- A run mixing `-` and `*` markers starts a *new* list at the marker
+  -- change (per Djot: a different bullet family ends the current list
+  -- and opens another), so this yields two adjacent single-item lists.
   parseDoc "- one\n* two"
-    === ok (doc [paraMulti
-                   [ InlText "- one"
-                   , InlSoftBreak
-                   , InlText "* two"
-                   ]])
+    === ok (doc [ ulList ["one"]
+                , ListBlock emptyAttrs UnorderedAsterisk Nothing True
+                    [ MkLI emptyAttrs Nothing Nothing
+                        [Paragraph emptyAttrs [InlText "two"]] ]
+                ])
 
 export
 ext_ordered_decimal_list : Property
@@ -1339,6 +1340,108 @@ ext_ordered_decimal_list = oneShot $
                        [Paragraph emptyAttrs [InlText "alpha"]]
                    , MkLI emptyAttrs Nothing Nothing
                        [Paragraph emptyAttrs [InlText "bravo"]]
+                   ]])
+
+export
+ext_ordered_list_start_attribute : Property
+ext_ordered_list_start_attribute = oneShot $
+  -- A decimal list whose first marker is 4 records `start = Just 4`.
+  parseDoc "4. one\n5. two"
+    === ok (doc [ListBlock emptyAttrs OrderedDecimal (Just 4) True
+                   [ MkLI emptyAttrs Nothing Nothing
+                       [Paragraph emptyAttrs [InlText "one"]]
+                   , MkLI emptyAttrs Nothing Nothing
+                       [Paragraph emptyAttrs [InlText "two"]]
+                   ]])
+
+export
+ext_ordered_list_paren_alpha : Property
+ext_ordered_list_paren_alpha = oneShot $
+  -- `(a)`-style markers are lower-alpha ordered lists.
+  parseDoc "(a) one\n(b) two"
+    === ok (doc [ListBlock emptyAttrs OrderedAlphaLower Nothing True
+                   [ MkLI emptyAttrs Nothing Nothing
+                       [Paragraph emptyAttrs [InlText "one"]]
+                   , MkLI emptyAttrs Nothing Nothing
+                       [Paragraph emptyAttrs [InlText "two"]]
+                   ]])
+
+export
+ext_ordered_list_roman_disambiguated : Property
+ext_ordered_list_roman_disambiguated = oneShot $
+  -- A leading ambiguous `i.` is resolved to lower-roman by the
+  -- unambiguous `ii.` that follows; the start value is the roman 1
+  -- (so it is omitted), not the alpha 9.
+  parseDoc "i. one\nii. two"
+    === ok (doc [ListBlock emptyAttrs OrderedRomanLower Nothing True
+                   [ MkLI emptyAttrs Nothing Nothing
+                       [Paragraph emptyAttrs [InlText "one"]]
+                   , MkLI emptyAttrs Nothing Nothing
+                       [Paragraph emptyAttrs [InlText "two"]]
+                   ]])
+
+export
+ext_ordered_list_alpha_when_not_roman : Property
+ext_ordered_list_alpha_when_not_roman = oneShot $
+  -- `i.` then `j.`: `j` is not a roman letter, forcing lower-alpha,
+  -- so the list starts at 9 (`i` = the 9th letter).
+  parseDoc "i. a\nj. b"
+    === ok (doc [ListBlock emptyAttrs OrderedAlphaLower (Just 9) True
+                   [ MkLI emptyAttrs Nothing Nothing
+                       [Paragraph emptyAttrs [InlText "a"]]
+                   , MkLI emptyAttrs Nothing Nothing
+                       [Paragraph emptyAttrs [InlText "b"]]
+                   ]])
+
+export
+ext_marker_family_change_starts_new_list : Property
+ext_marker_family_change_starts_new_list = oneShot $
+  -- `-`, `-`, then `+`: the `+` ends the dash list and opens a new one.
+  parseDoc "- a\n- b\n+ c"
+    === ok (doc [ ulList ["a", "b"]
+                , ListBlock emptyAttrs UnorderedPlus Nothing True
+                    [ MkLI emptyAttrs Nothing Nothing
+                        [Paragraph emptyAttrs [InlText "c"]] ]
+                ])
+
+export
+ext_nested_unordered_list : Property
+ext_nested_unordered_list = oneShot $
+  -- After a blank line, indented sub-items nest inside the parent item;
+  -- a blank before a sub-list keeps the parent tight.
+  parseDoc "- a\n\n  - b\n  - c\n- d"
+    === ok (doc [ListBlock emptyAttrs UnorderedDash Nothing True
+                   [ MkLI emptyAttrs Nothing Nothing
+                       [ Paragraph emptyAttrs [InlText "a"]
+                       , ulList ["b", "c"]
+                       ]
+                   , MkLI emptyAttrs Nothing Nothing
+                       [Paragraph emptyAttrs [InlText "d"]]
+                   ]])
+
+export
+ext_loose_list_blank_between_items : Property
+ext_loose_list_blank_between_items = oneShot $
+  -- A blank line separating two sibling items makes the whole list
+  -- loose (`tight = False`).
+  parseDoc "- a\n\n- b"
+    === ok (doc [ListBlock emptyAttrs UnorderedDash Nothing False
+                   [ MkLI emptyAttrs Nothing Nothing
+                       [Paragraph emptyAttrs [InlText "a"]]
+                   , MkLI emptyAttrs Nothing Nothing
+                       [Paragraph emptyAttrs [InlText "b"]]
+                   ]])
+
+export
+ext_ordered_marker_not_one_no_paragraph_interrupt : Property
+ext_ordered_marker_not_one_no_paragraph_interrupt = oneShot $
+  -- An ordered marker whose value is not 1 cannot interrupt an open
+  -- paragraph: `1865.` on a continuation line stays plain text.
+  parseDoc "The civil war ended in\n1865. And this should not start a list."
+    === ok (doc [paraMulti
+                   [ InlText "The civil war ended in"
+                   , InlSoftBreak
+                   , InlText "1865. And this should not start a list."
                    ]])
 
 export
@@ -1540,6 +1643,15 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_unordered_list_dash_dash_dash",        ext_unordered_list_dash_dash_dash)
   , ("ext_mixed_markers_break_list",             ext_mixed_markers_break_list)
   , ("ext_ordered_decimal_list",                 ext_ordered_decimal_list)
+  , ("ext_ordered_list_start_attribute",         ext_ordered_list_start_attribute)
+  , ("ext_ordered_list_paren_alpha",             ext_ordered_list_paren_alpha)
+  , ("ext_ordered_list_roman_disambiguated",     ext_ordered_list_roman_disambiguated)
+  , ("ext_ordered_list_alpha_when_not_roman",    ext_ordered_list_alpha_when_not_roman)
+  , ("ext_marker_family_change_starts_new_list", ext_marker_family_change_starts_new_list)
+  , ("ext_nested_unordered_list",                ext_nested_unordered_list)
+  , ("ext_loose_list_blank_between_items",       ext_loose_list_blank_between_items)
+  , ("ext_ordered_marker_not_one_no_paragraph_interrupt",
+        ext_ordered_marker_not_one_no_paragraph_interrupt)
   , ("ext_unordered_list_with_inline_emphasis",  ext_unordered_list_with_inline_emphasis)
   , ("ext_task_list_unchecked_then_checked",     ext_task_list_unchecked_then_checked)
   , ("ext_task_list_uppercase_x_is_checked",     ext_task_list_uppercase_x_is_checked)
