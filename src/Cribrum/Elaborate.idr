@@ -232,6 +232,14 @@ promoteSpan (c :: cs) = case spanConventionTag c of
 -- Inline elaboration.
 --------------------------------------------------------------------------------
 
+||| Emit a `title=…` HTML attribute when a link/image destination
+||| carries one (`[ref]: url "title"`, or a `{title=…}` attribute), else
+||| nothing. Factored out so both the link and image elaborators share
+||| the same emission.
+titleHAttr : Maybe String -> List HAttr
+titleHAttr (Just t) = [MkHAttr "title" (Str t)]
+titleHAttr Nothing  = []
+
 ||| Elaborate one inline. SoftBreak/HardBreak materialise as text " " and
 ||| `<br>` respectively, matching standard Djot HTML output. Constructs not
 ||| yet in the elaborator's slice (emphasis, links, ...) fall through to
@@ -260,7 +268,8 @@ elaborateInline (InlVerbatim _ s)  = Element "code" [] [Text s]
 elaborateInline (InlLink _ ref xs) =
   let inner = assert_total (map elaborateInline xs)
       attrs = case ref of
-                LinkInline url _    => [MkHAttr "href" (Str url)]
+                LinkInline url title =>
+                  MkHAttr "href" (Str url) :: titleHAttr title
                 LinkReference label => [MkHAttr "href" (Str ("#" ++ label))]
                 LinkAuto url        => [MkHAttr "href" (Str url)]
    in Element "a" attrs inner
@@ -276,9 +285,13 @@ elaborateInline (InlImage _ ref xs) =
               LinkInline u _    => u
               LinkReference l   => "#" ++ l
               LinkAuto u        => u
-   in Element "img" [ MkHAttr "alt" (Str alt)
-                    , MkHAttr "src" (Str url)
-                    ] []
+      titleAttr : List HAttr
+      titleAttr = case ref of
+                    LinkInline _ t => titleHAttr t
+                    _              => []
+   in Element "img" ([ MkHAttr "alt" (Str alt)
+                     , MkHAttr "src" (Str url)
+                     ] ++ titleAttr) []
   where
     -- Flatten the alt inlines to a plain-text string. Structural
     -- markers (emphasis, strong, verbatim, links) contribute their

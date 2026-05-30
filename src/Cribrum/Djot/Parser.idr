@@ -147,6 +147,51 @@ findCloseEsc c (x :: xs) =
       Just (ins, rest) => Just (x :: ins, rest)
       Nothing          => Nothing
 
+||| Collapse a reference label to its matching key: internal whitespace
+||| runs (spaces, tabs, newlines from continuation lines) fold to a
+||| single space, and leading/trailing whitespace is trimmed. Djot
+||| reference matching is case-sensitive but whitespace-insensitive, so
+||| `[a and\nb]` matches the refdef `[a and b]` (corpus -009) while
+||| `[Link]` does NOT match `[link]` (corpus -012).
+normalizeLabelKey : String -> String
+normalizeLabelKey = pack . go False . unpack . trim
+  where
+    -- `pending` is True once a whitespace run has been seen but not yet
+    -- emitted; the single collapsing space is written lazily before the
+    -- next non-space char. Structurally recursive on the char list.
+    go : Bool -> List Char -> List Char
+    go _       []        = []
+    go pending (c :: cs) =
+      if isSpace c
+        then go True cs
+        else if pending then ' ' :: c :: go False cs
+                        else c :: go False cs
+
+||| Flatten parsed inlines to their plain-text content, used to derive
+||| the matching key for a collapsed reference (`[link _and_ link][]` ->
+||| `link and link`). Mirrors the alt-text flattening in the elaborator:
+||| structural markers contribute their children's text, breaks become a
+||| space, leaf non-text forms contribute nothing to the key.
+inlinesText : List Inline -> String
+inlinesText = concatMap one
+  where
+    one : Inline -> String
+    one (InlText s)        = s
+    one InlSoftBreak       = " "
+    one InlHardBreak       = " "
+    one (InlEmph xs)       = assert_total (inlinesText xs)
+    one (InlStrong xs)     = assert_total (inlinesText xs)
+    one (InlHighlight xs)  = assert_total (inlinesText xs)
+    one (InlSuper xs)      = assert_total (inlinesText xs)
+    one (InlSub xs)        = assert_total (inlinesText xs)
+    one (InlInsert xs)     = assert_total (inlinesText xs)
+    one (InlDelete xs)     = assert_total (inlinesText xs)
+    one (InlSpan _ xs)     = assert_total (inlinesText xs)
+    one (InlLink _ _ xs)   = assert_total (inlinesText xs)
+    one (InlImage _ _ xs)  = assert_total (inlinesText xs)
+    one (InlVerbatim _ s)  = s
+    one _                  = ""
+
 ||| Flush an accumulator of plain characters to an `InlText` (singleton
 ||| or empty). The accumulator is held in reverse order; flushing
 ||| reverses + packs.
@@ -166,6 +211,49 @@ isAsciiPunct c =
    || (n >= 0x3A && n <= 0x40)   -- : ; < = > ? @
    || (n >= 0x5B && n <= 0x60)   -- [ \ ] ^ _ `
    || (n >= 0x7B && n <= 0x7E)   -- { | } ~
+
+||| Normalise a link/image destination harvested between `(` and `)`.
+||| Two Djot rules apply: (1) backslash escapes are processed, so `\*`
+||| in a URL yields a literal `*` (a backslash before a non-punctuation
+||| char stays literal); (2) a soft line break inside the destination is
+||| removed with no replacement, so a URL spanning continuation lines
+||| joins seam-to-seam (`url\nandurl` -> `urlandurl`, `hello *a\nb*` ->
+||| `hello *ab*`). Internal spaces are preserved.
+normalizeUrl : List Char -> String
+normalizeUrl = pack . go
+  where
+    go : List Char -> List Char
+    go []                = []
+    go ('\\' :: p :: cs) =
+      if isAsciiPunct p then p :: go cs else '\\' :: go (p :: cs)
+    go ('\n' :: cs)      = go cs
+    go (c :: cs)         = c :: go cs
+
+||| Like `findClose ']'`, but bracket-balanced: nested `[...]` pairs
+||| (including image openers `![`) inside the label are skipped over so
+||| the closer returned is the one matching the OUTER `[`. Backslash
+||| escapes are honoured (an escaped `\[` / `\]` never shifts the depth
+||| and the `\`+char are carried into the body verbatim). Used for link
+||| and image labels so `[![alt](img)](url)`, `[[foo](bar)](baz)`, and
+||| `![[link](url)](img)` find the correct outer `]`.
+findCloseBracket : List Char -> Maybe (List Char, List Char)
+findCloseBracket = go 0
+  where
+    go : Nat -> List Char -> Maybe (List Char, List Char)
+    go _ []                  = Nothing
+    go d ('\\' :: y :: xs)   = case go d xs of
+      Just (ins, rest) => Just ('\\' :: y :: ins, rest)
+      Nothing          => Nothing
+    go d ('[' :: xs)         = case go (S d) xs of
+      Just (ins, rest) => Just ('[' :: ins, rest)
+      Nothing          => Nothing
+    go (S d) (']' :: xs)     = case go d xs of
+      Just (ins, rest) => Just (']' :: ins, rest)
+      Nothing          => Nothing
+    go Z (']' :: xs)         = Just ([], xs)
+    go d (x :: xs)           = case go d xs of
+      Just (ins, rest) => Just (x :: ins, rest)
+      Nothing          => Nothing
 
 ||| Split a leading run of identical characters `m` off `cs`, returning
 ||| (runLength, rest). The first char is assumed already consumed, so the
@@ -351,7 +439,7 @@ mutual
   |||   `[text][ref]`    -> InlLink (LinkReference ref)   (full reference)
   |||   `[text][]`       -> InlLink (LinkReference text)  (collapsed reference)
   parseLinkBody : List Char -> Maybe (Inline, List Char)
-  parseLinkBody chars = case findClose ']' chars of
+  parseLinkBody chars = case findCloseBracket chars of
     Just (label, afterClose) =>
       if label == []
         then Nothing
@@ -361,24 +449,29 @@ mutual
               if url == []
                 then Nothing
                 else
-                  -- Per Djot, an inline-link URL that spans paragraph
-                  -- lines joins by stripping internal whitespace; e.g.
-                  -- `[link](url\nandurl)` -> href="urlandurl"
-                  -- (corpus links-and-images-006).
-                  let urlStripped = pack (filter (not . isSpace) url)
+                  -- Per Djot, an inline-link URL has backslash escapes
+                  -- processed and soft line breaks removed (see
+                  -- `normalizeUrl`); e.g. `[link](url\nandurl)` ->
+                  -- href="urlandurl" (corpus links-and-images-006),
+                  -- `[closed](hello\*)` -> href="hello*" (-021).
+                  let urlStripped = normalizeUrl url
                       inner = assert_total (parseInlines label)
                    in Just (InlLink emptyAttrs
                               (LinkInline urlStripped Nothing) inner
                           , after)
             Nothing => Nothing
-          ('[' :: rest) => case findClose ']' rest of
+          ('[' :: rest) => case findCloseBracket rest of
             Just (refLabel, after) =>
-              -- Empty ref body = collapsed form; the visible text
-              -- doubles as the reference label.
-              let label' = if refLabel == []
-                             then pack label
-                             else pack refLabel
-                  inner  = assert_total (parseInlines label)
+              -- Empty ref body = collapsed form; the visible text's
+              -- plain rendering doubles as the reference label. A
+              -- non-empty body is a full reference whose raw bracket
+              -- source is the label. Both are whitespace-normalised so
+              -- a label spanning continuation lines still matches a
+              -- single-line refdef (corpus -009, -015).
+              let inner  = assert_total (parseInlines label)
+                  label' = if refLabel == []
+                             then normalizeLabelKey (inlinesText inner)
+                             else normalizeLabelKey (pack refLabel)
                in Just ( InlLink emptyAttrs (LinkReference label') inner
                        , after)
             Nothing => Nothing
@@ -391,18 +484,31 @@ mutual
   ||| permits `![](url)` for decorative images); missing src or
   ||| malformed link bodies fall back so the `!` becomes literal text.
   parseImageBody : List Char -> Maybe (Inline, List Char)
-  parseImageBody chars = case findClose ']' chars of
+  parseImageBody chars = case findCloseBracket chars of
     Just (label, afterClose) => case afterClose of
       ('(' :: rest) => case findClose ')' rest of
         Just (url, after) =>
           if url == []
             then Nothing
             else
-              let urlStripped = pack (filter (not . isSpace) url)
+              let urlStripped = normalizeUrl url
                   inner = assert_total (parseInlines label)
                in Just ( InlImage emptyAttrs
                            (LinkInline urlStripped Nothing) inner
                        , after)
+        Nothing => Nothing
+      -- Reference image: `![alt][ref]` (full) or `![alt][]` (collapsed,
+      -- alt's plain text is the label). Resolved against refdefs in the
+      -- two-pass walk; an unresolved ref keeps the InlImage so the alt
+      -- still renders (corpus -002, -023).
+      ('[' :: rest) => case findCloseBracket rest of
+        Just (refLabel, after) =>
+          let inner  = assert_total (parseInlines label)
+              label' = if refLabel == []
+                         then normalizeLabelKey (inlinesText inner)
+                         else normalizeLabelKey (pack refLabel)
+           in Just ( InlImage emptyAttrs (LinkReference label') inner
+                   , after)
         Nothing => Nothing
       _ => Nothing
     Nothing => Nothing
@@ -573,9 +679,15 @@ mutual
       Just (inner, after) =>
         if isAutolinkBody inner
           then
-            let url = pack inner
+            -- An email autolink (`@` present, no scheme `:`) gets a
+            -- `mailto:` href while its visible text stays the bare
+            -- address (corpus links-and-images-025); a URL autolink
+            -- uses the body verbatim for both href and text.
+            let text    = pack inner
+                isEmail = any (== '@') inner && not (any (== ':') inner)
+                url     = if isEmail then "mailto:" ++ text else text
              in flushAcc acc
-                  ++ [InlLink emptyAttrs (LinkAuto url) [InlText url]]
+                  ++ [InlLink emptyAttrs (LinkAuto url) [InlText text]]
                   ++ assert_total (parseInlinesAcc [] after)
           else assert_total (parseInlinesAcc ('<' :: acc) cs)
       Nothing => assert_total (parseInlinesAcc ('<' :: acc) cs)
@@ -2359,26 +2471,33 @@ mutual
   ||| Build a lookup table from a list of blocks. Only top-level
   ||| RefDef blocks contribute; nested defs (inside block quotes) are
   ||| recursively scanned.
-  collectRefDefs : List Block -> List (String, String)
+  collectRefDefs : List Block -> List (String, (String, Maybe String))
   collectRefDefs []        = []
   collectRefDefs (b :: bs) =
     refDefsFromBlock b ++ assert_total (collectRefDefs bs)
 
-  refDefsFromBlock : Block -> List (String, String)
-  refDefsFromBlock (RefDef l u _)      = [(l, u)]
+  refDefsFromBlock : Block -> List (String, (String, Maybe String))
+  refDefsFromBlock (RefDef l u t)      = [(normalizeLabelKey l, (u, t))]
   refDefsFromBlock (BlockQuote _ bs')  =
     assert_total (collectRefDefs bs')
   refDefsFromBlock _                   = []
 
 mutual
-  ||| Resolve `LinkReference label` to `LinkInline url` when the label
-  ||| is known. Other forms (LinkInline, LinkAuto) pass through.
-  resolveInline : List (String, String) -> Inline -> Inline
+  ||| Resolve `LinkReference label` to `LinkInline url title` (link) or
+  ||| keep the `InlImage` ref form with the resolved URL when the label
+  ||| is known. Unknown labels pass through unchanged so the elaborator
+  ||| renders the visible text. Inline/auto forms are left alone.
+  resolveInline : List (String, (String, Maybe String)) -> Inline -> Inline
   resolveInline tab i = case i of
     InlLink a (LinkReference l) xs => case lookup l tab of
-      Just url => InlLink a (LinkInline url Nothing)
+      Just (url, title) => InlLink a (LinkInline url title)
                     (assert_total (resolveInlines tab xs))
       Nothing  => InlLink a (LinkReference l)
+                    (assert_total (resolveInlines tab xs))
+    InlImage a (LinkReference l) xs => case lookup l tab of
+      Just (url, title) => InlImage a (LinkInline url title)
+                    (assert_total (resolveInlines tab xs))
+      Nothing  => InlImage a (LinkReference l)
                     (assert_total (resolveInlines tab xs))
     InlLink a r xs   =>
       InlLink a r (assert_total (resolveInlines tab xs))
@@ -2402,11 +2521,11 @@ mutual
       InlSpan a     (assert_total (resolveInlines tab xs))
     other            => other
 
-  resolveInlines : List (String, String) -> List Inline -> List Inline
+  resolveInlines : List (String, (String, Maybe String)) -> List Inline -> List Inline
   resolveInlines tab = map (resolveInline tab)
 
 mutual
-  resolveBlock : List (String, String) -> Block -> Block
+  resolveBlock : List (String, (String, Maybe String)) -> Block -> Block
   resolveBlock tab b = case b of
     Paragraph a is        => Paragraph a (resolveInlines tab is)
     Heading a lvl is      => Heading a lvl (resolveInlines tab is)
@@ -2423,18 +2542,18 @@ mutual
       FootnoteDef a l (assert_total (resolveBlocks tab bs))
     other                 => other
 
-  resolveBlocks : List (String, String) -> List Block -> List Block
+  resolveBlocks : List (String, (String, Maybe String)) -> List Block -> List Block
   resolveBlocks tab = map (resolveBlock tab)
 
-  resolveItem : List (String, String) -> ListItem -> ListItem
+  resolveItem : List (String, (String, Maybe String)) -> ListItem -> ListItem
   resolveItem tab (MkLI a c t bs) =
     MkLI a c (map (resolveInlines tab) t)
       (assert_total (resolveBlocks tab bs))
 
-  resolveRow : List (String, String) -> TableRow -> TableRow
+  resolveRow : List (String, (String, Maybe String)) -> TableRow -> TableRow
   resolveRow tab (MkRow h cs) = MkRow h (map (resolveCell tab) cs)
 
-  resolveCell : List (String, String) -> TableCell -> TableCell
+  resolveCell : List (String, (String, Maybe String)) -> TableCell -> TableCell
   resolveCell tab (MkCell a is) = MkCell a (resolveInlines tab is)
 
 ||| Parse a Djot document, then resolve reference-link forms against

@@ -59,11 +59,21 @@ hasHrefAttr []                       = False
 hasHrefAttr (MkHAttr "href" _ :: _)  = True
 hasHrefAttr (_                :: xs) = hasHrefAttr xs
 
+||| Read an `img`'s `alt` value (empty string when absent) so it can
+||| participate in an ancestor's accessible-name text. HTML-AAM: an
+||| image embedded in a link contributes its alt text to the link's
+||| accessible name, so `<a href=…><img alt="image"></a>` is named.
+imgAltText : List HAttr -> String
+imgAltText []                          = ""
+imgAltText (MkHAttr "alt" (Str s) :: _) = s
+imgAltText (_                     :: xs) = imgAltText xs
+
 collectText : HExpr -> String
-collectText (Text s)         = s
-collectText (Comment _)      = ""
-collectText (Raw _)          = ""
-collectText (Element _ _ cs) = concatMap (assert_total collectText) cs
+collectText (Text s)             = s
+collectText (Comment _)          = ""
+collectText (Raw _)              = ""
+collectText (Element "img" as _) = imgAltText as
+collectText (Element _ _ cs)     = concatMap (assert_total collectText) cs
 
 hasAccessibleName : List HAttr -> List HExpr -> Bool
 hasAccessibleName attrs cs =

@@ -249,6 +249,33 @@ ext_image_alt_flattens_emphasis = oneShot $
           , MkHAttr "src" (Str "/x.png")
           ] []
 
+||| A resolved link carrying a title emits `<a href title>`. Pins the
+||| `titleHAttr` emission for the link side.
+export
+ext_link_title_emitted : Property
+ext_link_title_emitted = oneShot $
+  elaborateInline
+    (InlLink emptyAttrs (LinkInline "/url" (Just "foo")) [InlText "ref"])
+    === Element "a"
+          [ MkHAttr "href" (Str "/url")
+          , MkHAttr "title" (Str "foo")
+          ] [Text "ref"]
+
+||| A link whose only content is an image derives its accessible name
+||| from the image's `alt`, so the full elaborate (with the StructuralAA
+||| gate) accepts `<a href><img alt="image"></a>` (corpus -017/-024).
+||| Kills the mutant that would drop `img` alt from `collectText`.
+export
+ext_image_in_link_is_accessible : Property
+ext_image_in_link_is_accessible = oneShot $
+  case elaborate (MkDoc [Paragraph emptyAttrs
+                          [InlLink emptyAttrs (LinkInline "url" Nothing)
+                             [InlImage emptyAttrs
+                                (LinkInline "img.jpg" Nothing)
+                                [InlText "image"]]]]) of
+    Left  e => failWith Nothing ("elaborate failed: " ++ show e)
+    Right _ => success
+
 ||| Parsed-then-elaborated image is a void `<img alt src>`, valid HTML
 ||| and AA-conformant. Pins both the parser/elaborator collaboration
 ||| and the void-element invariant for images.
@@ -958,6 +985,8 @@ group = MkGroup "Cribrum.Elaborate"
   , ("pddt_heading_tags",                      pddt_heading_tags)
   , ("pddt_inline_mapping",                    pddt_inline_mapping)
   , ("ext_image_alt_flattens_emphasis",        ext_image_alt_flattens_emphasis)
+  , ("ext_link_title_emitted",                 ext_link_title_emitted)
+  , ("ext_image_in_link_is_accessible",        ext_image_in_link_is_accessible)
   , ("ext_image_round_trip_through_elaborate", ext_image_round_trip_through_elaborate)
   , ("ext_table_body_only_emit",               ext_table_body_only_emit)
   , ("ext_table_with_header_and_alignment_emit",

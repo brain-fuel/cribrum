@@ -248,3 +248,9 @@ src/Cribrum/Djot/Parser.idr	if n == 1 then Nothing else Just n	Just n	list: star
 src/Cribrum/Djot/Parser.idr	if allTask then TaskList else style0	style0	list: all-checkbox items never promoted to a task list
 src/Cribrum/Elaborate.idr	if tag == "ol" then olAttrs else []	[]	elaborate: ordered lists never emit start/type attributes
 src/Cribrum/Elaborate.idr	OrderedRomanLower => [MkHAttr "type" (Str "i")]	OrderedRomanLower => []	elaborate: lower-roman ordered list drops type="i"
+src/Cribrum/Djot/Parser.idr	"mailto:" ++ text	"" ++ text	autolink: email loses mailto: scheme prefix
+src/Cribrum/Djot/Parser.idr	go ('\n' :: cs)      = go cs	go ('\n' :: cs)      = '\n' :: go cs	url: soft-line-break newline no longer dropped on URL join
+src/Cribrum/Djot/Parser.idr	if isAsciiPunct p then p :: go cs else	if isAsciiPunct p then '\\' :: p :: go cs else	url: backslash escape in destination no longer unescaped
+src/Cribrum/Djot/Parser.idr	InlImage a (LinkReference l) xs => case lookup l tab of	InlImage a (LinkReference l) xs => case the (Maybe (String, Maybe String)) Nothing of	image: reference images never resolved against refdefs
+src/Cribrum/AA/Typed.idr	collectText (Element "img" as _) = imgAltText as	collectText (Element "img" as _) = ""	accname: img alt no longer contributes to link accessible name
+src/Cribrum/Elaborate.idr	titleHAttr (Just t) = [MkHAttr "title" (Str t)]	titleHAttr (Just t) = []	elaborate: link/image title attribute never emitted

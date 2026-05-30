@@ -717,7 +717,7 @@ ext_inline_autolink_email = oneShot $
   parseDoc "ping <me@example.org>"
     === ok (doc [paraMulti
                    [ InlText "ping "
-                   , InlLink emptyAttrs (LinkAuto "me@example.org")
+                   , InlLink emptyAttrs (LinkAuto "mailto:me@example.org")
                        [InlText "me@example.org"]
                    ]])
 
@@ -1296,6 +1296,90 @@ ext_refdef_requires_space_after_colon = oneShot $
     === ok (doc [paraMulti [InlText "[h]:url"]])
 
 --------------------------------------------------------------------------------
+-- Nested-bracket links/images, URL escaping, autolink mailto, and
+-- reference-label whitespace normalisation (links-and-images slice).
+--------------------------------------------------------------------------------
+
+||| `[![alt](img)](url)` — an inline image nested inside a link. The
+||| balanced-bracket label finder must skip the inner `![..]` so the
+||| OUTER `]` closes the link (corpus links-and-images-017/-024).
+export
+ext_image_inside_link : Property
+ext_image_inside_link = oneShot $
+  parseInlineLine "[![image](img.jpg)](url)"
+    === [ InlLink emptyAttrs (LinkInline "url" Nothing)
+            [ InlImage emptyAttrs (LinkInline "img.jpg" Nothing)
+                [InlText "image"] ] ]
+
+||| `![[link](url)](img)` — an inline link nested inside an image
+||| (corpus links-and-images-023). The image's alt inlines carry the
+||| inner link.
+export
+ext_link_inside_image : Property
+ext_link_inside_image = oneShot $
+  parseInlineLine "![[link](url)](img)"
+    === [ InlImage emptyAttrs (LinkInline "img" Nothing)
+            [ InlLink emptyAttrs (LinkInline "url" Nothing)
+                [InlText "link"] ] ]
+
+||| A backslash-escaped punctuation char inside an inline URL is
+||| unescaped: `[c](hello\*)` -> href `hello*` (corpus -021).
+export
+ext_link_url_unescapes_punct : Property
+ext_link_url_unescapes_punct = oneShot $
+  parseInlineLine "[c](hello\\*)"
+    === [ InlLink emptyAttrs (LinkInline "hello*" Nothing) [InlText "c"] ]
+
+||| An inline-link URL spanning a soft line break joins seam-to-seam,
+||| dropping only the newline and preserving internal spaces:
+||| `[c](a b\nc)` -> href `a bc` (corpus -006/-019).
+export
+ext_link_url_joins_lines : Property
+ext_link_url_joins_lines = oneShot $
+  parseDoc "[c](a b\nc)"
+    === ok (doc [paraMulti
+                   [ InlLink emptyAttrs
+                       (LinkInline "a bc" Nothing) [InlText "c"] ]])
+
+||| An email autolink gets a `mailto:` href while its visible text
+||| stays the bare address (corpus -025).
+export
+ext_autolink_email_mailto : Property
+ext_autolink_email_mailto = oneShot $
+  parseInlineLine "<me@example.com>"
+    === [ InlLink emptyAttrs (LinkAuto "mailto:me@example.com")
+            [InlText "me@example.com"] ]
+
+||| A reference image `![alt][lbl]` resolves like a reference link,
+||| keeping the `InlImage` shape with the defined URL (corpus -002).
+export
+ext_image_reference_resolved : Property
+ext_image_reference_resolved = oneShot $
+  parseDoc "![alt][a]\n\n[a]: url"
+    === ok (doc
+              [ paraMulti
+                  [ InlImage emptyAttrs (LinkInline "url" Nothing)
+                      [InlText "alt"] ]
+              , RefDef "a" "url" Nothing
+              ])
+
+||| A collapsed reference uses the visible text's PLAIN rendering as the
+||| label, so `[link _and_ link][]` matches the refdef `[link and link]`
+||| (emphasis markers gone). Pins the `inlinesText`/normalised-key path
+||| (corpus -015).
+export
+ext_collapsed_ref_uses_plain_text : Property
+ext_collapsed_ref_uses_plain_text = oneShot $
+  parseDoc "[link _and_ link][]\n\n[link and link]: url"
+    === ok (doc
+              [ paraMulti
+                  [ InlLink emptyAttrs (LinkInline "url" Nothing)
+                      [InlText "link ", InlEmph [InlText "and"]
+                      , InlText " link"] ]
+              , RefDef "link and link" "url" Nothing
+              ])
+
+--------------------------------------------------------------------------------
 -- Footnote definitions + references (parser remainder).
 --------------------------------------------------------------------------------
 
@@ -1821,6 +1905,13 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_ref_defined_before_link_resolves",     ext_ref_defined_before_link_resolves)
   , ("ext_refdef_empty_url_is_paragraph",        ext_refdef_empty_url_is_paragraph)
   , ("ext_refdef_requires_space_after_colon",    ext_refdef_requires_space_after_colon)
+  , ("ext_image_inside_link",                    ext_image_inside_link)
+  , ("ext_link_inside_image",                    ext_link_inside_image)
+  , ("ext_link_url_unescapes_punct",             ext_link_url_unescapes_punct)
+  , ("ext_link_url_joins_lines",                 ext_link_url_joins_lines)
+  , ("ext_autolink_email_mailto",                ext_autolink_email_mailto)
+  , ("ext_image_reference_resolved",             ext_image_reference_resolved)
+  , ("ext_collapsed_ref_uses_plain_text",        ext_collapsed_ref_uses_plain_text)
   , ("ext_footnote_ref_inline",                  ext_footnote_ref_inline)
   , ("ext_footnote_empty_inline_ref_is_literal", ext_footnote_empty_inline_ref_is_literal)
   , ("ext_footnote_def_single_line",             ext_footnote_def_single_line)
