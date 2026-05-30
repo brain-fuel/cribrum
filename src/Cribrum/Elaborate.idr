@@ -511,28 +511,26 @@ elaborateBlock (ListBlock _ style start tight items) =
         _          =>
           let attrs = if tag == "ol" then olAttrs else []
            in Element tag attrs (map elabItem items)
-elaborateBlock (Table _ _ rows) =
-  -- Emit `<table>` with `<thead>` for header rows (set by the parser
-  -- when an alignment row was present) and `<tbody>` for the body
-  -- rows. When no row is a header, `<thead>` is omitted and all rows
-  -- go into `<tbody>`.
-  let headerRows = filter isHeader rows
-      bodyRows   = filter (not . isHeader) rows
-      headSection : List HExpr
-      headSection = case headerRows of
-        [] => []
-        rs => [Element "thead" [] (map elabRow rs)]
-      bodySection : List HExpr
-      bodySection = case bodyRows of
-        [] => []
-        rs => [Element "tbody" [] (map elabRow rs)]
-   in Element "table" [] (headSection ++ bodySection)
+elaborateBlock (Table _ cap rows) =
+  -- Djot reference output places `<tr>` rows directly inside `<table>`
+  -- (no `<thead>`/`<tbody>` wrappers), preserving source order. Header
+  -- rows (flagged by the parser from a following alignment row) emit
+  -- `<th>` cells; body rows emit `<td>`. An optional `<caption>` (from
+  -- a trailing `^ ...` caption block) leads the table.
+  let captionSection : List HExpr
+      captionSection = case cap of
+        Nothing => []
+        Just is => [Element "caption" []
+                      (assert_total (map elaborateInline is))]
+   in Element "table" [] (captionSection ++ map elabRow rows)
   where
+    -- Reference renderer formats the alignment as `text-align: <dir>;`
+    -- (space after the colon, trailing semicolon).
     alignAttrs : Align -> List HAttr
     alignAttrs AlignNone   = []
-    alignAttrs AlignLeft   = [MkHAttr "style" (Str "text-align:left")]
-    alignAttrs AlignRight  = [MkHAttr "style" (Str "text-align:right")]
-    alignAttrs AlignCenter = [MkHAttr "style" (Str "text-align:center")]
+    alignAttrs AlignLeft   = [MkHAttr "style" (Str "text-align: left;")]
+    alignAttrs AlignRight  = [MkHAttr "style" (Str "text-align: right;")]
+    alignAttrs AlignCenter = [MkHAttr "style" (Str "text-align: center;")]
 
     elabCell : (cellTag : String) -> TableCell -> HExpr
     elabCell cellTag c =

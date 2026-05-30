@@ -127,8 +127,8 @@ ext_plan_pipeline_works planSrc = withTests 1 . property $
       diff "<code>"                isInfixOf out
       diff "<pre><code>"           isInfixOf out
       diff "<table>"               isInfixOf out
-      diff "<thead>"               isInfixOf out
-      diff "<tbody>"               isInfixOf out
+      -- Rows render directly under <table> (no <thead>/<tbody> wrappers),
+      -- matching the Djot reference renderer.
       diff "<tr>"                  isInfixOf out
       diff "<th>"                  isInfixOf out
       diff "<td>"                  isInfixOf out

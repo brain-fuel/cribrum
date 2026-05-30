@@ -1058,19 +1058,16 @@ ext_single_pipe_is_paragraph = oneShot $
   parseDoc "| only one"
     === ok (doc [para "| only one"])
 
-||| Alignment-row cells need at least 3 dashes. `|--|` (2 dashes) does
-||| NOT promote the previous row to a header — both rows stay body.
-||| (The `--` cell content then smart-puncts to an en-dash, but it is
-||| still in a `<td>` body cell, not a `<th>` header cell.) Pins the
-||| `length bar >= 3` guard.
+||| A separator row needs only ONE dash per cell (Djot spec). `|--|`
+||| is a valid separator: it promotes the preceding `| h |` row to a
+||| header (`<th>`) and itself emits no body row. Pins the
+||| `length bar >= 1` guard (a single `-` must still count).
 export
-ext_table_two_dash_align_not_header : Property
-ext_table_two_dash_align_not_header = oneShot $
-  parseDoc "| h |\n|--|"
+ext_table_one_dash_align_is_header : Property
+ext_table_one_dash_align_is_header = oneShot $
+  parseDoc "| h |\n|-|"
     === ok (doc [Table emptyAttrs Nothing
-                   [ bodyRow ["h"]
-                   , MkRow False [MkCell AlignNone [InlSmart EnDash]]
-                   ]])
+                   [ MkRow True [MkCell AlignNone [InlText "h"]] ]])
 
 ||| Alignment-row cells must be homogeneous dashes (with optional
 ||| flanking `:`). A row with non-dash content like `|xxx|` is not an
@@ -1084,6 +1081,113 @@ ext_table_non_dash_align_not_header = oneShot $
                    [ bodyRow ["h"]
                    , bodyRow ["xxx"]
                    ]])
+
+||| An empty cell `| |` is a one-column body row with an empty cell.
+||| Pins that a whitespace-only interior still yields a (single) cell.
+export
+ext_table_empty_cell : Property
+ext_table_empty_cell = oneShot $
+  parseDoc "| |"
+    === ok (doc [Table emptyAttrs Nothing
+                   [ MkRow False [MkCell AlignNone []] ]])
+
+||| A `|` inside an inline verbatim span does NOT split cells, and the
+||| span survives in the cell content. `| just two \| `|` | cells |`
+||| -> two cells: `just two | <code>|</code>` and `cells`. Pins both
+||| the verbatim-aware splitter and the `\|` escape (kept literal,
+||| delimiter role suppressed).
+export
+ext_table_verbatim_and_escaped_pipe : Property
+ext_table_verbatim_and_escaped_pipe = oneShot $
+  parseDoc "| just two \\| `|` | cells |"
+    === ok (doc [Table emptyAttrs Nothing
+                   [ MkRow False
+                       [ MkCell AlignNone
+                           [ InlText "just two | "
+                           , InlVerbatim emptyAttrs "|"
+                           ]
+                       , MkCell AlignNone [InlText "cells"]
+                       ]
+                   ]])
+
+||| A line that starts with `|` but whose only other `|` is inside an
+||| unclosed/closed verbatim span (no real trailing `|`) is NOT a
+||| table — it falls through to paragraph parsing. `| `a |` `` ->
+||| `<p>| <code>a |</code></p>`. Pins the trailing-`|` requirement.
+export
+ext_table_no_trailing_pipe_is_paragraph : Property
+ext_table_no_trailing_pipe_is_paragraph = oneShot $
+  parseDoc "| `a |`"
+    === ok (doc [Paragraph emptyAttrs
+                   [ InlText "| ", InlVerbatim emptyAttrs "a |" ]])
+
+||| A leading separator row (`|---|---|`) sets the column alignment but
+||| emits no row when nothing precedes it; the following row is a body
+||| row. Pins the "separator with no row above" branch.
+export
+ext_table_leading_separator : Property
+ext_table_leading_separator = oneShot $
+  parseDoc "|---|---|\n| a | b |"
+    === ok (doc [Table emptyAttrs Nothing [bodyRow ["a", "b"]]])
+
+||| A table consisting solely of a separator row is an empty table:
+||| the separator sets alignment, has no row above to promote, and
+||| there are no following rows. Pins the empty-table case.
+export
+ext_table_only_separator_is_empty : Property
+ext_table_only_separator_is_empty = oneShot $
+  parseDoc "|--|--|"
+    === ok (doc [Table emptyAttrs Nothing []])
+
+||| Interleaved header bands: a second separator row mid-table promotes
+||| the row directly above it to a fresh header with the new alignment.
+||| Pins multi-band header inference + per-band re-alignment.
+export
+ext_table_multi_band_headers : Property
+ext_table_multi_band_headers = oneShot $
+  parseDoc "|a|b|\n|:-|---:|\n|c|d|\n|cc|dd|\n|-:|:-:|\n|e|f|"
+    === ok (doc [Table emptyAttrs Nothing
+                   [ MkRow True
+                       [ MkCell AlignLeft  [InlText "a"]
+                       , MkCell AlignRight [InlText "b"]
+                       ]
+                   , MkRow False
+                       [ MkCell AlignLeft  [InlText "c"]
+                       , MkCell AlignRight [InlText "d"]
+                       ]
+                   , MkRow True
+                       [ MkCell AlignRight  [InlText "cc"]
+                       , MkCell AlignCenter [InlText "dd"]
+                       ]
+                   , MkRow False
+                       [ MkCell AlignRight  [InlText "e"]
+                       , MkCell AlignCenter [InlText "f"]
+                       ]
+                   ]])
+
+||| A `^ …` paragraph directly after a pipe table becomes the table's
+||| caption (parsed inline, continuation lines soft-broken); it is NOT
+||| emitted as a separate paragraph. Pins caption absorption.
+export
+ext_table_caption : Property
+ext_table_caption = oneShot $
+  parseDoc "| a | b |\n\n^ With a _cap_\nline2."
+    === ok (doc [Table emptyAttrs
+                   (Just [ InlText "With a "
+                         , InlEmph [InlText "cap"]
+                         , InlSoftBreak
+                         , InlText "line2."
+                         ])
+                   [bodyRow ["a", "b"]]])
+
+||| A `^ …` paragraph NOT preceded by a table stays an ordinary
+||| paragraph (the `^ ` is literal text). Pins that caption absorption
+||| is gated on a preceding table.
+export
+ext_caret_without_table_is_paragraph : Property
+ext_caret_without_table_is_paragraph = oneShot $
+  parseDoc "^ not a caption"
+    === ok (doc [para "^ not a caption"])
 
 --------------------------------------------------------------------------------
 -- Reference definitions + reference-style links.
@@ -1699,8 +1803,16 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_table_cell_inline_parsing",            ext_table_cell_inline_parsing)
   , ("ext_table_then_paragraph",                 ext_table_then_paragraph)
   , ("ext_single_pipe_is_paragraph",             ext_single_pipe_is_paragraph)
-  , ("ext_table_two_dash_align_not_header",      ext_table_two_dash_align_not_header)
+  , ("ext_table_one_dash_align_is_header",       ext_table_one_dash_align_is_header)
   , ("ext_table_non_dash_align_not_header",      ext_table_non_dash_align_not_header)
+  , ("ext_table_empty_cell",                     ext_table_empty_cell)
+  , ("ext_table_verbatim_and_escaped_pipe",      ext_table_verbatim_and_escaped_pipe)
+  , ("ext_table_no_trailing_pipe_is_paragraph",  ext_table_no_trailing_pipe_is_paragraph)
+  , ("ext_table_leading_separator",              ext_table_leading_separator)
+  , ("ext_table_only_separator_is_empty",        ext_table_only_separator_is_empty)
+  , ("ext_table_multi_band_headers",             ext_table_multi_band_headers)
+  , ("ext_table_caption",                        ext_table_caption)
+  , ("ext_caret_without_table_is_paragraph",     ext_caret_without_table_is_paragraph)
   , ("ext_refdef_url_only",                      ext_refdef_url_only)
   , ("ext_refdef_with_title",                    ext_refdef_with_title)
   , ("ext_full_ref_link_resolved",               ext_full_ref_link_resolved)

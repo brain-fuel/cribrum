@@ -12,6 +12,7 @@ module Cribrum.Djot.Parser
 
 import Data.List
 import Data.List1
+import Data.Maybe
 import Data.String
 import Cribrum.Djot.Surface
 
@@ -790,14 +791,18 @@ isFencedDivClose n s =
       cs      = countFenceChars ':' trimmed
    in cs >= n && length (unpack trimmed) == cs
 
-||| `True` iff `s` is a plausible pipe-table row: trimmed line begins
-||| with `|` and contains at least one further `|` (so it has at least
-||| one cell). The trailing `|` is optional but conventional; the cell
-||| splitter handles either form.
+||| Forward declaration: the row-cell splitter is defined in the
+||| pipe-tables slice further down, but `isTableLine` (and the block
+||| grouper) need it here.
+splitTableCells : String -> Maybe (List String)
+
+||| `True` iff `s` is a well-formed pipe-table row: the trimmed line
+||| both begins and ends with an unescaped, non-verbatim `|`, delimiting
+||| at least one cell. A line that starts with `|` but lacks a real
+||| closing `|` (e.g. ``| `a |` `` — the second bar lives inside a code
+||| span) is NOT a table row and falls through to paragraph parsing.
 isTableLine : String -> Bool
-isTableLine s = case unpack (trim s) of
-  ('|' :: rest) => any (== '|') rest
-  _             => False
+isTableLine s = isJust (splitTableCells s)
 
 ||| `True` iff `s` is a definition-list opener: `: ` (colon-space) or
 ||| `:` alone (column-0; no leading indent). Lines that merely begin
@@ -1809,32 +1814,69 @@ normalGroupToBlocks (l ::: ls) = case parseHeadingMarker l of
 -- Pipe tables (slice).
 --------------------------------------------------------------------------------
 
-||| Split a table-row source into trimmed cell strings. Drops the
-||| optional leading and trailing `|`, splits the rest on `|`, and
-||| trims surrounding whitespace from each cell.
-splitTableRow : String -> List String
-splitTableRow line =
-  let chars  = unpack (trim line)
-      inner  = case chars of
-                 ('|' :: rest) => rest
-                 _             => chars
-      inner' = case reverse inner of
-                 ('|' :: rs) => reverse rs
-                 _           => inner
-   in map (trim . pack) (splitOn '|' inner')
+-- Split a table-row source into trimmed cell strings, respecting inline
+-- structure: a `|` that is backslash-escaped (`\|`) or sits inside an
+-- inline verbatim/code span (run of backticks closed by a run of the
+-- SAME length) does NOT separate cells. Returns `Nothing` when the line
+-- is not a well-formed table row (after trimming it must both begin and
+-- end with an unescaped, non-verbatim `|`). The leading and trailing bar
+-- are stripped; the interior is split on the surviving bars; each cell is
+-- whitespace-trimmed. The escaped `\|` stays verbatim in the cell text
+-- (the inline parser unescapes it); only its delimiter role is dropped.
+-- (Signature is forward-declared earlier, for `isTableLine`.)
+splitTableCells line =
+  let chars = unpack (trim line)
+   in case chars of
+        ('|' :: rest) =>
+          -- Walk the interior, accumulating cells. Track whether the
+          -- final emitted segment was closed by a real trailing `|`.
+          -- `length rest` is decreasing fuel that makes the walk total
+          -- even when a verbatim span jumps over many chars at once.
+          map (map (trim . pack)) (go (length rest) [] [] False rest)
+        _ => Nothing
   where
-    splitOn : Char -> List Char -> List (List Char)
-    splitOn _ []        = [[]]
-    splitOn c (x :: xs) = case splitOn c xs of
-      (cur :: rest) =>
-        if x == c then [] :: cur :: rest
-                  else (x :: cur) :: rest
-      []            => [[x]]  -- impossible: splitOn always returns ≥ 1
+    -- `cur` is the current cell (reversed); `acc` the finished cells
+    -- (reversed); `closed` records that the most recent `|` we consumed
+    -- was a genuine separator with nothing meaningful after it. The
+    -- result is `Just cells` only if the row ended on a separator `|`
+    -- (well-formed); otherwise `Nothing`. `fuel` bounds the recursion.
+    go : (fuel : Nat) -> (cur : List Char) -> (acc : List (List Char))
+       -> (closed : Bool) -> List Char -> Maybe (List (List Char))
+    go _ cur acc closed [] =
+      -- A well-formed row ends exactly at the trailing `|`: `cur` must
+      -- be empty (everything after the last `|` was nothing) and we
+      -- must have seen that closing `|`.
+      if closed && all (== ' ') cur
+        then Just (reverse acc)
+        else Nothing
+    go Z _ _ _ _ = Nothing  -- fuel exhausted: treat as malformed
+    go (S k) cur acc _ ('\\' :: c :: cs) =
+      -- Escaped char: keep both chars literally, no delimiter role.
+      go k (c :: '\\' :: cur) acc False cs
+    go (S k) cur acc _ ['\\'] =
+      -- Trailing lone backslash: literal, not a separator close.
+      go k ('\\' :: cur) acc False []
+    go (S k) cur acc _ xs@('`' :: _) =
+      -- Verbatim span: consume up to the matching backtick run so any
+      -- `|` inside is inert. Unclosed span runs to end of line.
+      let (ticks, after) = takeBacktickRun xs in
+      case findVerbatimClose (length ticks) after of
+        Just (body, rest) =>
+          go k (reverse (ticks ++ body ++ ticks) ++ cur) acc False rest
+        Nothing =>
+          go k (reverse (ticks ++ after) ++ cur) acc False []
+    go (S k) cur acc _ ('|' :: cs) =
+      -- Real cell separator. Emit the current cell and start fresh.
+      go k [] (reverse cur :: acc) True cs
+    go (S k) cur acc _ (c :: cs) =
+      go k (c :: cur) acc False cs
 
-||| Classify one alignment-row cell. A cell is an alignment marker
-||| iff it consists of a leading optional `:`, three-or-more `-`, and
-||| a trailing optional `:` (no other characters). Returns the
+||| Classify one alignment-row cell. A cell is an alignment marker iff
+||| it consists of a leading optional `:`, ONE OR MORE `-`, and a
+||| trailing optional `:` (no other characters). Returns the
 ||| corresponding `Align`, or `Nothing` if the cell isn't a marker.
+||| (Per the Djot spec a single `-` suffices; a bare `:` with no dash
+||| is not a marker.)
 parseAlignCell : String -> Maybe Align
 parseAlignCell s =
   let chars = unpack (trim s)
@@ -1845,7 +1887,7 @@ parseAlignCell s =
       (right, bar) = case revMid of
         (':' :: r) => (True, reverse r)
         _          => (False, mid)
-   in if length bar >= 3 && all (== '-') bar
+   in if length bar >= 1 && all (== '-') bar
         then Just $ case (left, right) of
           (True,  True)  => AlignCenter
           (True,  False) => AlignLeft
@@ -1853,23 +1895,24 @@ parseAlignCell s =
           (False, False) => AlignNone
         else Nothing
 
-||| `True` iff every cell on the row is an alignment marker AND there
-||| is at least one cell. The cell count is the column count of the
-||| surrounding table.
+||| `Just aligns` iff `s` is a well-formed table row whose every cell is
+||| an alignment marker AND there is at least one cell. The cell count
+||| is the column count of the surrounding table.
 parseAlignRow : String -> Maybe (List Align)
-parseAlignRow s = case splitTableRow s of
-  [] => Nothing
-  cs => traverse parseAlignCell cs
+parseAlignRow s = case splitTableCells s of
+  Just cs@(_ :: _) => traverse parseAlignCell cs
+  _                => Nothing
 
 ||| Build a `TableCell` from a raw cell source + an alignment.
 makeCell : Align -> String -> TableCell
 makeCell a body = MkCell a (parseInlineLine body)
 
 ||| Build a `TableRow` from a raw row source. If `aligns` is shorter
-||| than the cells (or empty), missing positions get `AlignNone`.
+||| than the cells (or empty), missing positions get `AlignNone`. A row
+||| that does not split into cells (malformed) yields an empty row.
 makeRow : (isHeader : Bool) -> List Align -> String -> TableRow
 makeRow header aligns line =
-  let cells = splitTableRow line
+  let cells = fromMaybe [] (splitTableCells line)
    in MkRow header (zipWithAlign aligns cells)
   where
     -- Pair cells with their per-column align, padding the alignment
@@ -1929,24 +1972,50 @@ splitTermBody (opener :: more) =
 
 ||| Convert a TableGroup's raw lines into a `Table` block.
 |||
-||| If the second row is an alignment row, the first row becomes the
-||| header (with the cell alignments applied) and rows from the third
-||| onward are body rows. Otherwise no alignment is in effect, no
-||| header is declared, and every row is a body row with `AlignNone`
-||| cells.
+||| Rows are processed in source order, threading the current column
+||| alignment. An alignment-marker row (`|:-|---:|` …) is not itself a
+||| body row: it sets the running alignment and, when an ordinary row
+||| sits immediately above it, promotes that row to a header (re-aligned
+||| with the markers). This lets a single table interleave multiple
+||| header bands (Djot `tables-005`). A leading separator with no row
+||| above it (`tables-006`/`-007`) just establishes the alignment.
+|||
+||| `caption`, when present, is rendered as the table's `<caption>`.
+||| Re-pair existing cells with a fresh alignment list (used when a
+||| separator row promotes the row directly above it into a header).
+||| Extra cells beyond the alignment list keep `AlignNone`.
+reAlignCells : List Align -> List TableCell -> List TableCell
+reAlignCells _         []        = []
+reAlignCells []        (c :: cs) = MkCell AlignNone (content c) :: reAlignCells [] cs
+reAlignCells (a :: as) (c :: cs) = MkCell a (content c) :: reAlignCells as cs
+
+tableGroupToBlockCap : (caption : Maybe (List Inline)) -> List1 String
+                                                       -> Block
+tableGroupToBlockCap caption (l ::: ls) =
+  Table emptyAttrs caption (reverse (go [] [] (l :: ls)))
+  where
+    -- `aligns`   : current column alignment in effect.
+    -- `acc`      : finished rows, reversed.
+    -- The previous element of `acc` (its head) is the candidate a
+    -- following separator promotes to a header.
+    go : (aligns : List Align) -> (acc : List TableRow) -> List String
+       -> List TableRow
+    go _      acc []          = acc
+    go aligns acc (x :: xs)   = case parseAlignRow x of
+      Just newAligns =>
+        -- Separator row: update alignment and, if a row sits directly
+        -- above, re-emit it as a re-aligned header.
+        let acc' = case acc of
+                     (prev :: rest) =>
+                       MkRow True (reAlignCells newAligns (cells prev)) :: rest
+                     [] => []
+         in go newAligns acc' xs
+      Nothing =>
+        go aligns (makeRow False aligns x :: acc) xs
+
+||| Caption-free convenience wrapper (used where no `^ …` block follows).
 tableGroupToBlock : List1 String -> Block
-tableGroupToBlock (l ::: ls) = case ls of
-  (alignLine :: rest) => case parseAlignRow alignLine of
-    Just aligns =>
-      let header = makeRow True  aligns l
-          body   = map (makeRow False aligns) rest
-       in Table emptyAttrs Nothing (header :: body)
-    Nothing =>
-      let rows = map (makeRow False []) (l :: ls)
-       in Table emptyAttrs Nothing rows
-  [] =>
-    let row = makeRow False [] l
-     in Table emptyAttrs Nothing [row]
+tableGroupToBlock = tableGroupToBlockCap Nothing
 
 --------------------------------------------------------------------------------
 -- List item splitting + loose/tight detection.
@@ -2026,6 +2095,25 @@ itemHasInnerBlank run =
                              else True         -- blank before plain block: loose
                []       => go xs
         else go xs
+
+||| Parse a table caption's lines into inline content: the first line
+||| (with its `^ ` marker already stripped) plus continuation lines,
+||| joined by soft breaks.
+captionInlines : String -> List String -> List Inline
+captionInlines first []        = parseInlineLine first
+captionInlines first (c :: cs) =
+  parseInlineLine first ++ (InlSoftBreak :: captionInlines c cs)
+
+||| If the head group is a caption paragraph (a `NormalGroup` whose first
+||| line begins with `^ `), return its parsed inline content plus the
+||| remaining groups; otherwise `Nothing` and the groups unchanged. Used
+||| to attach a `^ …` block to the pipe table directly above it.
+captionFor : List LineGroup -> (Maybe (List Inline), List LineGroup)
+captionFor (NormalGroup (l ::: ls) :: gs) =
+  case unpack l of
+    ('^' :: ' ' :: rest) => (Just (captionInlines (pack rest) ls), gs)
+    _                    => (Nothing, NormalGroup (l ::: ls) :: gs)
+captionFor gs = (Nothing, gs)
 
 mutual
   ||| Build one or more `ListBlock`s from a `ListGroup`'s raw lines. A
@@ -2242,6 +2330,14 @@ mutual
                     (b :: r)  =>
                       (if isEmpty pend then b else applyAttrsToBlock pend b) :: r
          in bs' ++ assert_total (go emptyAttrs gs)
+      -- A `^ …` paragraph immediately following a pipe table is its
+      -- caption (Djot `tables-004`). Absorb the following NormalGroup
+      -- into the table's `<caption>` instead of emitting a paragraph.
+      go pend (TableGroup rows :: gs)         =
+        let (cap, rest) = captionFor gs
+            b = tableGroupToBlockCap cap rows
+         in (if isEmpty pend then b else applyAttrsToBlock pend b)
+            :: assert_total (go emptyAttrs rest)
       go pend (g :: gs)                       =
         let b = assert_total (groupToBlock g)
          in (if isEmpty pend then b else applyAttrsToBlock pend b)

@@ -266,8 +266,9 @@ ext_image_round_trip_through_elaborate = oneShot $
 -- Tables.
 --------------------------------------------------------------------------------
 
-||| Body-only table emits `<table><tbody><tr><td>...</td></tr></tbody></table>`
-||| with no `<thead>`.
+||| Rows render directly inside `<table>` (NO `<thead>`/`<tbody>`
+||| wrappers, matching the Djot reference renderer). A body-only table
+||| is `<table><tr><td>...</td></tr></table>`.
 export
 ext_table_body_only_emit : Property
 ext_table_body_only_emit = oneShot $
@@ -278,17 +279,16 @@ ext_table_body_only_emit = oneShot $
                      ]
        ])
     === Element "table" []
-          [ Element "tbody" []
-              [ Element "tr" []
-                  [ Element "td" [] [Text "a"]
-                  , Element "td" [] [Text "b"]
-                  ]
+          [ Element "tr" []
+              [ Element "td" [] [Text "a"]
+              , Element "td" [] [Text "b"]
               ]
           ]
 
-||| Header row plus body row emits both `<thead>` and `<tbody>`. Each
-||| `<th>`/`<td>` gets a `style="text-align:..."` attribute when the
-||| cell carries a non-`AlignNone` alignment.
+||| Header + body rows render in source order directly under `<table>`.
+||| Header rows use `<th>`, body rows `<td>`. A non-`AlignNone` cell
+||| carries `style="text-align: <dir>;"` (space after colon, trailing
+||| semicolon — the reference renderer's exact format).
 export
 ext_table_with_header_and_alignment_emit : Property
 ext_table_with_header_and_alignment_emit = oneShot $
@@ -304,26 +304,35 @@ ext_table_with_header_and_alignment_emit = oneShot $
                      ]
        ])
     === Element "table" []
-          [ Element "thead" []
-              [ Element "tr" []
-                  [ Element "th" [MkHAttr "style" (Str "text-align:left")]
-                      [Text "h1"]
-                  , Element "th" [MkHAttr "style" (Str "text-align:center")]
-                      [Text "h2"]
-                  , Element "th" [MkHAttr "style" (Str "text-align:right")]
-                      [Text "h3"]
-                  ]
+          [ Element "tr" []
+              [ Element "th" [MkHAttr "style" (Str "text-align: left;")]
+                  [Text "h1"]
+              , Element "th" [MkHAttr "style" (Str "text-align: center;")]
+                  [Text "h2"]
+              , Element "th" [MkHAttr "style" (Str "text-align: right;")]
+                  [Text "h3"]
               ]
-          , Element "tbody" []
-              [ Element "tr" []
-                  [ Element "td" [MkHAttr "style" (Str "text-align:left")]
-                      [Text "x"]
-                  , Element "td" [MkHAttr "style" (Str "text-align:center")]
-                      [Text "y"]
-                  , Element "td" [MkHAttr "style" (Str "text-align:right")]
-                      [Text "z"]
-                  ]
+          , Element "tr" []
+              [ Element "td" [MkHAttr "style" (Str "text-align: left;")]
+                  [Text "x"]
+              , Element "td" [MkHAttr "style" (Str "text-align: center;")]
+                  [Text "y"]
+              , Element "td" [MkHAttr "style" (Str "text-align: right;")]
+                  [Text "z"]
               ]
+          ]
+
+||| A table with a caption leads with a `<caption>` containing the
+||| parsed inline content, before the rows.
+export
+ext_table_caption_emit : Property
+ext_table_caption_emit = oneShot $
+  elaborateBlock
+    (Table emptyAttrs (Just [InlText "cap"])
+       [ MkRow False [MkCell AlignNone [InlText "a"]] ])
+    === Element "table" []
+          [ Element "caption" [] [Text "cap"]
+          , Element "tr" [] [ Element "td" [] [Text "a"] ]
           ]
 
 ||| End-to-end: a parsed Djot table strict-elaborates without error.
@@ -953,6 +962,7 @@ group = MkGroup "Cribrum.Elaborate"
   , ("ext_table_body_only_emit",               ext_table_body_only_emit)
   , ("ext_table_with_header_and_alignment_emit",
         ext_table_with_header_and_alignment_emit)
+  , ("ext_table_caption_emit",                 ext_table_caption_emit)
   , ("ext_table_round_trip_strict",            ext_table_round_trip_strict)
   , ("ext_refdef_invisible",                   ext_refdef_invisible)
   , ("ext_footnotedef_becomes_labelled_aside", ext_footnotedef_becomes_labelled_aside)
