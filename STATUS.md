@@ -60,13 +60,21 @@
 > normalises whitespace + strips the `<main>` wrapper, and compares
 > against the expected reference output. A baseline file
 > (`test/djot-ref/baseline.txt`) lists currently-passing tests;
-> regressions fail the gate, additions are tracked. **165 / 246**
+> regressions fail the gate, additions are tracked. **198 / 246**
 > upstream-ingested tests now pass at the baseline (full `jgm/djot`
-> corpus ingestion shipped). The jump from 116 -> 165 came from four
-> conformance slices: raw passthrough (`raw-*`), super/subscript
-> (`super-subscript-*`), smart-punctuation + emphasis + escapes
-> (`smart-*`/`emphasis-*`/`escapes-*`), and an indentation-aware list
-> parser (`lists-*`/`task-lists-*`). **Step 11 parser remainder** (P5.4
+> corpus ingestion shipped). The climb from 116 came in two parallel
+> rounds of conformance slices: (1) raw passthrough (`raw-*`),
+> super/subscript (`super-subscript-*`), smart-punctuation + emphasis +
+> escapes (`smart-*`/`emphasis-*`/`escapes-*`), and an indentation-aware
+> list parser (`lists-*`/`task-lists-*`) -> 165; (2) links + images
+> (`links-and-images-*`), pipe-table edge cases (`tables-*`, now emitting
+> `<tr>` directly under `<table>` with `text-align: x;` cell styles and
+> `<caption>`), and inline/multi-line attribute blocks (`attributes-*`,
+> `spans-*`) -> 198. A cluster of `attributes-*`/`links-and-images-*`
+> cases is intentionally blocked at the validity gate (arbitrary author
+> `key=val` attributes, href-less / empty-href / nested anchors) — they
+> need a deliberate decision to relax the by-construction + vnu-oracle
+> contract, so they stay unbaselined. **Step 11 parser remainder** (P5.4
 > remainder): tight ul/ol list collapse (single-`Paragraph` items
 > drop their `<p>` wrap in `<li>` for tight lists, matching the
 > reference renderer); footnote refs (`[^label]` parses to
@@ -174,16 +182,16 @@ $ make test-fast        # cribrum + teaweb suites
 $ make test             # adds ingest drift gate + mutation gate
 ```
 
-Counts per group: 18 Node + 16 Surface + 153 Parser + 20 Model + 52 Valid
-+ 65 Elaborate + 19 Render.Html + 1 Render.Dom + 56 AA.Pass + 88 AA.Typed
+Counts per group: 18 Node + 16 Surface + 176 Parser + 20 Model + 52 Valid
++ 71 Elaborate + 19 Render.Html + 1 Render.Dom + 56 AA.Pass + 88 AA.Typed
 + 5 AA.Partition + 17 Pipeline.Anchor + 19 Preprocess + 6 Integration (real
 README.dj + plan.dj read at test time, plus pipeline determinism check) =
-535 Cribrum. 10 TEAWeb.Html + 9 TEAWeb.Html.Typed + 10 TEAWeb.Event
+564 Cribrum. 10 TEAWeb.Html + 9 TEAWeb.Html.Typed + 10 TEAWeb.Event
 + 6 TEAWeb.Cmd + 14 TEAWeb.Sub + 9 TEAWeb.Program = 58 TEAWeb. Plus the
 djot-ref reference-suite gate (`tools/run-djotref/`, 246 corpus tests
-against a 165-test baseline; separate harness from the in-suite tests).
-**Total: 593 in-suite tests, plus 246 djot-ref tests (165 passing,
-81 expected-fail under baseline).**
+against a 198-test baseline; separate harness from the in-suite tests).
+**Total: 622 in-suite tests, plus 246 djot-ref tests (198 passing,
+48 expected-fail under baseline).**
 
 Each module has:
 - **EXTs** (example tests) — canonical cases for each behaviour.
