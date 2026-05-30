@@ -312,14 +312,41 @@ elaborateInline (InlInsert xs)     =
 elaborateInline (InlDelete xs)     =
   Element "del" [] (assert_total (map elaborateInline xs))
 elaborateInline (InlVerbatim _ s)  = Element "code" [] [Text s]
-elaborateInline (InlLink _ ref xs) =
+elaborateInline (InlLink linkAttrs ref xs) =
   let inner = assert_total (map elaborateInline xs)
-      attrs = case ref of
-                LinkInline url title =>
-                  MkHAttr "href" (Str url) :: titleHAttr title
-                LinkReference label => [MkHAttr "href" (Str ("#" ++ label))]
-                LinkAuto url        => [MkHAttr "href" (Str url)]
-   in Element "a" attrs inner
+      -- Destination → href. An empty destination is left empty here; the
+      -- strict `elaborate` pass fills it with "#" before the structural
+      -- gate (bucket C: links-and-images-007 renders `<a href="#">`
+      -- instead of erroring), while draft mode repairs + warns. Keeping
+      -- the empty href visible at this layer preserves both paths.
+      -- Unresolved reference labels surface as `#<label>` so the
+      -- dangling reference stays visible.
+      href : String
+      href = case ref of
+               LinkInline url _    => url
+               LinkReference label => "#" ++ label
+               LinkAuto url        => url
+      -- A reference definition's `title` (from `[ref]: url "t"` or a
+      -- `{title=…}` attribute block preceding the def — bucket A) flows
+      -- onto the resolved link. The link's OWN inline `{…}` attributes
+      -- override it (links-and-images-014: `{title=bar}` beats the
+      -- def's `foo`); any non-title author attrs ride through the
+      -- validity gate via `attrsToHAttrs`.
+      refTitle : Maybe String
+      refTitle = case ref of
+                   LinkInline _ t => t
+                   _              => Nothing
+      lpairs : List (String, String)
+      lpairs = pairs linkAttrs
+      title : List HAttr
+      title = case lookup "title" lpairs of
+                Just t  => [MkHAttr "title" (Str t)]
+                Nothing => titleHAttr refTitle
+      otherAttrs : List HAttr
+      otherAttrs = attrsToHAttrs
+                     ({ pairs := filter (\p => fst p /= "title") lpairs }
+                              linkAttrs)
+   in Element "a" (MkHAttr "href" (Str href) :: title ++ otherAttrs) inner
 elaborateInline (InlImage _ ref xs) =
   -- `<img>` is a void element, so children are not legal HExpr content;
   -- instead the alt source (concatenated plain text of the parsed alt
@@ -611,7 +638,7 @@ elaborateBlock (Table _ cap rows) =
     elabRow r =
       let cellTag = if isHeader r then "th" else "td"
        in Element "tr" [] (map (elabCell cellTag) (cells r))
-elaborateBlock (RefDef _ _ _) =
+elaborateBlock (RefDef _ _ _ _) =
   -- Reference definitions don't render as visible blocks in Djot's HTML
   -- output; suppress as an empty comment.
   Comment "reference definition"
@@ -641,7 +668,7 @@ elaborateBlock (FootnoteDef _ l bs) =
 ||| visible `<aside class="footnote">` (convention §1) and are NOT
 ||| filtered here.
 isInvisibleBlock : Block -> Bool
-isInvisibleBlock (RefDef _ _ _)      = True
+isInvisibleBlock (RefDef _ _ _ _)    = True
 isInvisibleBlock _                   = False
 
 ||| Heading level of a block, if it is a `Heading`.
@@ -730,6 +757,38 @@ elaborateDoc (MkDoc bs) =
                   else Element "main" [] [single]
     children => Element "main" [] children
 
+||| Force a usable `href` on an `<a>` whose attribute list has an
+||| absent or empty href: every other href is left untouched. Used by
+||| strict `elaborate` so an empty/missing destination renders as
+||| `<a href="#">` (an effective, non-crashing default — bucket C,
+||| links-and-images-007) instead of tripping the structural
+||| `anchor-href` / `link-empty-href` gate. Draft mode keeps its own
+||| repair-and-warn path; this strict default is silent.
+fillEmptyHref : List HAttr -> List HAttr
+fillEmptyHref attrs =
+    if hasUsableHref attrs then attrs else setHref attrs
+  where
+    hasUsableHref : List HAttr -> Bool
+    hasUsableHref []                            = False
+    hasUsableHref (MkHAttr "href" (Str v) :: _) = v /= ""
+    hasUsableHref (MkHAttr "href" _ :: _)       = True
+    hasUsableHref (_ :: xs)                     = hasUsableHref xs
+
+    setHref : List HAttr -> List HAttr
+    setHref []                       = [MkHAttr "href" (Str "#")]
+    setHref (MkHAttr "href" _ :: xs) = MkHAttr "href" (Str "#") :: xs
+    setHref (a :: xs)                = a :: setHref xs
+
+||| Walk the tree filling empty/missing `<a>` hrefs with `#` (strict
+||| default; see `fillEmptyHref`). Non-anchor elements are walked
+||| recursively but otherwise untouched.
+fillHrefs : HExpr -> HExpr
+fillHrefs (Element "a" attrs cs) =
+  Element "a" (fillEmptyHref attrs) (assert_total (map fillHrefs cs))
+fillHrefs (Element tag attrs cs)  =
+  Element tag attrs (assert_total (map fillHrefs cs))
+fillHrefs other                   = other
+
 ||| Strict elaboration: returns the HExpr together with proofs of validity
 ||| and structural accessibility. Per plan.dj §Governing principle, callers
 ||| that demand `(h : HExpr ** IsValidHtml h × StructuralAA h)` are unable
@@ -738,11 +797,13 @@ elaborateDoc (MkDoc bs) =
 |||
 ||| Failure ordering: HTML well-formedness checked first (located rejection),
 ||| then `StructuralAA` (rule id of first failing predicate). Both are hard
-||| errors in strict mode.
+||| errors in strict mode. Empty/absent anchor hrefs are filled with `#`
+||| (`fillHrefs`) before the gate so a destination-less link renders rather
+||| than erroring.
 public export
 elaborate : Doc -> Either ElabError (h : HExpr ** (IsValidHtml h, StructuralAA h))
 elaborate doc =
-  let h = elaborateDoc doc
+  let h = fillHrefs (elaborateDoc doc)
    in case decideHtmlLocated h of
         Left  lr => Left (LocatedHtmlError lr)
         Right p  => case decStructuralAA h of

@@ -286,6 +286,103 @@ ext_link_title_emitted = oneShot $
           , MkHAttr "title" (Str "foo")
           ] [Text "ref"]
 
+||| A link's OWN inline `{title=…}` attribute overrides the reference
+||| definition's title (djot links-and-images-014). The link carries
+||| `{title=bar}` while the resolved destination carries title `foo`;
+||| the author's inline attr wins. Pins the title-precedence in the
+||| `InlLink` elaborator.
+export
+ext_link_inline_title_overrides_ref : Property
+ext_link_inline_title_overrides_ref = oneShot $
+  elaborateInline
+    (InlLink (MkAttrs Nothing [] [("title", "bar")])
+             (LinkInline "/url" (Just "foo")) [InlText "ref"])
+    === Element "a"
+          [ MkHAttr "href" (Str "/url")
+          , MkHAttr "title" (Str "bar")
+          ] [Text "ref"]
+
+||| Strict `elaborate` fills an empty-destination anchor's href with
+||| `#` (bucket C) so the document renders `<a href="#">` instead of
+||| tripping the `link-empty-href` gate. Pins the `fillHrefs` strict
+||| default. (`elaborateInline` alone still emits `href=""`; the fill
+||| happens in the strict pass so draft mode keeps its repair+warn.)
+export
+ext_link_empty_href_defaults_to_hash : Property
+ext_link_empty_href_defaults_to_hash = oneShot $
+  case elaborate (MkDoc [Paragraph emptyAttrs
+                          [InlLink emptyAttrs (LinkInline "" Nothing)
+                             [InlText "link"]]]) of
+    Left  e            => failWith Nothing ("elaborate failed: " ++ show e)
+    Right (h ** (_, _)) =>
+      isInfixOf "<a href=\"#\">link</a>" (renderHtml h) === True
+
+||| A link carrying a valid global author attribute (`{lang=fr}`) rides
+||| it through onto the `<a>` after the mandatory `href`. Pins that the
+||| link elaborator now threads its `Attrs` (previously dropped).
+export
+ext_link_carries_valid_author_attr : Property
+ext_link_carries_valid_author_attr = oneShot $
+  elaborateInline
+    (InlLink (MkAttrs Nothing [] [("lang", "fr")])
+             (LinkInline "/url" Nothing) [InlText "x"])
+    === Element "a"
+          [ MkHAttr "href" (Str "/url")
+          , MkHAttr "lang" (Str "fr")
+          ] [Text "x"]
+
+||| End-to-end: an attribute block preceding a reference definition
+||| (`{title=foo}\n[ref]: /url`) flows the title onto a resolved
+||| `[ref][]` reference link (djot links-and-images-013). Pins the
+||| parser refdef-attr plumbing + elaborator title emission together.
+export
+ext_refdef_attr_title_flows_to_link : Property
+ext_refdef_attr_title_flows_to_link = oneShot $
+  case parseDoc "{title=foo}\n[ref]: /url\n\n[ref][]\n" of
+    Left  e => failWith Nothing ("parse failed: " ++ show e)
+    Right d => case elaborate d of
+      Left  e            => failWith Nothing ("elaborate failed: " ++ show e)
+      Right (h ** (_, _)) =>
+        let out = renderHtml h
+         in if isInfixOf "<a href=\"/url\" title=\"foo\">ref</a>" out
+              then success
+              else failWith Nothing ("unexpected render: " ++ out)
+
+||| End-to-end: a NON-title attribute on a reference definition
+||| (`{lang=fr}\n[ref]: /url`) now flows onto the resolved `[ref][]`
+||| link alongside the href (the `RefDef.attrs` field + resolver merge).
+||| A valid global attr like `lang` rides through the validity gate.
+export
+ext_refdef_nontitle_attr_flows_to_link : Property
+ext_refdef_nontitle_attr_flows_to_link = oneShot $
+  case parseDoc "{lang=fr}\n[ref]: /url\n\n[ref][]\n" of
+    Left  e => failWith Nothing ("parse failed: " ++ show e)
+    Right d => case elaborate d of
+      Left  e            => failWith Nothing ("elaborate failed: " ++ show e)
+      Right (h ** (_, _)) =>
+        let out = renderHtml h
+         in if isInfixOf "<a href=\"/url\" lang=\"fr\">ref</a>" out
+              then success
+              else failWith Nothing ("unexpected render: " ++ out)
+
+||| End-to-end: an empty reference definition (`[link]:`) resolves a
+||| collapsed `[link][]` to a link with an empty destination, which the
+||| elaborator defaults to `href="#"` — the document elaborates cleanly
+||| instead of erroring on `link-empty-href` (bucket C, corpus
+||| links-and-images-007).
+export
+ext_empty_refdef_link_elaborates_clean : Property
+ext_empty_refdef_link_elaborates_clean = oneShot $
+  case parseDoc "[link][]\n\n[link]:\n[link2]: url\n" of
+    Left  e => failWith Nothing ("parse failed: " ++ show e)
+    Right d => case elaborate d of
+      Left  e            => failWith Nothing ("elaborate failed: " ++ show e)
+      Right (h ** (_, _)) =>
+        let out = renderHtml h
+         in if isInfixOf "<a href=\"#\">link</a>" out
+              then success
+              else failWith Nothing ("unexpected render: " ++ out)
+
 ||| A link whose only content is an image derives its accessible name
 ||| from the image's `alt`, so the full elaborate (with the StructuralAA
 ||| gate) accepts `<a href><img alt="image"></a>` (corpus -017/-024).
@@ -409,7 +506,7 @@ ext_table_round_trip_strict = oneShot $
 export
 ext_refdef_invisible : Property
 ext_refdef_invisible = oneShot $
-  elaborateDoc (MkDoc [RefDef "h" "https://example.org" Nothing])
+  elaborateDoc (MkDoc [RefDef "h" "https://example.org" Nothing emptyAttrs])
     === Element "main" [] []
 
 ||| Footnote definitions are now *visible*: each elaborates to a
@@ -456,7 +553,7 @@ export
 ext_paragraph_with_refdef_only_emits_paragraph : Property
 ext_paragraph_with_refdef_only_emits_paragraph = oneShot $
   elaborateDoc (MkDoc [ para "hi"
-                      , RefDef "h" "https://example.org" Nothing
+                      , RefDef "h" "https://example.org" Nothing emptyAttrs
                       ])
     === Element "main" [] [Element "p" [] [Text "hi"]]
 
@@ -1088,6 +1185,12 @@ group = MkGroup "Cribrum.Elaborate"
   , ("ext_display_math_span",                  ext_display_math_span)
   , ("ext_image_alt_flattens_emphasis",        ext_image_alt_flattens_emphasis)
   , ("ext_link_title_emitted",                 ext_link_title_emitted)
+  , ("ext_link_inline_title_overrides_ref",     ext_link_inline_title_overrides_ref)
+  , ("ext_link_empty_href_defaults_to_hash",    ext_link_empty_href_defaults_to_hash)
+  , ("ext_link_carries_valid_author_attr",      ext_link_carries_valid_author_attr)
+  , ("ext_refdef_attr_title_flows_to_link",     ext_refdef_attr_title_flows_to_link)
+  , ("ext_refdef_nontitle_attr_flows_to_link",  ext_refdef_nontitle_attr_flows_to_link)
+  , ("ext_empty_refdef_link_elaborates_clean",  ext_empty_refdef_link_elaborates_clean)
   , ("ext_image_in_link_is_accessible",        ext_image_in_link_is_accessible)
   , ("ext_image_round_trip_through_elaborate", ext_image_round_trip_through_elaborate)
   , ("ext_table_body_only_emit",               ext_table_body_only_emit)

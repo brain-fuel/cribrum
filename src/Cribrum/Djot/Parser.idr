@@ -54,20 +54,34 @@ countHashes = go 0 . unpack
     go n ('#' :: cs) = go (S n) cs
     go n _           = n
 
-||| If `s` is an ATX heading marker (1..6 '#' followed by space), return
-||| `Just (level, rest-without-leading-space)`. Otherwise `Nothing`.
+||| If `s` is an ATX heading marker (1..6 '#' then a space *or* end of
+||| line), return `Just (level, content)` where `content` is the text
+||| after the marker with its leading spaces stripped. Otherwise
+||| `Nothing`.
 |||
-||| Djot rule (per syntax.html): 1-6 `#`, then a single space, then content.
-||| `####### x` is *not* a heading — it falls through to paragraph.
+||| Djot rule (per syntax.html): up to 3 leading spaces of indentation,
+||| then 1-6 `#`, then either end of line (a bare marker, e.g. `##`) or
+||| one-or-more spaces followed by content. `##Notheading` (no space) is
+||| *not* a heading; `####### x` (7 hashes) is *not* a heading.
 parseHeadingMarker : String -> Maybe (Nat, String)
 parseHeadingMarker s =
-  let chars = unpack s
-      n     = countHashes s
+  let chars = dropWhileN 3 (== ' ') (unpack s)
+      n     = countHashesL chars
    in if n >= 1 && n <= 6
         then case drop n chars of
-               (' ' :: rest) => Just (n, pack rest)
+               []            => Just (n, "")
+               (' ' :: rest) => Just (n, pack (dropWhile (== ' ') rest))
                _             => Nothing
         else Nothing
+  where
+    -- Drop at most `k` leading chars satisfying `p` (≤3 indentation).
+    dropWhileN : Nat -> (Char -> Bool) -> List Char -> List Char
+    dropWhileN Z     _ xs        = xs
+    dropWhileN (S k) p (x :: xs) = if p x then dropWhileN k p xs else x :: xs
+    dropWhileN _     _ []        = []
+    countHashesL : List Char -> Nat
+    countHashesL ('#' :: cs) = S (countHashesL cs)
+    countHashesL _           = 0
 
 --------------------------------------------------------------------------------
 -- Inline parser. Slice covers plain text + emphasis (`_em_`), strong
@@ -732,6 +746,28 @@ linkBodyClosesEmph opSeen src = go ' ' src
         else go x xs
 
 mutual
+  ||| If `after` opens with an inline attribute block (`{#id .c key=v}`)
+  ||| immediately following a parsed link/image, merge those attributes
+  ||| onto the inline and return the remainder past the close brace.
+  ||| Otherwise the inline and `after` pass through unchanged. Only
+  ||| `InlLink`/`InlImage` carry an `Attrs` slot to merge into; anything
+  ||| else is returned as-is.
+  attachLinkAttrs : Inline -> List Char -> (Inline, List Char)
+  attachLinkAttrs inl after = case after of
+    ('{' :: braceRest) => case scanInlineAttr braceRest of
+      Just (attrs, rest) =>
+        if attrs == emptyAttrs
+          then (inl, after)
+          else case inl of
+            -- `parseLinkBody`/`parseImageBody` always emit `emptyAttrs`,
+            -- so the trailing block's attrs simply become the inline's
+            -- attrs (no prior attrs to merge against).
+            InlLink  _ r xs => (InlLink  attrs r xs, rest)
+            InlImage _ r xs => (InlImage attrs r xs, rest)
+            _               => (inl, after)
+      Nothing => (inl, after)
+    _ => (inl, after)
+
   ||| Parse the body inside `[...]` and the matching `(...)` URL or
   ||| `[...]` reference label. Returns an `InlLink` plus the rest of
   ||| the input on success, `Nothing` on malformed link (missing `]`,
@@ -1017,8 +1053,15 @@ mutual
           -- lies inside this link body destroys the link (shared stack).
           if linkBodyClosesEmph opSeen (take (length cs `minus` length after) cs)
             then assert_total (parseInlinesAcc '[' opSeen ('[' :: acc) cs)
-            else flushE acc ++ [EInl link]
-              ++ assert_total (parseInlinesAcc ')' opSeen [] after)
+            else
+              -- A trailing inline attribute block `[…](url){#id .c key=v}`
+              -- (or on a reference link `[ref][]{title=bar}`) attaches to
+              -- the link itself: those attrs ride onto the `<a>` and, for
+              -- `title`, override a reference definition's own title
+              -- (djot links-and-images-014).
+              let (link', after') = attachLinkAttrs link after
+               in flushE acc ++ [EInl link']
+                 ++ assert_total (parseInlinesAcc ')' opSeen [] after')
         Nothing =>
           -- Bracketed inline span: `[text]{attrs}`. When `[...]` is not a
           -- link but its `]` is immediately followed by an attribute block,
@@ -1370,7 +1413,7 @@ isThematicBreak s =
         (c :: cs) =>
           (c == '-' || c == '*')
             && let marks = filter (not . isSpace) (c :: cs)
-                in length marks >= 3 && all (== c) marks
+                in length marks >= 3 && all (\m => m == '-' || m == '*') marks
 
 ||| `True` iff `s` begins with at least one space (a continuation line
 ||| for an open def-list item).
@@ -1839,7 +1882,15 @@ isParagraphContinuable s =
 ||| merging the pending ones on top of whatever the block already
 ||| carried (which is `emptyAttrs` for newly-parsed blocks). For the
 ||| handful of blocks that don't carry their own Attrs field (e.g.
-||| `RawBlock`, `RefDef`) the call is a no-op.
+||| `RawBlock`) the call is a no-op.
+|||
+||| A `RefDef` has no `Attrs` field, but an attribute block preceding a
+||| reference definition (`{title=foo}\n[ref]: /url`) sets attributes on
+||| the definition that flow onto any reference that resolves against it
+||| (djot links-and-images-013/014). The reference link only carries a
+||| `title`, so the attr block's `title` pair (last-wins) is folded into
+||| the `RefDef`'s `title` field; an explicit `[ref]: url "title"` title
+||| already present wins only if the attr block carries none.
 applyAttrsToBlock : Attrs -> Block -> Block
 applyAttrsToBlock a b = case b of
   Paragraph existing is        => Paragraph    (mergeAttrs existing a) is
@@ -1851,6 +1902,19 @@ applyAttrsToBlock a b = case b of
   Div existing bs              => Div          (mergeAttrs existing a) bs
   Table existing cap rs        => Table        (mergeAttrs existing a) cap rs
   FootnoteDef existing l bs    => FootnoteDef  (mergeAttrs existing a) l bs
+  RefDef l u t existing        =>
+    -- `title` flows onto the `title` field (drives the resolved link's
+    -- `title=` even for `[ref][]`); the REMAINING author attributes are
+    -- stored on the def's `attrs` and merged onto any resolving link
+    -- (under the link's own inline `{…}`). Title is stripped from the
+    -- stored attrs so it stays a single source (the `title` field) and
+    -- doesn't shadow the link's own title at the first-wins lookup.
+    let nonTitle = { pairs := filter (\p => fst p /= "title") (pairs a) } a
+        attrs'   = mergeAttrs existing nonTitle
+        title'   = case lookup "title" (pairs a) of
+                     Just t' => Just t'
+                     Nothing => t
+     in RefDef l u title' attrs'
   other                        => other
 
 ||| Strip the leading `> ` (or just `>`) prefix, returning the inner line.
@@ -2391,7 +2455,7 @@ normalGroupToBlock (l ::: ls) =
     then ThematicBreak emptyAttrs
     else if isNil ls
       then case parseRefDef l of
-        Just (label, url, title) => RefDef label url title
+        Just (label, url, title) => RefDef label url title emptyAttrs
         Nothing => Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
       else Paragraph emptyAttrs (parseParagraphLines (l ::: ls))
 
@@ -2886,8 +2950,8 @@ mutual
     Div attrs (assert_total (groupsToBlocks gs))
   groupToBlock (RefDefGroup label rawBody) =
     case extractRefTitle rawBody of
-      Just (url, title) => RefDef label url (Just title)
-      Nothing           => RefDef label rawBody Nothing
+      Just (url, title) => RefDef label url (Just title) emptyAttrs
+      Nothing           => RefDef label rawBody Nothing emptyAttrs
 
   ||| Convert a list of LineGroups into Blocks, threading
   ||| `AttrPrefixGroup`s into the Attrs of the next non-attribute block.
@@ -2953,13 +3017,13 @@ mutual
   ||| Build a lookup table from a list of blocks. Only top-level
   ||| RefDef blocks contribute; nested defs (inside block quotes) are
   ||| recursively scanned.
-  collectRefDefs : List Block -> List (String, (String, Maybe String))
+  collectRefDefs : List Block -> List (String, (String, Maybe String, Attrs))
   collectRefDefs []        = []
   collectRefDefs (b :: bs) =
     refDefsFromBlock b ++ assert_total (collectRefDefs bs)
 
-  refDefsFromBlock : Block -> List (String, (String, Maybe String))
-  refDefsFromBlock (RefDef l u t)      = [(normalizeLabelKey l, (u, t))]
+  refDefsFromBlock : Block -> List (String, (String, Maybe String, Attrs))
+  refDefsFromBlock (RefDef l u t a)    = [(normalizeLabelKey l, (u, t, a))]
   refDefsFromBlock (BlockQuote _ bs')  =
     assert_total (collectRefDefs bs')
   refDefsFromBlock _                   = []
@@ -2969,15 +3033,18 @@ mutual
   ||| keep the `InlImage` ref form with the resolved URL when the label
   ||| is known. Unknown labels pass through unchanged so the elaborator
   ||| renders the visible text. Inline/auto forms are left alone.
-  resolveInline : List (String, (String, Maybe String)) -> Inline -> Inline
+  resolveInline : List (String, (String, Maybe String, Attrs)) -> Inline -> Inline
   resolveInline tab i = case i of
     InlLink a (LinkReference l) xs => case lookup l tab of
-      Just (url, title) => InlLink a (LinkInline url title)
+      -- The def's stored author attrs merge UNDER the link's own inline
+      -- `{…}` (link wins), so `[ref][]{title=bar}` overrides while the
+      -- def's other attrs ride through onto the resolved `<a>`.
+      Just (url, title, refA) => InlLink (mergeAttrs refA a) (LinkInline url title)
                     (assert_total (resolveInlines tab xs))
       Nothing  => InlLink a (LinkReference l)
                     (assert_total (resolveInlines tab xs))
     InlImage a (LinkReference l) xs => case lookup l tab of
-      Just (url, title) => InlImage a (LinkInline url title)
+      Just (url, title, refA) => InlImage (mergeAttrs refA a) (LinkInline url title)
                     (assert_total (resolveInlines tab xs))
       Nothing  => InlImage a (LinkReference l)
                     (assert_total (resolveInlines tab xs))
@@ -3003,11 +3070,11 @@ mutual
       InlSpan a     (assert_total (resolveInlines tab xs))
     other            => other
 
-  resolveInlines : List (String, (String, Maybe String)) -> List Inline -> List Inline
+  resolveInlines : List (String, (String, Maybe String, Attrs)) -> List Inline -> List Inline
   resolveInlines tab = map (resolveInline tab)
 
 mutual
-  resolveBlock : List (String, (String, Maybe String)) -> Block -> Block
+  resolveBlock : List (String, (String, Maybe String, Attrs)) -> Block -> Block
   resolveBlock tab b = case b of
     Paragraph a is        => Paragraph a (resolveInlines tab is)
     Heading a lvl is      => Heading a lvl (resolveInlines tab is)
@@ -3024,18 +3091,18 @@ mutual
       FootnoteDef a l (assert_total (resolveBlocks tab bs))
     other                 => other
 
-  resolveBlocks : List (String, (String, Maybe String)) -> List Block -> List Block
+  resolveBlocks : List (String, (String, Maybe String, Attrs)) -> List Block -> List Block
   resolveBlocks tab = map (resolveBlock tab)
 
-  resolveItem : List (String, (String, Maybe String)) -> ListItem -> ListItem
+  resolveItem : List (String, (String, Maybe String, Attrs)) -> ListItem -> ListItem
   resolveItem tab (MkLI a c t bs) =
     MkLI a c (map (resolveInlines tab) t)
       (assert_total (resolveBlocks tab bs))
 
-  resolveRow : List (String, (String, Maybe String)) -> TableRow -> TableRow
+  resolveRow : List (String, (String, Maybe String, Attrs)) -> TableRow -> TableRow
   resolveRow tab (MkRow h cs) = MkRow h (map (resolveCell tab) cs)
 
-  resolveCell : List (String, (String, Maybe String)) -> TableCell -> TableCell
+  resolveCell : List (String, (String, Maybe String, Attrs)) -> TableCell -> TableCell
   resolveCell tab (MkCell a is) = MkCell a (resolveInlines tab is)
 
 ||| Parse a Djot document, then resolve reference-link forms against

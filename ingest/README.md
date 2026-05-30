@@ -32,33 +32,58 @@ from upstream data rather than carrying the seed.
 
 [webref]: https://github.com/w3c/webref
 
-## aa-catalog.ts
+## aa-catalog.ts + act-rules.ts
 
-Compiles `ingest/aa.ts` (typed staging area for the W3C ACT-rules pull
-per plan §P3.1) into `src/Cribrum/AA/Catalog/Generated.idr`. The
-auto-generated module exposes one `Rule` constant per row plus a
+Compiles the merged AA catalog into
+`src/Cribrum/AA/Catalog/Generated.idr`. Two sources feed it:
+
+- **`ingest/aa.ts`** — hand-curated Cribrum rules (`source: "cribrum"`):
+  id, WCAG SC, level, title, confidence, severity.
+- **`ingest/act-rules.ts`** — the W3C-CG **ACT-rules** upstream pull
+  (`source: "act"`, plan §P3.1). It parses the YAML front-matter +
+  `## Applicability` / `## Expectation` prose of the rule `.md` files
+  vendored under `ingest/act-rules/_rules/` and maps each rule into the
+  same `AARuleRow` shape (primary WCAG SC + level, ACT id, rule_type,
+  every forConformance SC, and the applicability/expectation prose as
+  data fields).
+
+The auto-generated module exposes one `Rule` constant per row plus a
 `generatedRules : List Rule` that `Cribrum.AA.Catalog` re-exports as
 `allRules`.
 
 ```
 cd ingest
 npm install
-npm run ingest:aa         # regenerate Generated.idr
-npm run ingest:aa:check   # gate: error if Generated.idr is stale
+npm run ingest:act:download   # refresh vendored ACT corpus (network)
+npm run ingest:aa             # regenerate Generated.idr (aa.ts + ACT)
+npm run ingest:aa:check       # gate: error if Generated.idr is stale
 ```
 
 The combined `npm run ingest` / `npm run ingest:check` run both the
 HTML-model and AA-catalog gates back-to-back, and `make ingest-check`
 is the project-level entry point.
 
-### Scope today vs. plan §P3.1
+### ACT-rules pipeline (plan §P3.1)
 
-`aa.ts` is hand-curated: id, WCAG SC, level, title, confidence,
-severity — the existing `Rule` shape. The ACT-rules JSON pull (the
-`applicability` / `expectation` data that would drive a true data
-interpreter in `Cribrum.AA.Pass`) is the next slice; this scaffold
-puts the I/O shape in place so the upstream pull lands as a content
-change on `aa.ts` rather than a new pipeline.
+Source: `github.com/act-rules/act-rules.github.io`, `_rules/*.md`. The
+rule files are **vendored** at a pinned commit (`PINNED_COMMIT` in
+`act-rules.ts`) so `make ingest` runs offline — mirroring `djot-ref.ts`.
+Refreshing the corpus is a deliberate content change: bump the commit,
+`npm run ingest:act:download`, rerun ingest, review the catalog diff.
+
+**Growing the catalog is now data-entry, not Idris:** drop a rule's
+`.md` under `ingest/act-rules/_rules/` (or add it to `PROOF_RULE_FILES`
+and re-download), rerun `npm run ingest`. The new row flows into
+`Generated.idr` and the `Cribrum.AA.Partition` audit pins the rule-id
+set so every addition lands explicitly.
+
+Classification today: ACT rows land **Heuristic** (pass-only, never
+claims conformance) because their expectations are accessible-name /
+accessibility-tree predicates not yet statically decidable on Cribrum's
+HTML tree alone. The `applicability` / `expectation` fields are carried
+as text so a follow-up can promote the tree-decidable ones to
+`Structural` and graduate them to typed propositions in
+`Cribrum.AA.Pass` / `Cribrum.AA.Typed`.
 
 ## djot-ref.ts
 

@@ -49,24 +49,58 @@ Show Severity where
   show Warning = "Warning"
   show Info    = "Info"
 
+||| Provenance of a catalog rule. Hand-curated Cribrum rules are
+||| `Cribrum`; rows ingested from the upstream ACT-rules corpus
+||| (`ingest/act-rules.ts`, plan §P3.1) are `Act`. Lets audits and the
+||| Phase-4 promotion logic tell the data-entry layer apart from the
+||| hand-typed core.
+public export
+data RuleSource = Cribrum | Act
+
+public export
+Eq RuleSource where
+  Cribrum == Cribrum = True
+  Act     == Act     = True
+  _       == _       = False
+
+public export
+Show RuleSource where
+  show Cribrum = "Cribrum"
+  show Act     = "Act"
+
 ||| Rule metadata. `id` is the stable cross-phase key.
+|||
+||| Fields `source`..`expectation` carry ACT-rules provenance and prose. For
+||| hand-curated Cribrum rows they default to `Cribrum` / empty; ACT rows
+||| populate them from the upstream front-matter + Applicability/Expectation
+||| sections. The prose is stored as text for now (plan §P3.1: data before
+||| interpretation) so the Idris side can later promote a tree-decidable
+||| `expectation` from Heuristic to Structural.
 public export
 record Rule where
   constructor MkRule
-  id          : String
-  wcag        : String   -- e.g. "1.1.1"
-  level       : String   -- "A" | "AA"
-  title       : String
-  confidence  : Confidence
-  severity    : Severity
+  id            : String
+  wcag          : String   -- primary WCAG SC, e.g. "1.1.1"
+  level         : String   -- "A" | "AA"
+  title         : String
+  confidence    : Confidence
+  severity      : Severity
+  source        : RuleSource
+  actId         : String       -- upstream ACT 6-char id, "" for Cribrum rows
+  ruleType      : String       -- ACT rule_type ("atomic"/...), "" otherwise
+  wcagAll       : List String  -- every forConformance SC the rule maps to
+  applicability : String       -- ACT Applicability prose (flattened), "" otherwise
+  expectation   : String       -- ACT Expectation prose (flattened), "" otherwise
 
 public export
 Eq Rule where
-  (MkRule a b c d e f) == (MkRule x y z w v u) =
-    a == x && b == y && c == z && d == w && e == v && f == u
+  (MkRule a b c d e f g h i j k l) == (MkRule a' b' c' d' e' f' g' h' i' j' k' l') =
+    a == a' && b == b' && c == c' && d == d' && e == e' && f == f'
+      && g == g' && h == h' && i == i' && j == j' && k == k' && l == l'
 
 public export
 Show Rule where
-  show (MkRule i w l t c s) =
-    "Rule " ++ i ++ " (WCAG " ++ w ++ " " ++ l ++ ", " ++ show c
-      ++ ", " ++ show s ++ "): " ++ t
+  show r =
+    "Rule " ++ r.id ++ " (WCAG " ++ r.wcag ++ " " ++ r.level ++ ", "
+      ++ show r.confidence ++ ", " ++ show r.severity ++ ", "
+      ++ show r.source ++ "): " ++ r.title

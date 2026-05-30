@@ -354,6 +354,16 @@ public export
 style_       : String -> Attr msg
 style_       = attrStr "style"
 
+||| `key_ k` tags an element with `data-key="k"`. The runtime's keyed
+||| reconcile (`Render.Dom.reconcileKeyedChildren`) reuses the live DOM
+||| node for a keyed child whose subtree is unchanged across renders,
+||| preserving its identity (focus, scroll, input value, listeners)
+||| through list re-orders instead of rebuilding it. Keys must be unique
+||| among siblings; an unkeyed sibling is always rebuilt.
+public export
+key_         : String -> Attr msg
+key_         = attrStr "data-key"
+
 public export
 disabled_    : Attr msg
 disabled_    = attrStr "disabled" "disabled"

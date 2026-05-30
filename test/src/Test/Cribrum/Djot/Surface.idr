@@ -147,7 +147,7 @@ blockSizeCases =
   , (1, ThematicBreak emptyAttrs)
   , (1, CodeBlock emptyAttrs "" "")
   , (1, RawBlock "html" "<br>")
-  , (1, RefDef "x" "/y" Nothing)
+  , (1, RefDef "x" "/y" Nothing emptyAttrs)
   , (1, Table emptyAttrs Nothing [])
   -- BlockQuote + 0 inner = 1; + 2 inner = 3
   , (1, BlockQuote emptyAttrs [])

@@ -81,6 +81,30 @@ prim__replaceChild : DomNode -> DomNode -> DomNode -> PrimIO ()
 %foreign "browser:lambda:(id)=>document.getElementById(id)"
 prim__getElementById : String -> PrimIO DomNode
 
+-- Keyed-reconcile building blocks. Inert chez stubs (return the parent /
+-- a dummy) so the module still type-checks at the chez backend; only the
+-- JS backend runs them.
+
+%foreign "scheme:(lambda (p,c,r) p)"
+         "browser:lambda:(parent,newChild,refChild)=>parent.insertBefore(newChild,refChild)"
+prim__insertBefore : DomNode -> DomNode -> DomNode -> PrimIO DomNode
+
+%foreign "scheme:(lambda (p,c) p)"
+         "browser:lambda:(parent,child)=>parent.removeChild(child)"
+prim__removeChild : DomNode -> DomNode -> PrimIO DomNode
+
+%foreign "scheme:(lambda (n) \"\")"
+         "browser:lambda:(node)=>{ var v=node.getAttribute && node.getAttribute('data-key'); return v===null||v===undefined?'':String(v); }"
+prim__dataKey : DomNode -> PrimIO String
+
+%foreign "scheme:(lambda (p) 0)"
+         "browser:lambda:(parent)=>parent.childElementCount||0"
+prim__childCount : DomNode -> PrimIO Int
+
+%foreign "scheme:(lambda (p,i) p)"
+         "browser:lambda:(parent,i)=>parent.children[i]"
+prim__childAt : DomNode -> Int -> PrimIO DomNode
+
 %foreign "browser:lambda:(parent)=>{ while(parent.firstChild){ parent.removeChild(parent.firstChild) } }"
 prim__clearChildren : DomNode -> PrimIO ()
 
@@ -136,6 +160,101 @@ prim__currentEventPortMsg : String -> PrimIO String
 export
 currentEventPortMsg : IO String
 currentEventPortMsg = fromPrim (prim__currentEventPortMsg "")
+
+--------------------------------------------------------------------------------
+-- Async Cmd effect primitives (Http / Random / After / SendPort).
+--
+-- The async effects (Http, After) settle off the call stack. Each takes
+-- a `callbackId`: when the effect resolves it stashes its result into a
+-- window slot (`__cribrumHttp*` for Http) and invokes
+-- `window.__cribrumDispatch(callbackId, {})`. The TEAWeb runtime
+-- registers a one-shot projection closure under that id; the closure
+-- reads the slot back out and folds the result into a `msg`. Random is
+-- synchronous (no dispatch round-trip) and returns its value directly.
+-- SendPort is fire-and-forget. Chez stubs are inert.
+--------------------------------------------------------------------------------
+
+%foreign "scheme:(lambda (_,_,_,_,_) 0)"
+         "browser:lambda:(cbId,method,url,headers,body)=>{ try { var hs = JSON.parse(headers||'{}'); } catch(e){ var hs = {}; } var opts = { method: method || 'GET', headers: hs }; if (body && body.length > 0) { opts.body = body; } fetch(url, opts).then((resp)=>{ return resp.text().then((t)=>{ window.__cribrumHttpStatus = resp.status; window.__cribrumHttpBody = String(t); window.__cribrumHttpErr = ''; if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, {}); } }); }).catch((err)=>{ window.__cribrumHttpStatus = 0; window.__cribrumHttpBody = ''; window.__cribrumHttpErr = String((err && err.message) || err || 'network error'); if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, {}); } }); return 0; }"
+prim__httpFetch : String -> String -> String -> String -> String -> PrimIO Int
+
+%foreign "scheme:(lambda (_,_,_) 0)"
+         "browser:lambda:(cbId,delayMs,_)=>{ setTimeout(()=>{ if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, {}); } }, Number(delayMs)); return 0; }"
+prim__setTimeoutDispatch : String -> Integer -> String -> PrimIO Int
+
+%foreign "scheme:(lambda (_) 0)"
+         "browser:lambda:(cbId)=>{ if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, {}); } return 0; }"
+prim__dispatchNow : String -> PrimIO Int
+
+%foreign "scheme:(lambda (lo,_) lo)"
+         "browser:lambda:(lo,hi)=>{ var a = Number(lo); var b = Number(hi); if (b < a) { var t = a; a = b; b = t; } return a + Math.floor(Math.random() * (b - a + 1)); }"
+prim__randomInt : Integer -> Integer -> PrimIO Integer
+
+%foreign "scheme:(lambda (_,_) 0)"
+         "browser:lambda:(portName,payload)=>{ window.__cribrumOutPorts = window.__cribrumOutPorts || {}; var subs = window.__cribrumOutPorts[portName] || []; for (var i = 0; i < subs.length; i++) { try { subs[i](payload); } catch(e){} } return 0; }"
+prim__sendPort : String -> String -> PrimIO Int
+
+%foreign "scheme:(lambda (_) 0)"
+         "browser:lambda:(_)=>Number(window.__cribrumHttpStatus || 0)"
+prim__currentHttpStatus : String -> PrimIO Int
+
+%foreign "scheme:(lambda (_) \"\")"
+         "browser:lambda:(_)=>String(window.__cribrumHttpBody || \"\")"
+prim__currentHttpBody : String -> PrimIO String
+
+%foreign "scheme:(lambda (_) \"\")"
+         "browser:lambda:(_)=>String(window.__cribrumHttpErr || \"\")"
+prim__currentHttpErr : String -> PrimIO String
+
+||| Issue an HTTP request via `fetch`. `headers` is a JSON object string
+||| (`{"Content-Type":"application/json"}`); `body` empty means no body.
+||| On settle, stashes status/body/err into window slots and calls
+||| `window.__cribrumDispatch(callbackId, {})`.
+export
+httpFetch :  (callbackId : String) -> (method : String) -> (url : String)
+          -> (headersJson : String) -> (body : String) -> IO ()
+httpFetch cb m u h b = ignore (fromPrim (prim__httpFetch cb m u h b))
+
+||| Fire `window.__cribrumDispatch(callbackId, {})` after `delayMs`
+||| milliseconds (one-shot `setTimeout`).
+export
+setTimeoutDispatch : (callbackId : String) -> (delayMs : Integer) -> IO ()
+setTimeoutDispatch cb d = ignore (fromPrim (prim__setTimeoutDispatch cb d ""))
+
+||| Synchronously invoke `window.__cribrumDispatch(callbackId, {})`.
+||| Used for effects whose payload is already known at call time
+||| (e.g. a just-generated random value) so they can re-enter the
+||| update loop through the same path as any other delivery.
+export
+dispatchNow : (callbackId : String) -> IO ()
+dispatchNow cb = ignore (fromPrim (prim__dispatchNow cb))
+
+||| A pseudo-random integer uniform in `[lo, hi]` inclusive. Synchronous.
+export
+randomInt : (lo : Integer) -> (hi : Integer) -> IO Integer
+randomInt lo hi = fromPrim (prim__randomInt lo hi)
+
+||| Send `payload` out on the named outbound port — invokes every
+||| registered subscriber callback for that port. Fire-and-forget.
+export
+sendPort : (portName : String) -> (payload : String) -> IO ()
+sendPort n p = ignore (fromPrim (prim__sendPort n p))
+
+||| HTTP status code stashed by the most recent `httpFetch` settle.
+export
+currentHttpStatus : IO Int
+currentHttpStatus = fromPrim (prim__currentHttpStatus "")
+
+||| HTTP response body stashed by the most recent `httpFetch` settle.
+export
+currentHttpBody : IO String
+currentHttpBody = fromPrim (prim__currentHttpBody "")
+
+||| HTTP error string stashed by the most recent `httpFetch` settle
+||| (empty on success).
+export
+currentHttpErr : IO String
+currentHttpErr = fromPrim (prim__currentHttpErr "")
 
 --------------------------------------------------------------------------------
 -- Focus preservation across blow-and-rebuild reconcile.
@@ -266,6 +385,29 @@ export
 clearChildren : DomNode -> IO ()
 clearChildren n = fromPrim (prim__clearChildren n)
 
+export
+insertBefore : (parent : DomNode) -> (newChild : DomNode) -> (refChild : DomNode) -> IO DomNode
+insertBefore p n r = fromPrim (prim__insertBefore p n r)
+
+export
+removeChild : (parent : DomNode) -> (child : DomNode) -> IO DomNode
+removeChild p c = fromPrim (prim__removeChild p c)
+
+||| Value of a node's `data-key` attribute, or "" if absent.
+export
+dataKey : DomNode -> IO String
+dataKey n = fromPrim (prim__dataKey n)
+
+||| Number of *element* children of a node (text/comment nodes excluded).
+export
+childCount : DomNode -> IO Int
+childCount n = fromPrim (prim__childCount n)
+
+||| The element child at index `i` (0-based; into `.children`).
+export
+childAt : DomNode -> Int -> IO DomNode
+childAt n i = fromPrim (prim__childAt n i)
+
 --------------------------------------------------------------------------------
 -- Render: HExpr -> DOM.
 --------------------------------------------------------------------------------
@@ -327,3 +469,116 @@ mountInto host tree = do
   clearChildren host
   node <- renderDom tree
   appendChild host node
+
+--------------------------------------------------------------------------------
+-- Keyed-children reconcile (opt-in; additive to the default path).
+--
+-- The Day-1 `reconcile` above blows the whole subtree away on any
+-- change, which destroys DOM identity: re-ordering a keyed list (drag,
+-- sort, filter) rebuilds every row, losing focus / scroll / animation
+-- state and re-running every listener attach. `reconcileKeyedChildren`
+-- diffs ONE container's direct element children by their `data-key`
+-- attribute, reusing the live DOM node for any key whose HExpr is
+-- byte-identical between renders (so its already-attached listeners are
+-- correct and need no re-attach — this is why we never call
+-- `removeEventListener`: a reused node is unchanged, a changed node is
+-- rendered fresh). Matched-but-moved nodes are repositioned with
+-- `insertBefore`; new keys are rendered; vanished keys are removed.
+--
+-- Scope (deliberately bounded to land green): reuse is keyed +
+-- whole-subtree-equality. A keyed node whose content changed is
+-- re-rendered wholesale rather than diffed in place; that keeps the
+-- listener story trivial. In-place attribute/child diffing of a changed
+-- keyed node is the precise remaining work, noted in the runtime.
+--------------------------------------------------------------------------------
+
+||| The `data-key` of an HExpr element, or `Nothing` for unkeyed /
+||| non-element nodes. Keyed reconcile only reuses element nodes that
+||| carry a key on both sides.
+export
+hexprKey : HExpr -> Maybe String
+hexprKey (Element _ attrs _) = go attrs
+  where
+    go : List HAttr -> Maybe String
+    go []                          = Nothing
+    go (MkHAttr "data-key" (Str v) :: _) = Just v
+    go (_ :: rest)                 = go rest
+hexprKey _ = Nothing
+
+||| Look a key up in a `(key, node)` association list.
+lookupKeyed : String -> List (String, DomNode) -> Maybe DomNode
+lookupKeyed _ [] = Nothing
+lookupKeyed k ((j, node) :: rest) =
+  if k == j then Just node else lookupKeyed k rest
+
+||| Snapshot a container's keyed element children over `[i, n)` into a
+||| `(key, node)` list. Unkeyed (`data-key == ""`) children are dropped.
+keyedSnapshot : DomNode -> Int -> Int -> IO (List (String, DomNode))
+keyedSnapshot c i n =
+  if i >= n
+    then pure []
+    else assert_total $ do
+      child <- childAt c i
+      k     <- dataKey child
+      rest  <- keyedSnapshot c (i + 1) n
+      pure (if k == "" then rest else (k, child) :: rest)
+
+||| Keys carried (with byte-identical HExpr) by BOTH `previous` and
+||| `next`. Only these are reuse candidates: a key whose subtree changed
+||| is rebuilt, sidestepping any listener re-attach.
+export
+reusableKeys : List HExpr -> List HExpr -> List String
+reusableKeys prevs nexts =
+  let pk = mapMaybe (\h => map (\k => (k, h)) (hexprKey h)) prevs
+   in mapMaybe
+        (\h => case hexprKey h of
+                 Nothing => Nothing
+                 Just k  => case lookup k pk of
+                              Just oldH => if oldH == h then Just k else Nothing
+                              Nothing   => Nothing)
+        nexts
+
+||| Place one new child under `c`: reuse its live keyed node when its key
+||| is reusable (appendChild of an attached node MOVES it), else render
+||| fresh.
+placeKeyedChild :
+     (c : DomNode) -> (keyed : List (String, DomNode)) -> (reusable : List String)
+  -> HExpr -> IO ()
+placeKeyedChild c keyed reusable h = case hexprKey h of
+  Just k => if elem k reusable
+              then case lookupKeyed k keyed of
+                     Just node => ignore (appendChild c node)
+                     Nothing   => do fresh <- renderDom h; appendChild c fresh
+              else do fresh <- renderDom h; appendChild c fresh
+  Nothing => do fresh <- renderDom h; appendChild c fresh
+
+||| Remove a snapshotted keyed node iff its key is not being reused.
+removeStaleKeyed : (c : DomNode) -> (reusable : List String) -> (String, DomNode) -> IO ()
+removeStaleKeyed c reusable (k, node) =
+  if elem k reusable then pure () else ignore (removeChild c node)
+
+||| Diff `container`'s direct element children against `next` (the new
+||| child HExpr list) and `previous` (the old one), reusing live DOM
+||| nodes for keys whose HExpr is unchanged.
+|||
+||| Strategy: snapshot the container's keyed children, compute the
+||| reuse set (keys with byte-identical HExpr on both sides), then walk
+||| `next` in order, appending either the reused live node (appendChild
+||| of an already-attached node MOVES it, so re-appending in `next`
+||| order yields the correct final ordering with no `insertBefore`
+||| bookkeeping) or a freshly-rendered node. Finally remove any old
+||| keyed node not reused. Reused nodes keep their listeners + DOM state
+||| (focus, scroll, input value) intact; this is the keyed-reconcile
+||| win over blow-and-rebuild.
+export
+reconcileKeyedChildren :
+     (container : DomNode)
+  -> (previous : List HExpr)
+  -> (next : List HExpr)
+  -> IO ()
+reconcileKeyedChildren container previous next = do
+  n     <- childCount container
+  keyed <- keyedSnapshot container 0 n
+  let reusable = reusableKeys previous next
+  traverse_ (placeKeyedChild container keyed reusable) next
+  traverse_ (removeStaleKeyed container reusable) keyed

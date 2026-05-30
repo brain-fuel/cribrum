@@ -245,7 +245,8 @@ mutual
     Table         : Attrs -> (caption : Maybe (List Inline))
                           -> List TableRow -> Block
     RefDef        : (label : String) -> (dest : String)
-                                     -> (title : Maybe String) -> Block
+                                     -> (title : Maybe String)
+                                     -> (attrs : Attrs) -> Block
     FootnoteDef   : Attrs -> (label : String) -> List Block -> Block
 
   ||| List item. `checked` is `Just b` only for `TaskList`; `term` only for
@@ -290,8 +291,8 @@ mutual
       a == b && assert_total (xs == ys)
     Table a c rs           == Table b d ss           =
       a == b && c == d && assert_total (rs == ss)
-    RefDef l d t           == RefDef m e u           =
-      l == m && d == e && t == u
+    RefDef l d t a         == RefDef m e u b         =
+      l == m && d == e && t == u && a == b
     FootnoteDef a l xs     == FootnoteDef b m ys     =
       a == b && l == m && assert_total (xs == ys)
     _                      == _                      = False
@@ -328,8 +329,8 @@ mutual
       "Div " ++ show a ++ " " ++ assert_total (show xs)
     show (Table a c rs)          =
       "Table " ++ show a ++ " " ++ show c ++ " " ++ assert_total (show rs)
-    show (RefDef l d t)          =
-      "RefDef " ++ show l ++ " " ++ show d ++ " " ++ show t
+    show (RefDef l d t a)        =
+      "RefDef " ++ show l ++ " " ++ show d ++ " " ++ show t ++ " " ++ show a
     show (FootnoteDef a l xs)    =
       "FootnoteDef " ++ show a ++ " " ++ show l
         ++ " " ++ assert_total (show xs)
@@ -388,7 +389,7 @@ mutual
   blockSize (RawBlock _ _)          = 1
   blockSize (Div _ bs)              = S (assert_total (countBlocks bs))
   blockSize (Table _ _ _)           = 1
-  blockSize (RefDef _ _ _)          = 1
+  blockSize (RefDef _ _ _ _)        = 1
   blockSize (FootnoteDef _ _ bs)    = S (assert_total (countBlocks bs))
 
   public export

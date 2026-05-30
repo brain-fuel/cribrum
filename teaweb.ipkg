@@ -13,5 +13,6 @@ modules = TEAWeb.Html
         , TEAWeb.Event
         , TEAWeb.Cmd
         , TEAWeb.Sub
+        , TEAWeb.Ports
         , TEAWeb.Program
         , TEAWeb.Runtime

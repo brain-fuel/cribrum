@@ -78,6 +78,10 @@ blurElement id = primIO (prim__blurElement id)
 prim__installSubKeyDown : String -> PrimIO ()
 
 %foreign "scheme:(lambda (_) 0)"
+         "browser:lambda:(cbId)=>{ document.addEventListener('keyup', (ev)=>{ window.__cribrumKey = (ev && typeof ev.key === 'string') ? ev.key : ''; if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, ev); } }); }"
+prim__installSubKeyUp : String -> PrimIO ()
+
+%foreign "scheme:(lambda (_) 0)"
          "browser:lambda:(cbId)=>{ const step = (ts)=>{ window.__cribrumTimestamp = Number(ts); if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, {}); } requestAnimationFrame(step); }; requestAnimationFrame(step); }"
 prim__installSubAnimationFrame : String -> PrimIO ()
 
@@ -91,6 +95,9 @@ prim__installSubPort : String -> String -> PrimIO ()
 
 installSubKeyDown : String -> IO ()
 installSubKeyDown cb = primIO (prim__installSubKeyDown cb)
+
+installSubKeyUp : String -> IO ()
+installSubKeyUp cb = primIO (prim__installSubKeyUp cb)
 
 installSubAnimationFrame : String -> IO ()
 installSubAnimationFrame cb = primIO (prim__installSubAnimationFrame cb)
@@ -129,6 +136,9 @@ installSubs (Batch subs) =
 installSubs (OnKeyDown cb proj) = do
   installSubKeyDown cb
   pure [(cb, \ev => map proj currentEventKey)]
+installSubs (OnKeyUp cb proj) = do
+  installSubKeyUp cb
+  pure [(cb, \ev => map proj currentEventKey)]
 installSubs (OnAnimationFrame cb proj) = do
   installSubAnimationFrame cb
   pure [(cb, \ev => map proj currentEventTimestamp)]
@@ -149,29 +159,91 @@ installSubs (Port cb portName proj) = do
 ||| `handlers` is rebuilt from `handlers nextView` each render so view
 ||| events stay in lockstep with the rendered tree. `subHandlers` is
 ||| installed once at mount and persists across renders — Sub leaves
-||| don't get redrawn out from under their listeners. The dispatch
-||| lookup checks `handlers` first, then `subHandlers`.
+||| don't get redrawn out from under their listeners. `cmdHandlers`
+||| holds one-shot projection closures registered by async Cmds (Http,
+||| After, Random); a delivery consumes its entry so the closure never
+||| fires twice. `nextId` is a monotonic counter feeding fresh, never-
+||| colliding callback ids for those async Cmds. The dispatch lookup
+||| checks `handlers`, then `subHandlers`, then `cmdHandlers`.
 record RuntimeState (m : Type) (ms : Type) where
   constructor MkRuntimeState
   current      : m
   tree         : HExpr
   handlers     : List (String, Event -> IO ms)
   subHandlers  : List (String, Event -> IO ms)
+  cmdHandlers  : List (String, Event -> IO ms)
+  nextId       : Integer
   host         : DomNode
 
 --------------------------------------------------------------------------------
--- Cmd interpretation. Total recursion via `assert_total` on the Batch
--- case — `Cmd` is a finite tree by construction.
+-- Cmd interpretation.
+--
+-- The synchronous leaves (Focus, Blur, SendPort) act immediately. The
+-- async leaves (Http, After, Random) need a round-trip through the
+-- dispatch loop to feed their resulting `msg` back into `update`: each
+-- registers a one-shot projection closure in `cmdHandlers` under a
+-- fresh callback id, then asks the FFI to deliver to that id when it
+-- settles. `runCmd` is therefore parameterised over a `register` action
+-- (adds a `(cbId, Event -> IO msg)` entry to the live state) and a
+-- `freshId` action (returns a never-colliding callback id). `Batch`
+-- recurses; `None` is inert.
 --------------------------------------------------------------------------------
 
-||| Run a single Cmd by performing its side effect. Recurses through
-||| `Batch`.
+||| JSON-object string for a header list: `{"K":"V",...}`. Minimal
+||| escaping (quotes + backslashes) is enough for header names/values.
+jsonEscape : String -> String
+jsonEscape s = pack (concatMap esc (unpack s))
+  where
+    esc : Char -> List Char
+    esc '"'  = ['\\', '"']
+    esc '\\' = ['\\', '\\']
+    esc c    = [c]
+
+headersJson : List HttpHeader -> String
+headersJson hs =
+  "{" ++ go True hs ++ "}"
+  where
+    go : Bool -> List HttpHeader -> String
+    go _     []             = ""
+    go first ((k, v) :: rest) =
+      (if first then "" else ",")
+        ++ "\"" ++ jsonEscape k ++ "\":\"" ++ jsonEscape v ++ "\""
+        ++ go False rest
+
+||| Run a single Cmd. `register cb fn` installs a one-shot projection;
+||| `freshId` yields a unique callback id. Both are supplied by `mount`
+||| (they close over the runtime `IORef`).
 export
-runCmd : Cmd msg -> IO ()
-runCmd None         = pure ()
-runCmd (Batch cmds) = assert_total (traverse_ runCmd cmds)
-runCmd (Focus id)   = focusElement id
-runCmd (Blur  id)   = blurElement id
+runCmdWith :
+     (register : String -> (Event -> IO msg) -> IO ())
+  -> (freshId  : IO String)
+  -> Cmd msg
+  -> IO ()
+runCmdWith _   _    None              = pure ()
+runCmdWith reg fid (Batch cmds)       =
+  assert_total (traverse_ (runCmdWith reg fid) cmds)
+runCmdWith _   _   (Focus id)         = focusElement id
+runCmdWith _   _   (Blur  id)         = blurElement id
+runCmdWith reg fid (Http m u hs b onResult) = do
+  cb <- fid
+  reg cb $ \_ => do
+    err <- currentHttpErr
+    if err == ""
+      then do
+        status <- currentHttpStatus
+        body   <- currentHttpBody
+        pure (onResult (HttpOk status body))
+      else pure (onResult (HttpErr err))
+  httpFetch cb (methodName m) u (headersJson hs) b
+runCmdWith reg fid (Random lo hi onValue) = do
+  cb <- fid
+  reg cb $ \_ => map onValue (randomInt lo hi)
+  dispatchNow cb
+runCmdWith reg fid (After delayMs onElapsed) = do
+  cb <- fid
+  reg cb $ \_ => pure onElapsed
+  setTimeoutDispatch cb delayMs
+runCmdWith _   _   (SendPort portName payload) = sendPort portName payload
 
 --------------------------------------------------------------------------------
 -- Mount + dispatch loop.
@@ -188,9 +260,27 @@ lookupHandler _   []                = Nothing
 lookupHandler key ((k, fn) :: rest) =
   if k == key then Just fn else lookupHandler key rest
 
+||| Drop the one-shot Cmd-handler entry keyed by `cbId` from a runtime
+||| state. Pinned to `RuntimeState` so the record update's field
+||| resolves without an inline type annotation (`model`/`msg` are not
+||| in scope as names inside `mount`'s body).
+dropCmdHandler : String -> RuntimeState m ms -> RuntimeState m ms
+dropCmdHandler cbId st =
+  { cmdHandlers $= filter (\kv => fst kv /= cbId) } st
+
+||| Push a one-shot Cmd-handler entry. Pinned to `RuntimeState` for the
+||| same reason as `dropCmdHandler`.
+addCmdHandler : (String, Event -> IO ms) -> RuntimeState m ms -> RuntimeState m ms
+addCmdHandler entry st = { cmdHandlers $= (entry ::) } st
+
+||| Bump the fresh-id counter, returning the consumed id and the new
+||| state.
+bumpId : RuntimeState m ms -> (Integer, RuntimeState m ms)
+bumpId st = (st.nextId, { nextId := st.nextId + 1 } st)
+
 ||| Mount a `Program` into the DOM element with the given id, starting
 ||| the dispatch loop. Total at the Idris side; impurity isolated to
-||| the FFI calls inside `runCmd`, `reconcile`, `installDispatch`,
+||| the FFI calls inside `runCmdWith`, `reconcile`, `installDispatch`,
 ||| `mountInto`, and the Sub-leaf installers.
 export
 mount : Program model msg -> (hostId : String) -> IO ()
@@ -213,17 +303,42 @@ mount prog hostId = do
         (tree initialView)
         (handlers initialView)
         subHs
+        []          -- cmdHandlers: no async Cmds in flight yet
+        0           -- nextId
         host)
+  -- `register` adds a one-shot projection closure under `cbId`; the
+  -- dispatcher removes it once it fires. `freshId` mints a unique
+  -- callback id from the monotonic counter (prefixed so it can never
+  -- collide with an app-supplied view/sub callback id).
+  let register : String -> (Event -> IO msg) -> IO ()
+      register cbId fn = do
+        st <- readIORef stateRef
+        writeIORef stateRef (addCmdHandler (cbId, fn) st)
+  let freshId : IO String
+      freshId = do
+        st <- readIORef stateRef
+        let (n, st') = bumpId st
+        writeIORef stateRef st'
+        pure ("__cmd-" ++ show n)
+  let run : Cmd msg -> IO ()
+      run = runCmdWith register freshId
   -- Install the single global dispatcher. The closure captures
   -- `stateRef`, so all future renders update the handler table by
   -- writing to the IORef — no FFI required after this point.
   installDispatch $ \cbId, event => do
     state <- readIORef stateRef
-    case lookupHandler cbId (handlers state ++ state.subHandlers) of
+    -- View handlers, then sub handlers, then one-shot cmd handlers.
+    let table = handlers state ++ state.subHandlers ++ state.cmdHandlers
+    case lookupHandler cbId table of
       Nothing => pure ()
       Just fn => do
         msg <- fn event
-        let (newModel, newCmd) = prog.update msg state.current
+        -- Re-read: `fn` (an async Cmd projection) may itself have run
+        -- effects, but more importantly we must drop a consumed
+        -- one-shot cmd handler so it never fires twice.
+        s0 <- readIORef stateRef
+        let s1 = dropCmdHandler cbId s0
+        let (newModel, newCmd) = prog.update msg s1.current
         let nextView           = prog.view newModel
         let nextTree           = tree nextView
         -- Skip reconcile when the view tree is unchanged. Day-1
@@ -233,16 +348,19 @@ mount prog hostId = do
         -- effect (Focus, Blur). Structural HExpr equality is a cheap
         -- O(tree) check; the keyed-children diff that arrives in
         -- Day-2 subsumes this guard.
-        let dirty = nextTree /= state.tree
-        when dirty (reconcile state.host state.tree nextTree)
+        let prevTree = RuntimeState.tree s1
+        let dirty = nextTree /= prevTree
+        when dirty (reconcile s1.host prevTree nextTree)
         writeIORef
           stateRef
           (MkRuntimeState
             newModel
             nextTree
             (handlers nextView)
-            state.subHandlers
-            state.host)
-        runCmd newCmd
+            s1.subHandlers
+            s1.cmdHandlers
+            s1.nextId
+            s1.host)
+        run newCmd
   -- Run the initial Cmd after the first render.
-  runCmd initialCmd
+  run initialCmd

@@ -15,6 +15,12 @@
 export type Confidence = "Structural" | "Heuristic" | "Runtime";
 export type Severity   = "Error" | "Warning" | "Info";
 
+// Provenance of a catalog row. Hand-curated Cribrum rules are "cribrum";
+// rows pulled from the upstream ACT-rules corpus (ingest/act-rules.ts) are
+// "act". Carried into the generated module so the Idris side and audits can
+// tell apart the data-entry layer from the hand-typed core.
+export type RuleSource = "cribrum" | "act";
+
 export interface AARuleRow {
   // Stable cross-phase key. Matches the `id` field on Idris-side `Rule`.
   id:          string;
@@ -27,6 +33,22 @@ export interface AARuleRow {
   title:       string;
   confidence:  Confidence;
   severity:    Severity;
+
+  // --- Provenance + ACT-rules carry-data (optional; defaulted on emit) ----
+  // Where the row came from. Defaults to "cribrum" when omitted.
+  source?:        RuleSource;
+  // Upstream ACT 6-char rule id (act rows only), e.g. "97a4e1".
+  actId?:         string;
+  // Upstream ACT rule_type ("atomic" | "composite"); act rows only.
+  ruleType?:      string;
+  // Every forConformance WCAG SC the rule maps to (act rows may map to
+  // several; `wcag` above is the chosen primary). Plain Cribrum rows omit.
+  wcagAll?:       string[];
+  // Applicability prose (which nodes the rule applies to), flattened to a
+  // single line. Carried as data so the Idris side can later interpret it.
+  applicability?: string;
+  // Expectation prose (the pass condition), flattened to a single line.
+  expectation?:   string;
 }
 
 // Rows sorted by `id` lexicographically — determinism for byte-identical
@@ -70,7 +92,7 @@ export const AA_CATALOG: AARuleRow[] = [
   { id: "fieldset-legend",
     wcag: "1.3.1", level: "A",
     title: "Each `<fieldset>` should contain a `<legend>` as its accessible name",
-    confidence: "Structural", severity: "Warning" },
+    confidence: "Structural", severity: "Error" },
 
   { id: "heading-no-skip",
     wcag: "1.3.1", level: "A",
@@ -95,7 +117,7 @@ export const AA_CATALOG: AARuleRow[] = [
   { id: "link-empty-href",
     wcag: "2.4.4", level: "A",
     title: "`<a href=\"\">` is ineffective and rejected",
-    confidence: "Structural", severity: "Warning" },
+    confidence: "Structural", severity: "Error" },
 
   { id: "link-name",
     wcag: "2.4.4", level: "A",
@@ -105,7 +127,7 @@ export const AA_CATALOG: AARuleRow[] = [
   { id: "meta-no-refresh",
     wcag: "2.2.1", level: "A",
     title: "`<meta http-equiv=\"refresh\">` triggers an unsolicited timeout",
-    confidence: "Structural", severity: "Warning" },
+    confidence: "Structural", severity: "Error" },
 
   { id: "positive-tabindex",
     wcag: "2.4.3", level: "A",
@@ -115,7 +137,7 @@ export const AA_CATALOG: AARuleRow[] = [
   { id: "summary-not-empty",
     wcag: "1.3.1", level: "A",
     title: "`<details>` must contain a non-empty `<summary>` for accessible name",
-    confidence: "Structural", severity: "Warning" },
+    confidence: "Structural", severity: "Error" },
 
   { id: "track-kind",
     wcag: "1.2.2", level: "A",

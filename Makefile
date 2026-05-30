@@ -11,7 +11,7 @@ help:
 	@echo "  djotref-ingest Re-download jgm/djot.lua reference corpus into test/djot-ref/corpus/"
 	@echo "  oracle         Cross-check Cribrum's decideHtml against vnu.jar (W3C HTML validator)"
 	@echo "  mutation       Mutation gate (changed-file scope; MUTATION_BASE=ALL for full)"
-	@echo "  ingest         Regenerate Cribrum.Html.Model.Generated + Cribrum.AA.Catalog.Generated"
+	@echo "  ingest         Regenerate Cribrum.Html.Model.Generated + Cribrum.AA.Catalog.Generated (aa.ts + ACT-rules corpus)"
 	@echo "  ingest-check   Fail if either generated module drifts from its ingest source"
 	@echo "  build          Typecheck cribrum + teaweb libraries"
 	@echo "  readme         Render README.dj -> README.html via the actual Cribrum pipeline"

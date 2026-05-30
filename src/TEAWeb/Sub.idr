@@ -39,6 +39,8 @@ data Sub : Type -> Type where
   Batch            : List (Sub msg) -> Sub msg
   ||| Document-level `keydown` listener. Payload is `event.key`.
   OnKeyDown        : (callbackId : String) -> (String -> msg) -> Sub msg
+  ||| Document-level `keyup` listener. Payload is `event.key`.
+  OnKeyUp          : (callbackId : String) -> (String -> msg) -> Sub msg
   ||| One fire per `requestAnimationFrame`. Payload is the rAF
   ||| `DOMHighResTimeStamp` argument (ms since navigation start).
   OnAnimationFrame : (callbackId : String) -> (Double -> msg) -> Sub msg
@@ -70,6 +72,7 @@ subCallbackId : Sub msg -> Maybe String
 subCallbackId None                       = Nothing
 subCallbackId (Batch _)                  = Nothing
 subCallbackId (OnKeyDown cb _)           = Just cb
+subCallbackId (OnKeyUp   cb _)           = Just cb
 subCallbackId (OnAnimationFrame cb _)    = Just cb
 subCallbackId (Every cb _ _)             = Just cb
 subCallbackId (Port  cb _ _)             = Just cb

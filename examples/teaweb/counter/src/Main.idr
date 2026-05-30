@@ -40,6 +40,8 @@ data Msg
   | ToggleReverse
   | ToggleStripVowels
   | ToggleStripConsonants
+  | Tick Double          -- Every 1000ms (new Sub)
+  | DelayedPing          -- After 500ms one-shot (new Cmd)
 
 record Model where
   constructor MkModel
@@ -48,6 +50,8 @@ record Model where
   reverseOn       : Bool
   stripVowels     : Bool
   stripConsonants : Bool
+  ticks           : Int      -- driven by the Every subscription
+  pinged          : Bool     -- flipped by the After cmd at startup
 
 --------------------------------------------------------------------------------
 -- Transform pipeline.
@@ -70,8 +74,10 @@ applyTransforms m s =
 -- TEA functions.
 --------------------------------------------------------------------------------
 
+-- Startup fires a one-shot `After` Cmd (new effect) to prove the async
+-- Cmd path wires end-to-end in the bundle.
 init_ : (Model, Cmd Msg)
-init_ = (MkModel 0 "" False False False, None)
+init_ = (MkModel 0 "" False False False 0 False, After 500 DelayedPing)
 
 update_ : Msg -> Model -> (Model, Cmd Msg)
 update_ Increment             m = ({ count           := m.count + 1 } m, None)
@@ -82,6 +88,8 @@ update_ ClearWord             m = ({ word            := ""          } m, Focus "
 update_ ToggleReverse         m = ({ reverseOn       $= not         } m, None)
 update_ ToggleStripVowels     m = ({ stripVowels     $= not         } m, None)
 update_ ToggleStripConsonants m = ({ stripConsonants $= not         } m, None)
+update_ (Tick _)              m = ({ ticks           $= (+ 1)       } m, None)
+update_ DelayedPing           m = ({ pinged          := True        } m, None)
 
 --------------------------------------------------------------------------------
 -- View.
@@ -144,10 +152,15 @@ view_ m =
                        then "(type a word to see it transformed)"
                        else transformed)
             ]
+        , p_ [class_ "ticks"]
+            [ text_ ("Seconds elapsed: " ++ show m.ticks
+                       ++ (if m.pinged then " (ready)" else " (warming up)"))
+            ]
         ]
 
+-- One-second wall-clock tick via the `Every` subscription (new Sub).
 subs_ : Model -> Sub Msg
-subs_ _ = None
+subs_ _ = Every "tick-1s" 1000 Tick
 
 prog : Program Model Msg
 prog = MkProgram init_ update_ view_ subs_

@@ -159,7 +159,7 @@ src/Cribrum/Djot/Parser.idr	parseRefDef src = case unpack src of	parseRefDef src
 src/Cribrum/Djot/Parser.idr	      (':' :: ' ' :: body) =>	      (':' :: body) =>	parser: refdef space-after-colon dropped
 src/Cribrum/Djot/Parser.idr	    InlLink a (LinkReference l) xs => case lookup l tab of	    InlLink a (LinkReference l) xs => case Nothing of	parser: ref resolution always misses
 src/Cribrum/Djot/Parser.idr	      table = collectRefDefs raw	      table = []	parser: ref table never populated
-src/Cribrum/Elaborate.idr	isInvisibleBlock (RefDef _ _ _)      = True	isInvisibleBlock (RefDef _ _ _)      = False	elaborate: RefDef becomes visible (re-emits unwanted comment)
+src/Cribrum/Elaborate.idr	isInvisibleBlock (RefDef _ _ _ _)    = True	isInvisibleBlock (RefDef _ _ _ _)    = False	elaborate: RefDef becomes visible (re-emits unwanted comment)
 src/Cribrum/Elaborate.idr	isInvisibleBlock _                   = False	isInvisibleBlock _                   = True	elaborate: every block becomes invisible (renders empty)
 src/Cribrum/Elaborate.idr	Just l' => l' <= lvl	Just l' => l' < lvl	elaborate: section close <= -> < (same-level headings over-nest as children)
 src/Cribrum/Djot/Parser.idr	      ('^' :: rest) => case findClose ']' rest of	      ('^' :: rest) => Nothing	parser: footnote-ref inline `[^label]` disabled
@@ -239,3 +239,13 @@ src/Cribrum/Djot/Parser.idr	flushE acc ++ [EInl InlSoftBreak]	flushE acc ++ [EIn
 src/Cribrum/Djot/Parser.idr	flushE acc' ++ [EInl InlHardBreak]	flushE acc'	parser: hard break emission dropped
 src/Cribrum/Djot/Parser.idr	flushE acc' ++ [EInl InlHardBreak]	flushE acc' ++ [EInl InlSoftBreak]	parser: hard break downgraded to soft break
 src/Cribrum/Djot/Parser.idr	flushE acc ++ [EInl (InlSmart Ellipsis)]	flushE acc	parser: ellipsis emission dropped
+src/Cribrum/Djot/Parser.idr	if frChar fr == c && frBrace fr == wantBrace	if frChar fr == c && frBrace fr /= wantBrace	emphasis: matchOpener brace-key agreement inverted (`{_`-opener pairs with bare `_}` closer)
+src/Cribrum/Djot/Parser.idr	canClose     = if bOpen then False	canClose     = if bOpen then True	emphasis: `{`-open-marker no longer disables closing (`{_ a _` wrongly closes)
+src/Cribrum/Djot/Parser.idr	else if bOpen then True	else if bOpen then False	emphasis: `{`-open-marker no longer forces can-open (`{_ a _}` loses emphasis)
+src/Cribrum/Djot/Parser.idr	emWrap '_' xs = InlEmph xs	emWrap '_' xs = InlStrong xs	emphasis: `_` marker wraps as <strong> instead of <em>
+src/Cribrum/Djot/Parser.idr	opSeen'      = if canOpen then marker :: opSeen else opSeen	opSeen'      = opSeen	emphasis: pending opener never recorded (shared opener stack; link survives `*[a](b*)`)
+src/Cribrum/Djot/Parser.idr	delimLiteral c True  = InlText (pack [c, '}'])	delimLiteral c True  = InlText (pack [c])	emphasis: unmatched `}`-close-marker drops its literal `}` (`_}` renders as `_`)
+src/Cribrum/Djot/Parser.idr	let wrapped  = emWrap c (reverse innerRev)	let wrapped  = emWrap c innerRev	emphasis: matched body emitted in reversed order (multi-inline emphasis scrambled)
+src/Cribrum/Djot/Parser.idr	in if canClose	in if False	emphasis: closer gate forced false (no delimiter ever closes; emphasis disabled)
+src/Cribrum/Djot/Parser.idr	else nextNonSpace	else True	emphasis: can-open ignores right-flanking (`a* b*` wrongly opens on trailing-space marker)
+src/Cribrum/Djot/Parser.idr	&& elem x opSeen && not (flankSpace prev)	&& elem x opSeen	emphasis: space-flanked in-body marker wrongly closes emphasis (link `*[a](b *)` destroyed)

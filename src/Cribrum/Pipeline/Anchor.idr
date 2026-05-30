@@ -163,8 +163,12 @@ candidate base n = base ++ "-" ++ show n
 ||| Choose the lowest `n >= 0` such that `candidate base n` is not in
 ||| `seen`. Bounded by `length seen + 1` (pigeon-hole: only that many
 ||| distinct candidates can clash).
-disambiguate : String -> List String -> String
-disambiguate base seen = pickFrom 0 (S (length seen))
+||| Begin numbering at `start`. With `start = 1` the un-suffixed `base`
+||| is never produced, so an empty heading falls back to `s-1`, `s-2`, …
+||| (the Djot reference scheme for id-less sections derived from empty
+||| text). `start = 0` is the ordinary "un-suffixed form first" path.
+disambiguateFrom : (start : Nat) -> String -> List String -> String
+disambiguateFrom start base seen = pickFrom start (S (start + length seen))
   where
     pickFrom : (n : Nat) -> (fuel : Nat) -> String
     pickFrom n Z     = candidate base n     -- fuel exhausted — must be free
@@ -173,6 +177,9 @@ disambiguate base seen = pickFrom 0 (S (length seen))
        in if elem c seen
             then pickFrom (S n) k
             else c
+
+disambiguate : String -> List String -> String
+disambiguate base seen = disambiguateFrom 0 base seen
 
 --------------------------------------------------------------------------------
 -- addSectionIds: pre-order traversal threading the seen-id list.
@@ -198,8 +205,9 @@ walkNode seen (Element t attrs cs) =
         if t == "section" && not (hasAttrL "id" attrs)
           then
             let raw  = autoId (sectionHeadingText cs)
-                base = if raw == "" then "s" else raw
-                slug = disambiguate base seen
+                slug = if raw == ""
+                         then disambiguateFrom 1 "s" seen
+                         else disambiguate raw seen
              in (slug :: seen, attrs ++ [MkHAttr "id" (Str slug)])
           else
             -- Pre-existing id (section or otherwise): record it so

@@ -2,7 +2,7 @@
   "name": "cribrum-ingest",
   "version": "0.1.0",
   "private": true,
-  "description": "Spec ingestion scripts for Cribrum. Emits Cribrum.Html.Model.Generated (from @webref/elements + content-model.ts) and Cribrum.AA.Catalog.Generated (from aa.ts).",
+  "description": "Spec ingestion scripts for Cribrum. Emits Cribrum.Html.Model.Generated (from @webref/elements + content-model.ts) and Cribrum.AA.Catalog.Generated (from aa.ts + the vendored ACT-rules corpus via act-rules.ts).",
   "type": "module",
   "scripts": {
     "ingest": "tsx html-model.ts && tsx aa-catalog.ts",
@@ -11,6 +11,7 @@
     "ingest:html:check": "tsx html-model.ts --check",
     "ingest:aa": "tsx aa-catalog.ts",
     "ingest:aa:check": "tsx aa-catalog.ts --check",
+    "ingest:act:download": "tsx act-rules.ts --download",
     "ingest:djotref": "tsx djot-ref.ts",
     "oracle": "tsx oracle.ts"
   },

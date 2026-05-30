@@ -85,15 +85,28 @@ ext_structural_ids_canonical = oneShot $
          , "track-kind"
          ]
 
-||| Heuristic/Runtime rules — currently 3: `alt-meaningful`,
-||| `aria-label-redundant`, `positive-tabindex`. Pinned so any
-||| reclassification (or addition of a new Heuristic / Runtime rule)
-||| lands in the audit explicitly.
+||| Heuristic/Runtime rules. Pinned so any reclassification (or addition
+||| of a new Heuristic / Runtime rule) lands in the audit explicitly.
+|||
+||| Three hand-curated Cribrum heuristics (`alt-meaningful`,
+||| `aria-label-redundant`, `positive-tabindex`) plus the ACT-rules
+||| ingest proof set (`act-*`, plan §P3.1). The ACT rows land Heuristic
+||| because their expectations are accessible-name / accessibility-tree
+||| predicates not yet statically decidable on Cribrum's HTML tree alone;
+||| a follow-up promotes the tree-decidable ones to Structural.
 export
 ext_nonstructural_ids_canonical : Property
 ext_nonstructural_ids_canonical = oneShot $
   sort nonStructuralIds ===
-    sort ["alt-meaningful", "aria-label-redundant", "positive-tabindex"]
+    sort [ "alt-meaningful"
+         , "aria-label-redundant"
+         , "positive-tabindex"
+         , "act-button-has-non-empty-accessible-name-97a4e1"
+         , "act-html-page-has-lang-attribute-b5c3f8"
+         , "act-iframe-element-has-non-empty-accessible-name-cae760"
+         , "act-image-has-non-empty-accessible-name-23a2a8"
+         , "act-link-has-non-empty-accessible-name-c487ae"
+         ]
 
 --------------------------------------------------------------------------------
 -- Group.

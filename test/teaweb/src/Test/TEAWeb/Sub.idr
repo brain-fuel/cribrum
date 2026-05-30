@@ -92,6 +92,16 @@ ext_cbId_onKeyDown = withTests 1 . property $ do
   subCallbackId (the (Sub Msg) (OnKeyDown "kd" MFromString)) === Just "kd"
 
 export
+ext_cbId_onKeyUp : Property
+ext_cbId_onKeyUp = withTests 1 . property $ do
+  subCallbackId (the (Sub Msg) (OnKeyUp "ku" MFromString)) === Just "ku"
+
+export
+ext_flatten_onKeyUp : Property
+ext_flatten_onKeyUp = withTests 1 . property $ do
+  length (flatten (the (Sub Msg) (OnKeyUp "ku" MFromString))) === 1
+
+export
 ext_cbId_every : Property
 ext_cbId_every = withTests 1 . property $ do
   subCallbackId (the (Sub Msg) (Every "tick" 500 MFromDouble)) === Just "tick"
@@ -159,6 +169,8 @@ group = MkGroup "TEAWeb.Sub"
   , ("ext_cbId_none_is_nothing",      ext_cbId_none_is_nothing)
   , ("ext_cbId_batch_is_nothing",     ext_cbId_batch_is_nothing)
   , ("ext_cbId_onKeyDown",            ext_cbId_onKeyDown)
+  , ("ext_cbId_onKeyUp",              ext_cbId_onKeyUp)
+  , ("ext_flatten_onKeyUp",           ext_flatten_onKeyUp)
   , ("ext_cbId_every",                ext_cbId_every)
   , ("ext_cbId_port",                 ext_cbId_port)
   , ("pddt_flatten_lengths",          pddt_flatten_lengths)

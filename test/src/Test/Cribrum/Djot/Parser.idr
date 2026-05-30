@@ -177,11 +177,13 @@ ext_two_dashes_is_paragraph : Property
 ext_two_dashes_is_paragraph = oneShot $
   parseDoc "--" === ok (doc [paraMulti [InlSmart EnDash]])
 
-||| Mixed `-`/`*` is NOT a thematic break.
+||| Mixed `-`/`*` (>= 3 marks, alone on the line) IS a thematic break:
+||| djot allows the dash and star characters to be intermixed (corpus
+||| thematic-breaks-003, `*-*-*-*`).
 export
-ext_mixed_dashes_stars_is_paragraph : Property
-ext_mixed_dashes_stars_is_paragraph = oneShot $
-  parseDoc "-*-" === ok (doc [para "-*-"])
+ext_mixed_dashes_stars_is_thematic : Property
+ext_mixed_dashes_stars_is_thematic = oneShot $
+  parseDoc "-*-" === ok (doc [ThematicBreak emptyAttrs])
 
 ||| Thematic break separates paragraphs even without a blank line on either
 ||| side... but per current grouping logic, a thematic break only resolves
@@ -287,7 +289,6 @@ nonThematicCases : List (String, Block)
 nonThematicCases =
   [ ("--",      paraMulti [InlSmart EnDash])
   , ("**",      para "**")
-  , ("-*-",     para "-*-")
   , ("-=-",     para "-=-")
   , ("===---",  paraMulti [InlText "===", InlSmart EmDash])
   ]
@@ -665,6 +666,40 @@ ext_inline_empty_emphasis_is_text = oneShot $
   parseDoc "__" === ok (doc [para "__"])
 
 export
+ext_inline_trailing_space_marker_no_open : Property
+ext_inline_trailing_space_marker_no_open = oneShot $
+  -- A `*`/`_` with a space to its RIGHT is not left-flanking and cannot
+  -- open. Both `*` here are close-only with no opener, so they stay literal.
+  -- (Mutant-kill: `canOpen` must honour right-flanking, not default to True.)
+  parseDoc "a* b*" === ok (doc [para "a* b*"])
+
+export
+ext_inline_brace_open_marker_emphasises : Property
+ext_inline_brace_open_marker_emphasises = oneShot $
+  -- `{_` is a forced opener regardless of flanking; `_}` is its forced closer
+  -- (djot's explicit-emphasis braces). Kept mid-line so the leading `{` is not
+  -- consumed as a block-attribute prefix.
+  -- (Mutant-kill: a `{`-marked `_` must still force can-open.)
+  parseDoc "x {_a_} y"
+    === ok (doc [paraMulti
+                   [ InlText "x "
+                   , InlEmph [InlText "a"]
+                   , InlText " y"
+                   ]])
+
+export
+ext_inline_brace_marker_cannot_close : Property
+ext_inline_brace_marker_cannot_close = oneShot $
+  -- `{*` is a forced-open BRACED opener (frBrace = True). The later `{*}`
+  -- carries both an open `{` and a close `}` brace; as a closer it wants a
+  -- braced opener, which `{*` is — but a `{`-marked marker must NOT be allowed
+  -- to close at all, so it stays literal and `{*` never resolves. Everything
+  -- collapses to `a *b*}`.
+  -- (Mutant-kill: drop the `{`-open close-block and `{*}` wrongly closes the
+  -- `{*` opener, yielding `a <strong>b</strong>`.)
+  parseDoc "a {*b{*}" === ok (doc [para "a *b*}"])
+
+export
 ext_inline_unpaired_link_is_text : Property
 ext_inline_unpaired_link_is_text = oneShot $
   -- A `[` with no matching `]` falls back to plain text.
@@ -790,6 +825,21 @@ ext_inline_link_survives_other_marker = oneShot $
                    [ InlText "_x "
                    , InlLink emptyAttrs (LinkInline "c" Nothing)
                        [InlText "a*b"]
+                   ]])
+
+||| Link destruction requires the in-body marker to be a VALID emphasis
+||| closer: a SPACE-preceded `*` (left-flanking, never a closer) does not
+||| destroy the link even when a pending `*` opener is on the stack.
+||| `*[a](b *)` keeps the link and the leading `*` stays literal. Pins the
+||| `not (flankSpace prev)` guard in `linkBodyClosesEmph`.
+export
+ext_inline_link_survives_space_flanked_marker : Property
+ext_inline_link_survives_space_flanked_marker = oneShot $
+  parseDoc "*[a](b *)"
+    === ok (doc [paraMulti
+                   [ InlText "*"
+                   , InlLink emptyAttrs (LinkInline "b *" Nothing)
+                       [InlText "a"]
                    ]])
 
 --------------------------------------------------------------------------------
@@ -1342,14 +1392,14 @@ export
 ext_refdef_url_only : Property
 ext_refdef_url_only = oneShot $
   parseDoc "[home]: https://example.org"
-    === ok (doc [RefDef "home" "https://example.org" Nothing])
+    === ok (doc [RefDef "home" "https://example.org" Nothing emptyAttrs])
 
 ||| Reference definition with a trailing double-quoted title.
 export
 ext_refdef_with_title : Property
 ext_refdef_with_title = oneShot $
   parseDoc "[home]: https://example.org \"Home page\""
-    === ok (doc [RefDef "home" "https://example.org" (Just "Home page")])
+    === ok (doc [RefDef "home" "https://example.org" (Just "Home page") emptyAttrs])
 
 ||| Full reference link `[text][ref]` is resolved against a RefDef
 ||| later in the document: the `LinkReference` is rewritten to
@@ -1366,7 +1416,7 @@ ext_full_ref_link_resolved = oneShot $
                       [InlText "home"]
                   , InlText " please"
                   ]
-              , RefDef "h" "https://example.org" Nothing
+              , RefDef "h" "https://example.org" Nothing emptyAttrs
               ])
 
 ||| Collapsed reference link `[text][]` uses the visible text as the
@@ -1383,7 +1433,7 @@ ext_collapsed_ref_link_resolved = oneShot $
                       [InlText "home"]
                   , InlText " please"
                   ]
-              , RefDef "home" "https://example.org" Nothing
+              , RefDef "home" "https://example.org" Nothing emptyAttrs
               ])
 
 ||| Undefined reference label leaves the `LinkReference` intact (the
@@ -1409,7 +1459,7 @@ ext_ref_defined_before_link_resolves : Property
 ext_ref_defined_before_link_resolves = oneShot $
   parseDoc "[h]: https://example.org\n\nsee [home][h] please"
     === ok (doc
-              [ RefDef "h" "https://example.org" Nothing
+              [ RefDef "h" "https://example.org" Nothing emptyAttrs
               , paraMulti
                   [ InlText "see "
                   , InlLink emptyAttrs
@@ -1427,7 +1477,7 @@ export
 ext_refdef_empty_url_is_paragraph : Property
 ext_refdef_empty_url_is_paragraph = oneShot $
   parseDoc "[h]: "
-    === ok (doc [RefDef "h" "" Nothing])
+    === ok (doc [RefDef "h" "" Nothing emptyAttrs])
 
 ||| `[ref]:url` (no space after the colon) is NOT a RefDef — the
 ||| `:` must be followed by a space. Pins the `(':' :: ' ' :: body)`
@@ -1437,6 +1487,44 @@ ext_refdef_requires_space_after_colon : Property
 ext_refdef_requires_space_after_colon = oneShot $
   parseDoc "[h]:url"
     === ok (doc [paraMulti [InlText "[h]:url"]])
+
+||| A trailing inline attribute block on an inline link
+||| (`[text](url){title=bar}`) attaches its attrs to the link's `Attrs`
+||| slot rather than spilling into following text. Pins
+||| `attachLinkAttrs` for the inline-link form.
+export
+ext_link_trailing_attr_attaches : Property
+ext_link_trailing_attr_attaches = oneShot $
+  parseInlineLine "[text](url){title=bar}"
+    === [ InlLink (MkAttrs Nothing [] [("title", "bar")])
+            (LinkInline "url" Nothing) [InlText "text"] ]
+
+||| A trailing inline attribute block on a collapsed reference link
+||| (`[ref][]{title=bar}`) attaches to the link, which keeps its
+||| `LinkReference` form until the two-pass resolver runs. Pins the
+||| reference-link branch of `attachLinkAttrs`.
+export
+ext_ref_link_trailing_attr_attaches : Property
+ext_ref_link_trailing_attr_attaches = oneShot $
+  parseInlineLine "[ref][]{title=bar}"
+    === [ InlLink (MkAttrs Nothing [] [("title", "bar")])
+            (LinkReference "ref") [InlText "ref"] ]
+
+||| An attribute block preceding a reference definition
+||| (`{title=foo}\n[ref]: /url`) folds the `title` into the RefDef's
+||| title field, so a later `[ref][]` resolves to a titled link. Pins
+||| the `applyAttrsToBlock` RefDef case (bucket A parser plumbing).
+export
+ext_refdef_attr_block_sets_title : Property
+ext_refdef_attr_block_sets_title = oneShot $
+  parseDoc "{title=foo}\n[ref]: /url\n\n[ref][]\n"
+    === ok (doc
+              [ RefDef "ref" "/url" (Just "foo") emptyAttrs
+              , paraMulti
+                  [ InlLink emptyAttrs
+                      (LinkInline "/url" (Just "foo"))
+                      [InlText "ref"] ]
+              ])
 
 --------------------------------------------------------------------------------
 -- Nested-bracket links/images, URL escaping, autolink mailto, and
@@ -1503,7 +1591,7 @@ ext_image_reference_resolved = oneShot $
               [ paraMulti
                   [ InlImage emptyAttrs (LinkInline "url" Nothing)
                       [InlText "alt"] ]
-              , RefDef "a" "url" Nothing
+              , RefDef "a" "url" Nothing emptyAttrs
               ])
 
 ||| A collapsed reference uses the visible text's PLAIN rendering as the
@@ -1519,7 +1607,7 @@ ext_collapsed_ref_uses_plain_text = oneShot $
                   [ InlLink emptyAttrs (LinkInline "url" Nothing)
                       [InlText "link ", InlEmph [InlText "and"]
                       , InlText " link"] ]
-              , RefDef "link and link" "url" Nothing
+              , RefDef "link and link" "url" Nothing emptyAttrs
               ])
 
 --------------------------------------------------------------------------------
@@ -1680,7 +1768,7 @@ export
 ext_footnote_empty_label_is_refdef : Property
 ext_footnote_empty_label_is_refdef = oneShot $
   parseDoc "[^]: ignored"
-    === ok (doc [RefDef "^" "ignored" Nothing])
+    === ok (doc [RefDef "^" "ignored" Nothing emptyAttrs])
 
 --------------------------------------------------------------------------------
 -- Unordered & ordered list parsing (Step-8 parser remainder).
@@ -1993,7 +2081,7 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_thematic_many_dashes",                 ext_thematic_many_dashes)
   , ("ext_thematic_with_surrounding_whitespace", ext_thematic_with_surrounding_whitespace)
   , ("ext_two_dashes_is_paragraph",              ext_two_dashes_is_paragraph)
-  , ("ext_mixed_dashes_stars_is_paragraph",      ext_mixed_dashes_stars_is_paragraph)
+  , ("ext_mixed_dashes_stars_is_thematic",       ext_mixed_dashes_stars_is_thematic)
   , ("ext_para_then_break_then_para",            ext_para_then_break_then_para)
   , ("ext_dashes_glued_to_paragraph_is_paragraph",
         ext_dashes_glued_to_paragraph_is_paragraph)
@@ -2045,6 +2133,9 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_inline_link_with_emphasis_label",      ext_inline_link_with_emphasis_label)
   , ("ext_inline_unpaired_marker_is_text",       ext_inline_unpaired_marker_is_text)
   , ("ext_inline_empty_emphasis_is_text",        ext_inline_empty_emphasis_is_text)
+  , ("ext_inline_trailing_space_marker_no_open", ext_inline_trailing_space_marker_no_open)
+  , ("ext_inline_brace_open_marker_emphasises",  ext_inline_brace_open_marker_emphasises)
+  , ("ext_inline_brace_marker_cannot_close",     ext_inline_brace_marker_cannot_close)
   , ("ext_inline_unpaired_link_is_text",         ext_inline_unpaired_link_is_text)
   , ("ext_inline_nested_emphasis_in_strong",     ext_inline_nested_emphasis_in_strong)
   , ("ext_inline_fivefold_strong_nesting",       ext_inline_fivefold_strong_nesting)
@@ -2056,6 +2147,7 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_inline_escaped_marker_keeps_link",     ext_inline_escaped_marker_keeps_link)
   , ("ext_inline_link_with_underscore_unaffected", ext_inline_link_with_underscore_unaffected)
   , ("ext_inline_link_survives_other_marker",     ext_inline_link_survives_other_marker)
+  , ("ext_inline_link_survives_space_flanked_marker", ext_inline_link_survives_space_flanked_marker)
   , ("ext_single_item_unordered_list",           ext_single_item_unordered_list)
   , ("ext_multi_item_unordered_list",            ext_multi_item_unordered_list)
   , ("ext_unordered_list_then_paragraph",        ext_unordered_list_then_paragraph)
@@ -2136,6 +2228,9 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_ref_defined_before_link_resolves",     ext_ref_defined_before_link_resolves)
   , ("ext_refdef_empty_url_is_paragraph",        ext_refdef_empty_url_is_paragraph)
   , ("ext_refdef_requires_space_after_colon",    ext_refdef_requires_space_after_colon)
+  , ("ext_link_trailing_attr_attaches",          ext_link_trailing_attr_attaches)
+  , ("ext_ref_link_trailing_attr_attaches",      ext_ref_link_trailing_attr_attaches)
+  , ("ext_refdef_attr_block_sets_title",         ext_refdef_attr_block_sets_title)
   , ("ext_image_inside_link",                    ext_image_inside_link)
   , ("ext_link_inside_image",                    ext_link_inside_image)
   , ("ext_link_url_unescapes_punct",             ext_link_url_unescapes_punct)

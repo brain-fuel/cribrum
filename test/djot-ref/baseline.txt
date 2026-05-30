@@ -92,10 +92,13 @@ fenced-divs-008
 headings-001
 headings-002
 headings-003
+headings-004
+headings-005
 headings-006
 headings-007
 headings-008
 headings-009
+headings-010
 headings-011
 headings-012
 headings-013
@@ -113,6 +116,8 @@ links-and-images-005
 links-and-images-006
 links-and-images-008
 links-and-images-009
+links-and-images-013
+links-and-images-014
 links-and-images-015
 links-and-images-016
 links-and-images-017
@@ -202,6 +207,7 @@ task-lists-001
 task-lists-002
 thematic-breaks-001
 thematic-breaks-002
+thematic-breaks-003
 thematic-breaks-004
 verbatim-001
 verbatim-002

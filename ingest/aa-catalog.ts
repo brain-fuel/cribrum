@@ -13,6 +13,15 @@ import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { createHash } from "node:crypto";
 import { AA_CATALOG, AARuleRow, Confidence, Severity } from "./aa.js";
+import { loadActRows } from "./act-rules.js";
+
+// The full catalog = hand-curated Cribrum rows (aa.ts) + the upstream
+// ACT-rules pull (act-rules.ts, vendored corpus). Both share the AARuleRow
+// shape and merge into one generated Idris module. ACT rows carry provenance
+// + Applicability/Expectation data; Cribrum rows default those fields.
+function loadCatalog(): AARuleRow[] {
+  return [...AA_CATALOG, ...loadActRows()];
+}
 
 // -----------------------------------------------------------------------------
 // Invariant checks (run pre-emit).
@@ -74,9 +83,11 @@ function checkInvariants(rows: AARuleRow[]): void {
 
   // I5: Structural rules with Warning/Info severity are flagged as a
   // warning — the partitioning audit (plan §P3.3) expects Structural
-  // findings to escalate to Error by default; Warning is only correct
-  // for soft contracts (`fieldset-legend`'s missing legend) where the
-  // page still renders. Listed here for visibility, not blocked.
+  // findings to escalate to Error by default. Structural means the
+  // contract is enforced by construction (a typed promotion in
+  // `Cribrum.AA.Typed` + a hard `Left` in `Cribrum.Elaborate`), so a
+  // softer Warning/Info severity is inconsistent with how the rule
+  // actually fails. Listed here for visibility, not blocked.
   for (const r of rows) {
     if (r.confidence === "Structural" && r.severity !== "Error") {
       console.warn(
@@ -104,16 +115,32 @@ function escapeIdrisString(s: string): string {
   return JSON.stringify(s);
 }
 
+function emitSource(s: AARuleRow["source"]): string {
+  // Idris RuleSource ctors are Cribrum | Act.
+  return s === "act" ? "Act" : "Cribrum";
+}
+
+function emitStringList(xs: string[] | undefined): string {
+  if (!xs || xs.length === 0) return "[]";
+  return "[" + xs.map(escapeIdrisString).join(", ") + "]";
+}
+
 function emitRule(r: AARuleRow): string {
   const lines = [
     `${idrisNameFor(r.id)} : Rule`,
     `${idrisNameFor(r.id)} = MkRule`,
-    `  { id         = ${escapeIdrisString(r.id)}`,
-    `  , wcag       = ${escapeIdrisString(r.wcag)}`,
-    `  , level      = ${escapeIdrisString(r.level)}`,
-    `  , title      = ${escapeIdrisString(r.title)}`,
-    `  , confidence = ${emitConfidence(r.confidence)}`,
-    `  , severity   = ${emitSeverity(r.severity)}`,
+    `  { id            = ${escapeIdrisString(r.id)}`,
+    `  , wcag          = ${escapeIdrisString(r.wcag)}`,
+    `  , level         = ${escapeIdrisString(r.level)}`,
+    `  , title         = ${escapeIdrisString(r.title)}`,
+    `  , confidence    = ${emitConfidence(r.confidence)}`,
+    `  , severity      = ${emitSeverity(r.severity)}`,
+    `  , source        = ${emitSource(r.source)}`,
+    `  , actId         = ${escapeIdrisString(r.actId ?? "")}`,
+    `  , ruleType      = ${escapeIdrisString(r.ruleType ?? "")}`,
+    `  , wcagAll       = ${emitStringList(r.wcagAll)}`,
+    `  , applicability = ${escapeIdrisString(r.applicability ?? "")}`,
+    `  , expectation   = ${escapeIdrisString(r.expectation ?? "")}`,
     `  }`,
   ];
   return "public export\n" + lines.join("\n");
@@ -171,16 +198,19 @@ async function main() {
   const outputPath = resolve(import.meta.dirname, "../src/Cribrum/AA/Catalog/Generated.idr");
   const aaSourcePath = resolve(import.meta.dirname, "aa.ts");
 
-  checkInvariants(AA_CATALOG);
+  // Merge hand-curated (aa.ts) + ingested ACT-rules rows.
+  const catalog = loadCatalog();
+  checkInvariants(catalog);
 
   const aaSource = readFileSync(aaSourcePath, "utf8");
   const aaSourceSha = sha256(aaSource);
   // Catalog hash is over the canonical JSON serialisation of the sorted
-  // catalog — independent of source-file formatting.
-  const sortedCatalog = [...AA_CATALOG].sort((a, b) => a.id.localeCompare(b.id));
+  // *merged* catalog — independent of source-file formatting, and covering
+  // the ACT corpus content (via its parsed rows) as well as aa.ts.
+  const sortedCatalog = [...catalog].sort((a, b) => a.id.localeCompare(b.id));
   const catalogSha = sha256(JSON.stringify(sortedCatalog));
 
-  const generated = emitModule(AA_CATALOG, aaSourceSha, catalogSha);
+  const generated = emitModule(catalog, aaSourceSha, catalogSha);
 
   if (check) {
     if (!existsSync(outputPath)) {
@@ -201,10 +231,10 @@ async function main() {
       console.error("  Run `npm run ingest:aa` to refresh.");
       process.exit(1);
     }
-    console.log(`AA catalog round-trip OK (${AA_CATALOG.length} rule(s))`);
+    console.log(`AA catalog round-trip OK (${catalog.length} rule(s))`);
   } else {
     writeFileSync(outputPath, generated, "utf8");
-    console.log(`wrote ${outputPath} (${AA_CATALOG.length} rule(s))`);
+    console.log(`wrote ${outputPath} (${catalog.length} rule(s))`);
   }
 }
 

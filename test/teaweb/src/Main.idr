@@ -6,6 +6,8 @@ import Test.TEAWeb.HtmlTyped
 import Test.TEAWeb.Event
 import Test.TEAWeb.Cmd
 import Test.TEAWeb.Sub
+import Test.TEAWeb.Ports
+import Test.TEAWeb.Keyed
 import Test.TEAWeb.Program
 
 main : IO ()
@@ -15,5 +17,7 @@ main = test
   , Test.TEAWeb.Event.group
   , Test.TEAWeb.Cmd.group
   , Test.TEAWeb.Sub.group
+  , Test.TEAWeb.Ports.group
+  , Test.TEAWeb.Keyed.group
   , Test.TEAWeb.Program.group
   ]
