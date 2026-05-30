@@ -377,7 +377,15 @@ elaborateInline (InlImage _ ref xs) =
           EnDash   => "\x2013"
           EmDash   => "\x2014"
           Ellipsis => "\x2026"
-elaborateInline (InlMath _ s)      = Element "code" [] [Text s]
+elaborateInline (InlMath isDisplay s) =
+  -- Djot math (conventions §1, "Math" row): inline math is a `<span
+  -- class="math inline">` wrapping the verbatim body in `\(…\)`; display
+  -- math (`$$`) is `<span class="math display">` wrapping it in `\[…\]`.
+  -- The body is NOT markup-parsed; it rides through as a `Text` node so the
+  -- renderer entitises `<`/`>`/`&` (everything else, incl. `$`, is literal).
+  let cls   = if isDisplay then "math display" else "math inline"
+      body  = if isDisplay then "\\[" ++ s ++ "\\]" else "\\(" ++ s ++ "\\)"
+   in Element "span" [MkHAttr "class" (Str cls)] [Text body]
 elaborateInline (InlFootnoteRef l) =
   -- A footnote reference becomes a `<sup>` anchor targeting the
   -- `<aside class="footnote" id="fn-<label>">` emitted for the matching

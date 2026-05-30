@@ -65,7 +65,7 @@ honour.
 | Verbatim              | `<code>`                   | spike    | Attribute block honoured. |
 | Link                  | `<a href="...">`           | spike    | Currently passthrough; ref resolution deferred. |
 | Image                 | `<img>` (void)             | spike    | Alt source attribute deferred — see §4. |
-| Math (inline/display) | `<code>`                   | placeholder | MathJax-style `\\(...\\)` mapping later. |
+| Math (inline/display) | `<span class="math inline">` / `<span class="math display">` | spike | `` $`…` `` -> `\(…\)`; `` $$`…` `` -> `\[…\]`. Verbatim body (raw, not markup-parsed); `<`/`>`/`&` entitised. A `$` not before a backtick stays literal. |
 | Footnote reference    | `<a href="#fn-label"><sup>label</sup></a>` | spike | Intra-document anchor to the `fn-<label>` aside; no upstream-style renumbering. Dangling if no matching def. |
 | Symbol (`:name:`)     | `Text ":name:"`            | placeholder | Emoji/symbol table later. |
 | Raw inline            | `Raw` (passthrough)        | spike    | `` `…`{=html} `` injects its content verbatim as an unescaped `Raw` node; any other format is suppressed. A `{=fmt …}` brace carrying anything beyond the bare `=fmt` token falls back to ordinary verbatim. |

@@ -819,6 +819,27 @@ mutual
                 then assert_total (parseInlinesAcc ('`' :: acc) cs)
                 else flushAcc acc
                   ++ [InlVerbatim emptyAttrs (pack (verbatimStrip afterOpen))]
+    -- Djot math: a `$` (inline) or `$$` (display) immediately followed by
+    -- an inline verbatim span. The verbatim body is raw (not markup-parsed)
+    -- and rides into `InlMath`; the elaborator wraps it in `\(…\)` / `\[…\]`.
+    -- A `$`/`$$` NOT followed by a backtick stays literal text.
+    '$' =>
+      let (isDisplay, afterDollars) = case cs of
+                                        ('$' :: rest) => (True, rest)
+                                        _             => (False, cs)
+       in case afterDollars of
+            ('`' :: afterTick) =>
+              let (more, afterOpen) = takeBacktickRun afterTick
+                  openerLen         = S (length more)
+               in case findVerbatimClose openerLen afterOpen of
+                    Just (inner, after) =>
+                      if inner == []
+                        then assert_total (parseInlinesAcc ('$' :: acc) cs)
+                        else flushAcc acc
+                          ++ [InlMath isDisplay (pack (verbatimStrip inner))]
+                          ++ assert_total (parseInlinesAcc [] after)
+                    Nothing => assert_total (parseInlinesAcc ('$' :: acc) cs)
+            _ => assert_total (parseInlinesAcc ('$' :: acc) cs)
     -- Superscript (`^...^`) and subscript (`~...~`). Unlike emphasis,
     -- Djot imposes no whitespace-flanking restriction on these markers:
     -- the only requirement is a matching closer and a non-empty body

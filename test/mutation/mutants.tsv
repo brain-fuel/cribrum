@@ -263,3 +263,7 @@ src/Cribrum/Elaborate.idr	listAttrs = attrsToHAttrs a	listAttrs = []	list: own A
 src/Cribrum/Elaborate.idr	MkHAttr ("data-" ++ n) v :: kept	a :: kept	draft: disallowed attr not renamed to data-* (repair fails, draft errors)
 src/Cribrum/Elaborate.idr	inAnchor && draftIsInteractive tag	False	draft: interactive-in-anchor demotion disabled (a-in-a survives, draft errors)
 src/Cribrum/Elaborate.idr	tag1 == "a" && not goodHref	False	draft: anchor href placeholder never applied (empty href survives, draft errors)
+src/Cribrum/Djot/Parser.idr	('$' :: rest) => (True, rest)	('$' :: rest) => (False, rest)	math display detect: \$\$ no longer sets isDisplay
+src/Cribrum/Djot/Parser.idr	InlMath isDisplay (pack (verbatimStrip inner))	InlMath True (pack (verbatimStrip inner))	math emit: force isDisplay=True (drops inline math)
+src/Cribrum/Elaborate.idr	if isDisplay then "math display" else "math inline"	if isDisplay then "math inline" else "math display"	math class: swap inline/display class names
+src/Cribrum/Elaborate.idr	if isDisplay then "\\[" ++ s ++ "\\]" else "\\(" ++ s ++ "\\)"	if isDisplay then "\\(" ++ s ++ "\\)" else "\\[" ++ s ++ "\\]"	math delim: swap \[..\] and \(..\) wrappers

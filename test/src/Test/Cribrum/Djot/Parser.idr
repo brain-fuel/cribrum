@@ -600,6 +600,39 @@ ext_inline_verbatim = oneShot $
                    ]])
 
 export
+ext_inline_math : Property
+ext_inline_math = oneShot $
+  -- `$` + verbatim span -> inline math (isDisplay = False); the body is
+  -- raw, never markup-parsed.
+  parseDoc "x $`a^2` y"
+    === ok (doc [paraMulti
+                   [ InlText "x "
+                   , InlMath False "a^2"
+                   , InlText " y"
+                   ]])
+
+export
+ext_display_math : Property
+ext_display_math = oneShot $
+  -- `$$` + verbatim span -> display math (isDisplay = True).
+  parseDoc "$$`a^2`"
+    === ok (doc [paraMulti [InlMath True "a^2"]])
+
+export
+ext_dollar_not_math_is_text : Property
+ext_dollar_not_math_is_text = oneShot $
+  -- A `$` NOT immediately followed by a backtick stays literal text.
+  parseDoc "cost is $5" === ok (doc [para "cost is $5"])
+
+export
+ext_math_body_is_verbatim : Property
+ext_math_body_is_verbatim = oneShot $
+  -- The verbatim body is raw: an inner `$` carries through untouched and
+  -- the closer is the next single backtick (math-006 shape).
+  parseDoc "$`e=$\\pi$`"
+    === ok (doc [paraMulti [InlMath False "e=$\\pi$"]])
+
+export
 ext_inline_link : Property
 ext_inline_link = oneShot $
   parseDoc "see [Cribrum](/cribrum) repo"
@@ -1894,6 +1927,10 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_inline_emphasis",                      ext_inline_emphasis)
   , ("ext_inline_strong",                        ext_inline_strong)
   , ("ext_inline_verbatim",                      ext_inline_verbatim)
+  , ("ext_inline_math",                          ext_inline_math)
+  , ("ext_display_math",                         ext_display_math)
+  , ("ext_dollar_not_math_is_text",              ext_dollar_not_math_is_text)
+  , ("ext_math_body_is_verbatim",                ext_math_body_is_verbatim)
   , ("ext_inline_link",                          ext_inline_link)
   , ("ext_inline_link_with_emphasis_label",      ext_inline_link_with_emphasis_label)
   , ("ext_inline_unpaired_marker_is_text",       ext_inline_unpaired_marker_is_text)

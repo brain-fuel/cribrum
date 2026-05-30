@@ -218,6 +218,12 @@ inlineMappingCases =
   , (InlInsert  [InlText "x"],          Element "ins"    [] [Text "x"])
   , (InlDelete  [InlText "x"],          Element "del"    [] [Text "x"])
   , (InlVerbatim emptyAttrs "code",     Element "code"   [] [Text "code"])
+  , ( InlMath False "a^2"
+    , Element "span" [MkHAttr "class" (Str "math inline")] [Text "\\(a^2\\)"]
+    )
+  , ( InlMath True "a^2"
+    , Element "span" [MkHAttr "class" (Str "math display")] [Text "\\[a^2\\]"]
+    )
   , (InlSpan emptyAttrs [InlText "x"],  Element "span"   [] [Text "x"])
   , (InlSmart EmDash,                   Text "\x2014")
   , (InlSmart Ellipsis,                 Text "\x2026")
@@ -237,6 +243,23 @@ inlineMappingCases =
         [Text "https://example.org"]
     )
   ]
+
+||| Inline math wraps the verbatim body in `\(…\)` inside
+||| `<span class="math inline">`. Pins both the class and the delimiters.
+export
+ext_inline_math_span : Property
+ext_inline_math_span = oneShot $
+  elaborateInline (InlMath False "e=mc^2")
+    === Element "span" [MkHAttr "class" (Str "math inline")]
+          [Text "\\(e=mc^2\\)"]
+
+||| Display math (`$$`) uses class `math display` and `\[…\]` delimiters.
+export
+ext_display_math_span : Property
+ext_display_math_span = oneShot $
+  elaborateInline (InlMath True "e=mc^2")
+    === Element "span" [MkHAttr "class" (Str "math display")]
+          [Text "\\[e=mc^2\\]"]
 
 ||| Image-with-emphasis-in-alt: nested inlines flatten to the alt text.
 ||| Catches regressions where `inlinesPlainText` drops a constructor.
@@ -1061,6 +1084,8 @@ group = MkGroup "Cribrum.Elaborate"
   , ("ext_unique_main_failure_whole_tree",     ext_unique_main_failure_whole_tree)
   , ("pddt_heading_tags",                      pddt_heading_tags)
   , ("pddt_inline_mapping",                    pddt_inline_mapping)
+  , ("ext_inline_math_span",                   ext_inline_math_span)
+  , ("ext_display_math_span",                  ext_display_math_span)
   , ("ext_image_alt_flattens_emphasis",        ext_image_alt_flattens_emphasis)
   , ("ext_link_title_emitted",                 ext_link_title_emitted)
   , ("ext_image_in_link_is_accessible",        ext_image_in_link_is_accessible)
