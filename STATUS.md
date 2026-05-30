@@ -60,24 +60,24 @@
 > normalises whitespace + strips the `<main>` wrapper, and compares
 > against the expected reference output. A baseline file
 > (`test/djot-ref/baseline.txt`) lists currently-passing tests;
-> regressions fail the gate, additions are tracked. **205 / 246**
+> regressions fail the gate, additions are tracked. **212 / 246**
 > upstream-ingested tests now pass (full `jgm/djot` corpus ingestion
-> shipped); the baseline floor stays at 198 until the next single-threaded
-> `djotref-update`. The `emphasis-*` climb from 198 came from replacing the
-> first-closer flanking heuristic with a CommonMark-style **delimiter
-> stack** (`resolveEmph` in `Cribrum.Djot.Parser`, mirroring djot.lua's
+> shipped). The most recent climb (205 -> 212) replaced the first-closer
+> emphasis flanking heuristic with a CommonMark-style **delimiter stack**
+> (`resolveEmph` in `Cribrum.Djot.Parser`, mirroring djot.lua's
 > `between_matched`): single-char `_`/`*` delimiters paired innermost-first
 > with run-length nesting (`*****a*****` -> five `<strong>`), ASCII-only
-> flanking whitespace (NBSP does not block emphasis, so `*<nbsp>a<nbsp>*`
-> is strong), `{`/`}` open/close markers (`{_ … _}`), empty-emphasis
-> exclusion (`__`), and correct precedence — verbatim / autolink / link
-> spans are opaque atoms before the stack runs, so a `_`/`*` inside them is
-> literal (`*foo` `` `*` `` -> `*foo<code>*</code>`). Links and emphasis
-> share an opener stack: a pending opener whose matching closer lies inside
-> a would-be link body destroys the link (`*[a](b*)` ->
-> `<strong>[a](b</strong>)`). Newly passing: emphasis-017/022/026/029/032/
-> 033 + verbatim-004 (emphasis-018 remains blocked at the block layer,
-> where a line-leading `{` is consumed as a block-attribute prefix). The climb from 116 came in two parallel
+> flanking whitespace (NBSP does not block emphasis), `{`/`}` open/close
+> markers, empty-emphasis exclusion (`__`), and correct precedence —
+> verbatim / autolink / link / math spans are opaque atoms before the stack
+> runs, so a `_`/`*` inside them is literal. Links and emphasis share an
+> opener stack (a pending opener whose closer lies inside a would-be link
+> body destroys the link). Newly passing: emphasis-017/022/026/029/032/033
+> + verbatim-004 (emphasis-018 stays blocked at the block layer, where a
+> line-leading `{` is consumed as a block-attribute prefix). The prior climb
+> (198 -> 205) added djot **math** (`` $`…` `` / `` $$`…` `` ->
+> `<span class="math inline">\(…\)</span>` / `display`/`\[…\]`). The climb
+> from 116 came in two parallel
 > rounds of conformance slices: (1) raw passthrough (`raw-*`),
 > super/subscript (`super-subscript-*`), smart-punctuation + emphasis +
 > escapes (`smart-*`/`emphasis-*`/`escapes-*`), and an indentation-aware
@@ -197,16 +197,16 @@ $ make test-fast        # cribrum + teaweb suites
 $ make test             # adds ingest drift gate + mutation gate
 ```
 
-Counts per group: 18 Node + 16 Surface + 176 Parser + 20 Model + 52 Valid
-+ 71 Elaborate + 19 Render.Html + 1 Render.Dom + 56 AA.Pass + 88 AA.Typed
+Counts per group: 18 Node + 16 Surface + 189 Parser + 20 Model + 52 Valid
++ 77 Elaborate + 19 Render.Html + 1 Render.Dom + 56 AA.Pass + 88 AA.Typed
 + 5 AA.Partition + 17 Pipeline.Anchor + 19 Preprocess + 6 Integration (real
 README.dj + plan.dj read at test time, plus pipeline determinism check) =
-564 Cribrum. 10 TEAWeb.Html + 9 TEAWeb.Html.Typed + 10 TEAWeb.Event
+583 Cribrum. 10 TEAWeb.Html + 9 TEAWeb.Html.Typed + 10 TEAWeb.Event
 + 6 TEAWeb.Cmd + 14 TEAWeb.Sub + 9 TEAWeb.Program = 58 TEAWeb. Plus the
 djot-ref reference-suite gate (`tools/run-djotref/`, 246 corpus tests
-against a 198-test baseline; separate harness from the in-suite tests).
-**Total: 622 in-suite tests, plus 246 djot-ref tests (198 passing,
-48 expected-fail under baseline).**
+against a 212-test baseline; separate harness from the in-suite tests).
+**Total: 641 in-suite tests, plus 246 djot-ref tests (212 passing,
+34 expected-fail under baseline).**
 
 Each module has:
 - **EXTs** (example tests) — canonical cases for each behaviour.
