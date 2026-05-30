@@ -130,16 +130,59 @@ findClose2 c1 c2 (x :: y :: rest)  =
       Nothing           => Nothing
 findClose2 _  _  _                 = Nothing
 
+||| Scan the characters AFTER an opening inline `{` for the matching `}`,
+||| returning the brace body (chars between the braces, close brace
+||| excluded) and the remaining input after `}`. Quoted strings (with
+||| `\"`/`\\` escapes) and `% … %` comments are scanned through so a `}`
+||| inside them does not close the block. `Nothing` if no matching `}`.
+scanBraceBody : List Char -> Maybe (List Char, List Char)
+scanBraceBody = go [] False False
+  where
+    -- `inQuote`: inside a `"…"` value. `inComment`: inside a `% … %` run.
+    go : List Char -> (inQuote : Bool) -> (inComment : Bool)
+       -> List Char -> Maybe (List Char, List Char)
+    go _   _     _     []          = Nothing
+    go acc True  ic    ('\\' :: c :: cs) =
+      -- Preserve the escape verbatim in the body; value decoding happens
+      -- later in `parseInlineAttrBody`.
+      go (c :: '\\' :: acc) True ic cs
+    go acc True  ic    ('"'  :: cs) = go ('"' :: acc) False ic cs
+    go acc True  ic    (c    :: cs) = go (c :: acc) True ic cs
+    -- A `}` closes the block except inside a quoted value (where it is a
+    -- literal value char). An unterminated `% … %` comment therefore ends
+    -- at the close brace (attributes-024).
+    go acc iq    True  ('}'  :: cs) = Just (reverse acc, cs)
+    go acc iq    True  ('%'  :: cs) = go ('%' :: acc) iq False cs
+    go acc iq    True  (c    :: cs) = go (c :: acc) iq True cs
+    go acc iq    ic    ('"'  :: cs) = go ('"' :: acc) True ic cs
+    go acc iq    ic    ('%'  :: cs) = go ('%' :: acc) iq True cs
+    go acc _     _     ('}'  :: cs) = Just (reverse acc, cs)
+    go acc iq    ic    (c    :: cs) = go (c :: acc) iq ic cs
+
 ||| Like `findClose`, but backslash-aware: a `\` and the character it
 ||| escapes are carried into the inner content verbatim, so an escaped
 ||| delimiter (`\_`, `\*`) never counts as the closer. Used for emphasis
 ||| and strong, where Djot honours backslash escapes (verbatim does not,
 ||| so that path keeps the plain `findClose`).
+|||
+||| Also brace-aware: an inline attribute block `{...}` (whose body may
+||| contain the delimiter inside a quoted value, e.g. `{key="*"}`) is
+||| skipped wholesale, so the delimiter inside it never closes the span.
+||| This lets `*b{#id key="*"}*` close on the trailing `*` (attributes-004).
 findCloseEsc : Char -> List Char -> Maybe (List Char, List Char)
 findCloseEsc _ []                = Nothing
 findCloseEsc c ('\\' :: y :: xs) = case findCloseEsc c xs of
   Just (ins, rest) => Just ('\\' :: y :: ins, rest)
   Nothing          => Nothing
+findCloseEsc c ('{' :: xs)       = case scanBraceBody xs of
+  Just (body, afterBrace) => case assert_total (findCloseEsc c afterBrace) of
+    Just (ins, rest) => Just ('{' :: body ++ ['}'] ++ ins, rest)
+    Nothing          => Nothing
+  Nothing => if '{' == c
+               then Just ([], xs)
+               else case findCloseEsc c xs of
+                 Just (ins, rest) => Just ('{' :: ins, rest)
+                 Nothing          => Nothing
 findCloseEsc c (x :: xs) =
   if x == c
     then Just ([], xs)
@@ -289,11 +332,14 @@ dashRun n =
 
 ||| `True` iff the preceding character (head of the reversed accumulator
 ||| `acc`) is "open-ish" — start-of-run, whitespace, or an opening
-||| punctuation form (`(`, `[`, `{`). This is the left side of the smart
+||| punctuation form (`(`, `[`, `{`, `=`). `=` is included so a quote
+||| opening an attribute-style value (`key="…`) orients as a left quote
+||| (Djot; corpus attributes-007). This is the left side of the smart
 ||| quote flanking test.
 beforeOpens : List Char -> Bool
 beforeOpens []       = True
-beforeOpens (c :: _) = isSpace c || c == '(' || c == '[' || c == '{'
+beforeOpens (c :: _) =
+  isSpace c || c == '(' || c == '[' || c == '{' || c == '='
 
 ||| `True` iff the following character (head of `cs`) is "close-ish" —
 ||| end-of-run, whitespace, or a closing punctuation form. This is the
@@ -363,6 +409,132 @@ closerBlocked : List Char -> Bool
 closerBlocked inner = case reverse inner of
   []        => True
   (c :: _)  => isSpace c
+
+--------------------------------------------------------------------------------
+-- Inline attribute blocks (`{#id .cls key=val}` attached to inline content).
+--
+-- Djot's generic attribute syntax also applies inline: a `{...}` block
+-- immediately following an inline element (a bracketed `[...]` span, an
+-- emphasis/strong run, or a bare word) attaches its attributes to that
+-- element. The scanner here is the inline counterpart of the block-level
+-- `parseAttrBlockLine`: it must respect quoted values (which may contain
+-- spaces, `{`, `}`, and escaped `\"`) and `% comment %` runs when locating
+-- the matching close brace, so cases like `{key="{#hi"}` and
+-- `{#id key="*"}` close at the correct `}`.
+--------------------------------------------------------------------------------
+
+||| Split a brace body into whitespace-separated tokens, but keep a
+||| quoted `"…"` (escapes preserved) and a `% … %` comment as single
+||| tokens regardless of internal whitespace. Comments are dropped.
+braceTokens : List Char -> List String
+braceTokens = go []
+  where
+    -- Consume a quoted run starting AFTER the opening `"`, returning the
+    -- decoded value chars (escapes resolved: `\"`->`"`, `\\`->`\`) and
+    -- the input after the closing `"`. Unterminated quotes consume to end.
+    consumeQuotedVal : List Char -> (List Char, List Char)
+    consumeQuotedVal []                 = ([], [])
+    consumeQuotedVal ('\\' :: c :: cs)  =
+      let (inner, rest) = consumeQuotedVal cs in (c :: inner, rest)
+    consumeQuotedVal ('"'  :: cs)       = ([], cs)
+    consumeQuotedVal (c    :: cs)       =
+      let (inner, rest) = consumeQuotedVal cs in (c :: inner, rest)
+
+    -- Skip a `% … %` comment starting AFTER the opening `%`.
+    skipComment : List Char -> List Char
+    skipComment []           = []
+    skipComment ('%' :: cs)  = cs
+    skipComment (_   :: cs)  = assert_total (skipComment cs)
+
+    go : List Char -> List Char -> List String
+    go acc []          = if null acc then [] else [pack (reverse acc)]
+    go acc (c :: cs)   =
+      if isSpace c
+        then if null acc then go [] cs
+                         else pack (reverse acc) :: go [] cs
+        else case c of
+          '%' => let cs' = skipComment cs in
+                 if null acc then assert_total (go [] cs')
+                             else pack (reverse acc) :: assert_total (go [] cs')
+          '"' => let (val, rest) = consumeQuotedVal cs
+                     -- Wrap the decoded value in a sentinel so the token
+                     -- parser knows it was quoted (value may be empty or
+                     -- contain spaces). Sentinel: leading NUL is impossible
+                     -- in attr source, so it disambiguates safely.
+                     tok = pack (reverse acc) ++ "\"" ++ pack val ++ "\""
+                  in assert_total (go (reverse (unpack tok)) rest)
+          _   => go (c :: acc) cs
+
+||| Parse one brace token into an `Attrs` delta: `#x`->id, `.x`->class,
+||| `key=val` or `key="quoted"`->pair. The value of a quoted pair keeps
+||| its surrounding `"` (added by `braceTokens`) which is stripped here.
+braceTokenToAttrs : String -> Attrs
+braceTokenToAttrs s = case unpack s of
+  ('#' :: rest) => MkAttrs (Just (pack rest)) [] []
+  ('.' :: rest) => MkAttrs Nothing [pack rest] []
+  cs            => case break (== '=') cs of
+    (key, '=' :: val) =>
+      let v = case val of
+                ('"' :: r) => case reverse r of
+                                ('"' :: rs) => pack (reverse rs)
+                                _           => pack val
+                _          => pack val
+       in MkAttrs Nothing [] [(pack key, v)]
+    _ => emptyAttrs   -- bare token with no `=` and no `#`/`.`: ignore
+
+||| Combine an accumulated `Attrs` with a delta: later id wins, classes
+||| and pairs append in source order.
+mergeInlineAttrs : Attrs -> Attrs -> Attrs
+mergeInlineAttrs (MkAttrs i1 c1 p1) (MkAttrs i2 c2 p2) =
+  MkAttrs (case i2 of Just _ => i2; Nothing => i1) (c1 ++ c2) (p1 ++ p2)
+
+||| Parse a full inline brace body into `Attrs`.
+parseInlineAttrBody : List Char -> Attrs
+parseInlineAttrBody body =
+  foldl mergeInlineAttrs emptyAttrs
+        (map braceTokenToAttrs (braceTokens body))
+
+||| Recognise an inline attribute block at the start of `cs` (which is
+||| the input AFTER the opening `{`). Returns the parsed `Attrs` and the
+||| input after the close `}`, or `Nothing` if no matching `}`. The first
+||| non-space char rules out decorator/sup/sub braces (`+ - = ^ ~`),
+||| which are handled by their own branches.
+scanInlineAttr : List Char -> Maybe (Attrs, List Char)
+scanInlineAttr cs = case scanBraceBody cs of
+  Nothing            => Nothing
+  Just (body, after) =>
+    case dropWhile isSpace body of
+      ('+' :: _) => Nothing
+      ('-' :: _) => Nothing
+      ('=' :: _) => Nothing
+      ('^' :: _) => Nothing
+      ('~' :: _) => Nothing
+      _          =>
+        -- A `{...}` is an attribute block only when EVERY token is a valid
+        -- attribute (`#id`, `.class`, or `key=val`). A bare token with no
+        -- `=`/`#`/`.` (e.g. `{''}`) makes the braces literal text, not an
+        -- empty attribute block (corpus smart-013). Empty `{}` is valid.
+        if all isValidAttrToken (braceTokens body)
+          then Just (parseInlineAttrBody body, after)
+          else Nothing
+  where
+    isValidAttrToken : String -> Bool
+    isValidAttrToken t = case unpack t of
+      ('#' :: _) => True
+      ('.' :: _) => True
+      cs'        => case break (== '=') cs' of
+        (_, '=' :: _) => True
+        _             => False
+
+||| Split the reversed plain-text accumulator at the last whitespace,
+||| returning `(beforeWord, word)` where `word` is the trailing run of
+||| non-space chars (in source order) and `beforeWord` the remainder
+||| (reversed accumulator form, ready to feed back to `flushAcc`).
+||| Used to scope an inline attribute to the immediately-preceding word.
+splitTrailingWord : List Char -> (List Char, List Char)
+splitTrailingWord acc =
+  let (wordRev, beforeRev) = break isSpace acc
+   in (beforeRev, reverse wordRev)
 
 --------------------------------------------------------------------------------
 -- Inline verbatim helpers.
@@ -602,7 +774,24 @@ mutual
               ++ [InlSub (assert_total (parseInlinesAcc [] inner))]
               ++ assert_total (parseInlinesAcc [] after)
         Nothing => assert_total (parseInlinesAcc ('{' :: acc) cs)
-      _ => assert_total (parseInlinesAcc ('{' :: acc) cs)
+      -- Inline attribute block `{#id .cls key=val}`. Attaches to the
+      -- immediately-preceding word (the trailing non-space run in `acc`):
+      -- that word is wrapped in an `InlSpan` carrying the attrs. An empty
+      -- block (`{}`) or one with nothing to attach to (preceded by space
+      -- or at line start) is consumed and dropped, leaving the surrounding
+      -- text intact. A `{` with no matching `}` stays literal.
+      _ => case scanInlineAttr cs of
+        Just (attrs, after) =>
+          if attrs == emptyAttrs
+            then flushAcc acc ++ assert_total (parseInlinesAcc [] after)
+            else case splitTrailingWord acc of
+              (_, [])         =>
+                flushAcc acc ++ assert_total (parseInlinesAcc [] after)
+              (beforeRev, wd) =>
+                flushAcc beforeRev
+                  ++ [InlSpan attrs (assert_total (parseInlines wd))]
+                  ++ assert_total (parseInlinesAcc [] after)
+        Nothing => assert_total (parseInlinesAcc ('{' :: acc) cs)
     '`' =>
       let (more, afterOpen) = takeBacktickRun cs
           openerLen         = S (length more)
@@ -667,7 +856,20 @@ mutual
         Just (link, after) =>
           flushAcc acc ++ [link]
             ++ assert_total (parseInlinesAcc [] after)
-        Nothing => assert_total (parseInlinesAcc ('[' :: acc) cs)
+        Nothing =>
+          -- Bracketed inline span: `[text]{attrs}`. When `[...]` is not a
+          -- link but its `]` is immediately followed by an attribute block,
+          -- the bracket body becomes an `InlSpan` carrying those attrs
+          -- (Djot's span construct). Otherwise the `[` stays literal.
+          case findClose ']' cs of
+            Just (inner, ('{' :: braceRest)) =>
+              case scanInlineAttr braceRest of
+                Just (attrs, after) =>
+                  flushAcc acc
+                    ++ [InlSpan attrs (assert_total (parseInlines inner))]
+                    ++ assert_total (parseInlinesAcc [] after)
+                Nothing => assert_total (parseInlinesAcc ('[' :: acc) cs)
+            _ => assert_total (parseInlinesAcc ('[' :: acc) cs)
     '!' => case cs of
       ('[' :: rest) => case parseImageBody rest of
         Just (img, after) =>
@@ -1291,6 +1493,48 @@ isAttrBlockLine s = case parseAttrBlockLine s of
   Just _  => True
   Nothing => False
 
+||| Recognise a (possibly multi-line) block-level attribute prefix that
+||| OPENS on line `s` with `{` as its first non-space char and either
+||| closes on the same line or on one of the following `rest` lines. On
+||| success returns the parsed `Attrs` and the lines remaining after the
+||| close brace. `Nothing` if the opener isn't a brace, is a comment
+||| (`{%`) or decorator (`{+`/`{-`/`{=`/`{^`/`{~`), or never closes with
+||| `}` across the available lines (then the run is a paragraph, e.g.
+||| `{a=x` with no closer — corpus attributes-029/031).
+parseMultiLineAttrBlock : (s : String) -> (rest : List String)
+                        -> Maybe (Attrs, List String)
+parseMultiLineAttrBlock s rest =
+  case unpack (ltrim s) of
+    ('{' :: afterBrace) =>
+      case dropWhile (\c => c == ' ' || c == '\t') afterBrace of
+        ('+' :: _) => Nothing
+        ('-' :: _) => Nothing
+        ('=' :: _) => Nothing
+        ('^' :: _) => Nothing
+        ('~' :: _) => Nothing
+        ('%' :: _) => Nothing
+        _          => tryLines afterBrace [] rest
+    _ => Nothing
+  where
+    -- Accumulate joined characters (lines joined with `\n`) and try to
+    -- close the brace on each successive line. `acc` is the joined body
+    -- chars collected so far (in source order) from prior lines.
+    tryLines : (cur : List Char) -> (acc : List Char) -> List String
+             -> Maybe (Attrs, List String)
+    tryLines cur acc remaining =
+      let joined = acc ++ cur
+       in case scanBraceBody joined of
+            Just (body, leftover) =>
+              -- Recognised only when nothing but whitespace trails the
+              -- close brace on the final line.
+              if all isSpace leftover
+                then Just (parseInlineAttrBody body, remaining)
+                else Nothing
+            Nothing => case remaining of
+              []        => Nothing
+              (l :: ls) =>
+                assert_total (tryLines (unpack l) (joined ++ ['\n']) ls)
+
 ||| Find the first `]` in `xs` and return `(before, after-the-bracket)`,
 ||| or `Nothing` if no `]` exists. Hoisted ahead of `groupLines` so the
 ||| refdef opener detection can share the same helper as the post-group
@@ -1634,30 +1878,41 @@ groupLines xs = go [] [] xs
                                  in assert_total
                                       (go [] (AttrPrefixGroup attrs :: acc') xs)
                               Nothing => go (x :: cur) acc xs
-                            else if isFootnoteOpener x
-                              then
-                                let (rest, rs) = collectFootnoteBody xs
-                                    acc'       = flushNormal (reverse cur) acc
-                                    (label, openerRest) = case parseFootnoteOpener x of
-                                      Just (l, r) => (l, r)
-                                      Nothing     => ("", "")
-                                    body       = openerRest :: map (dropLeadingSpaces 2) rest
-                                    fn         = FootnoteGroup label body
-                                 in assert_total (go [] (fn :: acc') rs)
-                              else if isListOpener x && not (isThematicBreak x)
-                                                      && isNil cur
-                                then
-                                  let (rest, rs) = collectList False xs
-                                      acc'       = flushNormal (reverse cur) acc
-                                      listG      = ListGroup (x ::: rest)
-                                   in assert_total (go [] (listG :: acc') rs)
-                                else if isDefListOpener x
+                            -- Multi-line block attribute prefix: opener `{`
+                            -- with no same-line close, body continuing on
+                            -- following lines (corpus attributes-014).
+                            else case (if cur == []
+                                         then parseMultiLineAttrBlock x xs
+                                         else Nothing) of
+                              Just (attrs, rest') =>
+                                let acc' = flushNormal (reverse cur) acc
+                                 in assert_total
+                                      (go [] (AttrPrefixGroup attrs :: acc') rest')
+                              Nothing =>
+                                if isFootnoteOpener x
                                   then
-                                    let (rest, rs) = collectDefList xs
+                                    let (rest, rs) = collectFootnoteBody xs
                                         acc'       = flushNormal (reverse cur) acc
-                                        defList    = DefListGroup (x ::: rest)
-                                     in assert_total (go [] (defList :: acc') rs)
-                                  else go (x :: cur) acc xs
+                                        (label, openerRest) = case parseFootnoteOpener x of
+                                          Just (l, r) => (l, r)
+                                          Nothing     => ("", "")
+                                        body       = openerRest :: map (dropLeadingSpaces 2) rest
+                                        fn         = FootnoteGroup label body
+                                     in assert_total (go [] (fn :: acc') rs)
+                                  else if isListOpener x && not (isThematicBreak x)
+                                                          && isNil cur
+                                    then
+                                      let (rest, rs) = collectList False xs
+                                          acc'       = flushNormal (reverse cur) acc
+                                          listG      = ListGroup (x ::: rest)
+                                       in assert_total (go [] (listG :: acc') rs)
+                                    else if isDefListOpener x
+                                      then
+                                        let (rest, rs) = collectDefList xs
+                                            acc'       = flushNormal (reverse cur) acc
+                                            defList    = DefListGroup (x ::: rest)
+                                         in assert_total (go [] (defList :: acc') rs)
+                                      else go (x :: cur) acc xs
 
 --------------------------------------------------------------------------------
 -- Group -> Block.

@@ -1453,6 +1453,81 @@ ext_trailing_attr_block_dropped = oneShot $
   parseDoc "para\n\n{#id}"
     === ok (doc [Paragraph emptyAttrs [InlText "para"]])
 
+||| Inline attribute block `{.cls}` attaches to the immediately-preceding
+||| word, wrapping it in a span (corpus attributes-001/002).
+export
+ext_inline_attr_wraps_preceding_word : Property
+ext_inline_attr_wraps_preceding_word = oneShot $
+  parseDoc "foo bar{.ru}"
+    === ok (doc [paraMulti
+                   [ InlText "foo "
+                   , InlSpan (MkAttrs Nothing ["ru"] []) [InlText "bar"]]])
+
+||| Bracketed inline span: `[text]{attrs}` makes the bracket body a span
+||| carrying the attrs (corpus attributes-003 / spans-001).
+export
+ext_inline_attr_bracketed_span : Property
+ext_inline_attr_bracketed_span = oneShot $
+  parseDoc "[some text]{.attr}"
+    === ok (doc [paraMulti
+                   [InlSpan (MkAttrs Nothing ["attr"] [])
+                            [InlText "some text"]]])
+
+||| A quoted attribute value may contain `{` and `}`; the close brace is
+||| found after the closing quote (corpus attributes-006).
+export
+ext_inline_attr_quoted_value_with_brace : Property
+ext_inline_attr_quoted_value_with_brace = oneShot $
+  parseDoc "hi{key=\"{#hi\"}"
+    === ok (doc [paraMulti
+                   [InlSpan (MkAttrs Nothing [] [("key", "{#hi")])
+                            [InlText "hi"]]])
+
+||| An empty inline attribute block `{}` is consumed and dropped, leaving
+||| the preceding text intact (corpus attributes-026).
+export
+ext_inline_attr_empty_dropped : Property
+ext_inline_attr_empty_dropped = oneShot $
+  parseDoc "hi{}" === ok (doc [para "hi"])
+
+||| A `{...}` whose token is not a valid attribute (no `#`/`.`/`=`) is
+||| literal text, not an attribute block (corpus smart-013 shape).
+export
+ext_inline_attr_invalid_token_is_literal : Property
+ext_inline_attr_invalid_token_is_literal = oneShot $
+  parseDoc "x{foo}" === ok (doc [para "x{foo}"])
+
+||| A `%…%` comment inside an inline attribute block is ignored; an
+||| unterminated comment ends at the close brace (corpus attributes-024).
+export
+ext_inline_attr_comment_ignored : Property
+ext_inline_attr_comment_ignored = oneShot $
+  parseDoc "foo{#ident % this is a comment}"
+    === ok (doc [paraMulti
+                   [InlSpan (MkAttrs (Just "ident") [] []) [InlText "foo"]]])
+
+||| A quoted attribute value protects a delimiter from closing an
+||| enclosing emphasis run: `*b{key="*"}*` closes on the trailing `*`
+||| (corpus attributes-004).
+export
+ext_inline_attr_protects_emphasis_delim : Property
+ext_inline_attr_protects_emphasis_delim = oneShot $
+  parseDoc "*b{key=\"*\"}*"
+    === ok (doc [paraMulti
+                   [InlStrong
+                      [InlSpan (MkAttrs Nothing [] [("key", "*")])
+                               [InlText "b"]]]])
+
+||| A multi-line block attribute prefix that opens `{` on one line and
+||| closes `}` on a later line attaches to the following block
+||| (corpus attributes-014).
+export
+ext_multiline_block_attr_prefix : Property
+ext_multiline_block_attr_prefix = oneShot $
+  parseDoc "{#id .class\n  style=\"x\"}\nPara"
+    === ok (doc [Paragraph (MkAttrs (Just "id") ["class"] [("style", "x")])
+                            [InlText "Para"]])
+
 ||| Empty-label `[^]:` is NOT a footnote opener — `parseFootnoteOpener`
 ||| requires a non-empty label. The line then falls through to the
 ||| normal ref-def path, which accepts `^` as a label. (Documents this
@@ -1921,6 +1996,14 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_attr_block_prefixes_paragraph",        ext_attr_block_prefixes_paragraph)
   , ("ext_attr_blocks_stack",                    ext_attr_blocks_stack)
   , ("ext_trailing_attr_block_dropped",          ext_trailing_attr_block_dropped)
+  , ("ext_inline_attr_wraps_preceding_word",     ext_inline_attr_wraps_preceding_word)
+  , ("ext_inline_attr_bracketed_span",           ext_inline_attr_bracketed_span)
+  , ("ext_inline_attr_quoted_value_with_brace",  ext_inline_attr_quoted_value_with_brace)
+  , ("ext_inline_attr_empty_dropped",            ext_inline_attr_empty_dropped)
+  , ("ext_inline_attr_invalid_token_is_literal", ext_inline_attr_invalid_token_is_literal)
+  , ("ext_inline_attr_comment_ignored",          ext_inline_attr_comment_ignored)
+  , ("ext_inline_attr_protects_emphasis_delim",  ext_inline_attr_protects_emphasis_delim)
+  , ("ext_multiline_block_attr_prefix",          ext_multiline_block_attr_prefix)
   , ("ext_superscript_basic",                    ext_superscript_basic)
   , ("ext_subscript_basic",                      ext_subscript_basic)
   , ("ext_superscript_nested_subscript",         ext_superscript_nested_subscript)

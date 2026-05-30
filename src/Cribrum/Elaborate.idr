@@ -434,8 +434,10 @@ elaborateBlock (RawBlock fmt body) =
   -- blocks inject their body verbatim as a `Raw` passthrough node; raw
   -- blocks tagged with any other format are suppressed (no output).
   if fmt == "html" then Raw body else Text ""
-elaborateBlock (ListBlock _ style start tight items) =
-  let tag = case style of
+elaborateBlock (ListBlock a style start tight items) =
+  let listAttrs = attrsToHAttrs a
+      tag : String
+      tag = case style of
               OrderedDecimal     => "ol"
               OrderedRomanLower  => "ol"
               OrderedRomanUpper  => "ol"
@@ -517,12 +519,12 @@ elaborateBlock (ListBlock _ style start tight items) =
 
    in case style of
         TaskList   =>
-          Element "ul" [MkHAttr "class" (Str "task-list")]
+          Element "ul" (listAttrs ++ [MkHAttr "class" (Str "task-list")])
             (map elabTaskItem items)
         Definition =>
-          Element "dl" [] (concatMap defPair items)
+          Element "dl" listAttrs (concatMap defPair items)
         _          =>
-          let attrs = if tag == "ol" then olAttrs else []
+          let attrs = listAttrs ++ (if tag == "ol" then olAttrs else [])
            in Element tag attrs (map elabItem items)
 elaborateBlock (Table _ cap rows) =
   -- Djot reference output places `<tr>` rows directly inside `<table>`

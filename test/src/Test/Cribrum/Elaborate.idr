@@ -557,6 +557,25 @@ ext_task_list_emits_class_attrs = oneShot $
                   [Text "two"]
               ]]
 
+||| A list's own `Attrs` (e.g. a `{.special}` block prefix) surface as
+||| HTML attributes on the list element, emitted before any `start`/`type`
+||| attribute (corpus attributes-021).
+export
+ext_list_attrs_emit_on_element : Property
+ext_list_attrs_emit_on_element = oneShot $
+  elaborateDoc
+    (doc [ListBlock (MkAttrs Nothing ["special"] []) OrderedDecimal Nothing True
+            [ MkLI emptyAttrs Nothing Nothing
+                [Paragraph emptyAttrs [InlText "one"]]
+            , MkLI emptyAttrs Nothing Nothing
+                [Paragraph emptyAttrs [InlText "two"]]
+            ]])
+    === Element "main" []
+          [ Element "ol" [MkHAttr "class" (Str "special")]
+              [ Element "li" [] [Text "one"]
+              , Element "li" [] [Text "two"]
+              ]]
+
 export
 ext_definition_list_emits_dl_dt_dd : Property
 ext_definition_list_emits_dl_dt_dd = oneShot $
@@ -1004,6 +1023,7 @@ group = MkGroup "Cribrum.Elaborate"
   , ("pbt_elaborated_doc_isValidHtml",         pbt_elaborated_doc_isValidHtml)
   , ("pbt_parse_elaborate_round_trip",         pbt_parse_elaborate_round_trip)
   , ("ext_task_list_emits_class_attrs",        ext_task_list_emits_class_attrs)
+  , ("ext_list_attrs_emit_on_element",         ext_list_attrs_emit_on_element)
   , ("ext_definition_list_emits_dl_dt_dd",     ext_definition_list_emits_dl_dt_dd)
   , ("ext_tight_ul_collapses_paragraph_wrap",  ext_tight_ul_collapses_paragraph_wrap)
   , ("ext_loose_ul_keeps_paragraph_wrap",      ext_loose_ul_keeps_paragraph_wrap)

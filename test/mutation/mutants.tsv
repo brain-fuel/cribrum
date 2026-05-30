@@ -254,3 +254,9 @@ src/Cribrum/Djot/Parser.idr	if isAsciiPunct p then p :: go cs else	if isAsciiPun
 src/Cribrum/Djot/Parser.idr	InlImage a (LinkReference l) xs => case lookup l tab of	InlImage a (LinkReference l) xs => case the (Maybe (String, Maybe String)) Nothing of	image: reference images never resolved against refdefs
 src/Cribrum/AA/Typed.idr	collectText (Element "img" as _) = imgAltText as	collectText (Element "img" as _) = ""	accname: img alt no longer contributes to link accessible name
 src/Cribrum/Elaborate.idr	titleHAttr (Just t) = [MkHAttr "title" (Str t)]	titleHAttr (Just t) = []	elaborate: link/image title attribute never emitted
+src/Cribrum/Djot/Parser.idr	(beforeRev, reverse wordRev)	(beforeRev, [])	inline attr: trailing-word scope emptied (attr never wraps preceding word)
+src/Cribrum/Djot/Parser.idr	if all isValidAttrToken (braceTokens body)	if True	inline attr: invalid token no longer rejected (`{foo}` wrongly an empty attr block)
+src/Cribrum/Djot/Parser.idr	go acc iq    True  ('}'  :: cs) = Just (reverse acc, cs)	go acc iq    True  ('}'  :: cs) = go ('}' :: acc) iq True cs	inline attr: unterminated comment no longer ends at close brace (block unrecognised)
+src/Cribrum/Djot/Parser.idr	findCloseEsc c ('{' :: xs)       = case scanBraceBody xs of	findCloseEsc c ('{' :: xs)       = case the (Maybe (List Char, List Char)) Nothing of	emphasis: brace-block skip disabled (quoted delim inside attrs wrongly closes emphasis)
+src/Cribrum/Djot/Parser.idr	then parseMultiLineAttrBlock x xs	then parseMultiLineAttrBlock x []	block attr: multi-line `{...}` prefix loses continuation lines (never closes, becomes paragraph)
+src/Cribrum/Elaborate.idr	listAttrs = attrsToHAttrs a	listAttrs = []	list: own Attrs dropped (class/id never reach the list element)

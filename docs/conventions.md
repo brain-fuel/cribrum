@@ -36,8 +36,8 @@ honour.
 | Heading (level n)     | `<h1>`...`<h6>`            | spike    | Levels 1..6; >6 currently parses as paragraph. |
 | Thematic break        | `<hr>`                     | spike    | `---` / `***`, 3+ chars, surrounding ws ok. |
 | Block quote           | `<blockquote>`             | spike    | Lines prefixed `> `; recursive nesting supported. |
-| List (unordered)      | `<ul>` + `<li>`            | done     | Marker `-` / `*` / `+`; nested sub-lists, multi-paragraph items, lazy continuation, tight/loose detection (blank before a sub-list stays tight). A bullet-family change starts a new list. |
-| List (ordered)        | `<ol>` + `<li>`            | done     | Decimal / lower+upper roman / lower+upper alpha; delimiters `1.` `1)` `(1)`. `start` carried + emitted (omitted when 1); non-decimal styles emit `type=` (`a`/`A`/`i`/`I`). Ambiguous leading roman/alpha letter resolved against the second item, defaulting to roman. A marker an ordered value ≠ 1 cannot interrupt an open paragraph. |
+| List (unordered)      | `<ul>` + `<li>`            | done     | Marker `-` / `*` / `+`; nested sub-lists, multi-paragraph items, lazy continuation, tight/loose detection (blank before a sub-list stays tight). A bullet-family change starts a new list. A `{...}` block-attribute prefix attaches to the list (`class`/`id`/pairs emitted on the list element). |
+| List (ordered)        | `<ol>` + `<li>`            | done     | Decimal / lower+upper roman / lower+upper alpha; delimiters `1.` `1)` `(1)`. `start` carried + emitted (omitted when 1); non-decimal styles emit `type=` (`a`/`A`/`i`/`I`). Ambiguous leading roman/alpha letter resolved against the second item, defaulting to roman. A marker an ordered value ≠ 1 cannot interrupt an open paragraph. A `{...}` prefix's attrs are emitted before `start`/`type`. |
 | List (task)           | `<ul class="task-list">` + `<li class="checked\|unchecked">` | done | Promoted when every item is a `[ ]`/`[x]` checkbox; loose task lists keep the `<p>` wrap. |
 | List (definition)     | `<dl>` + `<dt>` + `<dd>`   | done     | `term` carried separately. |
 | Code block (fenced)   | `<pre><code>`              | spike    | `info` string parsed but not yet promoted to language class (deferred). |
@@ -105,7 +105,12 @@ order. No convention class → plain `<div>`. Other annotations (`id`, `role`,
 `lang`, arbitrary `key=value`) pass through untouched via `attrsToHAttrs`.
 
 The same promotion applies on the **inline** axis: a `[text]{.cls}` span is
-promoted to a semantic *phrasing* element by an authoring class.
+promoted to a semantic *phrasing* element by an authoring class. An inline
+attribute block also attaches to the immediately-preceding **word** when not
+bracketed (`word{.cls}` wraps just that word in a span); a block with nothing
+to attach to (at line start, or preceded by whitespace) or an empty `{}` is
+dropped, leaving the surrounding text intact. Quoted values may carry spaces,
+braces, and escaped `\"`; `%…%` comments inside the block are ignored.
 
 | Source                       | Becomes                | Slice    | Notes |
 |------------------------------|------------------------|----------|-------|
