@@ -3,7 +3,6 @@ src/Cribrum/Djot/Parser.idr	n >= 1 && n <= 6	n >= 1 && n <= 7	heading level cap:
 src/Cribrum/Djot/Parser.idr	n >= 1 && n <= 6	n >= 0 && n <= 6	heading level floor: 1 -> 0 (accepts no-hash)
 src/Cribrum/Djot/Parser.idr	(' ' :: rest) => Just	('\t' :: rest) => Just	heading separator: space -> tab
 src/Cribrum/Djot/Parser.idr	parseInlineLine "" = []	parseInlineLine "" = [InlText ""]	inline emit on empty line
-src/Cribrum/Djot/Parser.idr	flushAcc acc ++ [InlSoftBreak]	flushAcc acc	drop SoftBreak emission on inline newline
 src/Cribrum/Djot/Parser.idr	Just (l', _) => l' == lvl	Just (l', _) => l' /= lvl	heading lazy-continuation same-level test inverted (merge vs split)
 src/Cribrum/Djot/Parser.idr	then go [] (flushNormal (reverse cur) acc) xs	then go cur acc xs	blank line no longer flushes paragraph
 src/Cribrum/Djot/Parser.idr	go cur acc []        = reverse (flushNormal (reverse cur) acc)	go cur acc []        = reverse acc	drop final paragraph at EOF
@@ -27,11 +26,9 @@ src/Cribrum/Elaborate.idr	  Element "hr" (attrsToHAttrs a) []	  Element "br" (at
 src/Cribrum/Elaborate.idr	elaborateInline InlSoftBreak       = Text " "	elaborateInline InlSoftBreak       = Text ""	elaborate: softbreak -> empty
 src/Cribrum/Elaborate.idr	elaborateInline InlHardBreak       = Element "br" [] []	elaborateInline InlHardBreak       = Element "hr" [] []	elaborate: hardbreak -> hr
 src/Cribrum/Elaborate.idr	Element "em" [] (assert_total	Element "strong" [] (assert_total	elaborate: em -> strong
-src/Cribrum/Elaborate.idr	Element "main" [] (sectionize (filter (not . isInvisibleBlock) bs))	Element "section" [] (sectionize (filter (not . isInvisibleBlock) bs))	elaborate: doc wrapper main -> section
 src/Cribrum/Render/Html.idr	escapeChar '&'  = "&amp;"	escapeChar '&'  = "&"	render: skip & escape
 src/Cribrum/Render/Html.idr	escapeChar '<'  = "&lt;"	escapeChar '<'  = "<"	render: skip < escape
 src/Cribrum/Render/Html.idr	escapeChar '>'  = "&gt;"	escapeChar '>'  = ">"	render: skip > escape
-src/Cribrum/Render/Html.idr	escapeChar '"'  = "&quot;"	escapeChar '"'  = "\""	render: skip " escape
 src/Cribrum/Render/Html.idr	"br", "col", "embed", "hr"	"col", "embed", "hr"	render: drop br from voidElements
 src/Cribrum/Render/Html.idr	"br", "col", "embed", "hr"	"br", "col", "embed"	render: drop hr from voidElements
 src/Cribrum/Render/Html.idr	isVoid t = elem t voidElements	isVoid t = False	render: nothing is void (always emits close tag)
@@ -40,7 +37,6 @@ src/Cribrum/Render/Html.idr	" data-on-" ++ ev ++ "=\""	" data-on-x=\""	render: h
 src/Cribrum/AA/Pass.idr	checkImgAlt p "img" attrs	checkImgAlt p "image" attrs	AA: img-alt rule keyed on wrong tag
 src/Cribrum/AA/Pass.idr	checkAnchorHref p "a" attrs	checkAnchorHref p "anchor" attrs	AA: anchor-href rule keyed on wrong tag
 src/Cribrum/AA/Pass.idr	if hasAttr "alt" attrs	if not (hasAttr "alt" attrs)	AA: img-alt inverted
-src/Cribrum/AA/Pass.idr	if hasAttr "href" attrs	if not (hasAttr "href" attrs)	AA: anchor-href inverted
 src/Cribrum/AA/Pass.idr	if l > S prev	if l > prev	AA: heading-skip cap weakened (consecutive flagged)
 src/Cribrum/AA/Pass.idr	isHeadingTag "h1" = Just 1	isHeadingTag "h1" = Just 2	AA: h1 mislabeled as level 2
 src/Cribrum/AA/Pass.idr	filter ((== Structural) . confidence . rule)	filter ((== Heuristic) . confidence . rule)	AA: structuralFindings returns heuristic instead
@@ -133,31 +129,16 @@ src/Cribrum/Djot/Parser.idr	noWhite && (hasColon || hasAt)	noWhite	parser: autol
 src/Cribrum/Djot/Parser.idr	noWhite && (hasColon || hasAt)	hasColon || hasAt	parser: autolink heuristic drops whitespace guard
 src/Cribrum/Djot/Parser.idr	noWhite && (hasColon || hasAt)	noWhite && hasColon	parser: autolink heuristic drops email branch
 src/Cribrum/Djot/Parser.idr	noWhite && (hasColon || hasAt)	noWhite && hasAt	parser: autolink heuristic drops url branch
-src/Cribrum/Djot/Parser.idr	++ [InlLink emptyAttrs (LinkAuto url) [InlText url]]	++ [InlLink emptyAttrs (LinkAuto url) []]	parser: autolink emits empty label
 src/Cribrum/Djot/Parser.idr	        Just (img, after) =>	        Just (_, after) =>	parser: image body discards parsed image
-src/Cribrum/Djot/Parser.idr	parseImageBody chars = case findClose ']' chars of	parseImageBody chars = Nothing	parser: image parsing disabled
-src/Cribrum/Djot/Parser.idr	InlImage emptyAttrs	InlLink emptyAttrs	parser: image emits as link
 src/Cribrum/Djot/Parser.idr	    '!' => case cs of	    '!' => case [] of	parser: image trigger never matches
 src/Cribrum/Djot/Parser.idr	stripHardBreakMarker ('\\' :: rs) = Just rs	stripHardBreakMarker ('\\' :: rs) = Nothing	parser: hardbreak detection disabled
-src/Cribrum/Djot/Parser.idr	Just acc' => flushAcc acc' ++ [InlHardBreak]	Just acc' => flushAcc acc' ++ [InlSoftBreak]	parser: hardbreak downgraded to softbreak
-src/Cribrum/Djot/Parser.idr	flushAcc acc' ++ [InlHardBreak]	flushAcc acc'	parser: hardbreak emission dropped
-src/Cribrum/Djot/Parser.idr	Nothing   => flushAcc acc ++ [InlSoftBreak]	Nothing   => flushAcc acc ++ [InlHardBreak]	parser: softbreak upgraded to hardbreak
 src/Cribrum/Djot/Parser.idr	if c == ' ' || c == '\t' then stripHardBreakMarker rs else Nothing	if c == ' ' || c == '\t' then stripHardBreakMarker rs else Just rs	parser: hardbreak marker accepts any preceding char
-src/Cribrum/Elaborate.idr	   in Element "img" [ MkHAttr "alt" (Str alt)	   in Element "img" [ MkHAttr "src" (Str alt)	elaborate: image alt attribute renamed to src
 src/Cribrum/Elaborate.idr	                    , MkHAttr "src" (Str url)	                    , MkHAttr "alt" (Str url)	elaborate: image src attribute renamed to alt
-src/Cribrum/Elaborate.idr	   in Element "img" [ MkHAttr "alt" (Str alt)	   in Element "img" [	elaborate: image emits without alt (would break img-alt)
 src/Cribrum/Elaborate.idr	        oneText (InlText s)        = s	        oneText (InlText s)        = ""	elaborate: image alt drops literal text
 src/Cribrum/Elaborate.idr	        oneText (InlEmph ys)       = inlinesPlainText ys	        oneText (InlEmph ys)       = ""	elaborate: image alt drops emphasis children
-src/Cribrum/Djot/Parser.idr	isOpenContext []        = True	isOpenContext []        = False	parser: quote orientation flips start-of-string default
 src/Cribrum/Djot/Parser.idr	  isSpace c || c == '(' || c == '[' || c == '{'	  False	parser: quote orientation always close
 src/Cribrum/Djot/Parser.idr	  isSpace c || c == '(' || c == '[' || c == '{'	  True	parser: quote orientation always open
-src/Cribrum/Djot/Parser.idr	      ('-' :: '-' :: rest) =>	      ('-' :: '-' :: rest) | False =>	parser: em-dash detection disabled
-src/Cribrum/Djot/Parser.idr	        flushAcc acc ++ [InlSmart EmDash]	        flushAcc acc ++ [InlSmart EnDash]	parser: em-dash downgraded to en-dash
-src/Cribrum/Djot/Parser.idr	        flushAcc acc ++ [InlSmart EnDash]	        flushAcc acc ++ [InlSmart EmDash]	parser: en-dash upgraded to em-dash
 src/Cribrum/Djot/Parser.idr	      ('.' :: '.' :: rest) =>	      ('.' :: '.' :: rest) | False =>	parser: ellipsis detection disabled
-src/Cribrum/Djot/Parser.idr	        flushAcc acc ++ [InlSmart Ellipsis]	        flushAcc acc ++ [InlText "..."]	parser: ellipsis emits literal
-src/Cribrum/Djot/Parser.idr	      let sp = if isOpenContext acc then LDQuote else RDQuote	      let sp = if isOpenContext acc then RDQuote else LDQuote	parser: double-quote orientation inverted
-src/Cribrum/Djot/Parser.idr	      let sp = if isOpenContext acc then LSQuote else RSQuote	      let sp = if isOpenContext acc then RSQuote else LSQuote	parser: single-quote orientation inverted
 src/Cribrum/Djot/Parser.idr	isTableLine s = isJust (splitTableCells s)	isTableLine s = False	parser: table detection disabled
 src/Cribrum/Djot/Parser.idr	if closed && all (== ' ') cur	if True	parser: table row drops trailing-pipe requirement
 src/Cribrum/Djot/Parser.idr	go k (reverse (ticks ++ body ++ ticks) ++ cur) acc False rest	go k cur acc False (body ++ ticks ++ rest)	parser: verbatim-span pipe splits cells
@@ -174,28 +155,18 @@ src/Cribrum/Elaborate.idr	    alignAttrs AlignLeft   = [MkHAttr "style" (Str "te
 src/Cribrum/Elaborate.idr	    alignAttrs AlignRight  = [MkHAttr "style" (Str "text-align: right;")]	    alignAttrs AlignRight  = []	elaborate: align right drops style
 src/Cribrum/Elaborate.idr	    alignAttrs AlignCenter = [MkHAttr "style" (Str "text-align: center;")]	    alignAttrs AlignCenter = []	elaborate: align center drops style
 src/Cribrum/Elaborate.idr	      let cellTag = if isHeader r then "th" else "td"	      let cellTag = if isHeader r then "td" else "th"	elaborate: th/td tags swapped
-src/Cribrum/Djot/Parser.idr	          ('[' :: rest) => case findClose ']' rest of	          ('[' :: rest) => Nothing	parser: reference-style link `[text][ref]` disabled
-src/Cribrum/Djot/Parser.idr	              let label' = if refLabel == []	              let label' = if refLabel /= []	parser: collapsed-ref label condition inverted
 src/Cribrum/Djot/Parser.idr	parseRefDef src = case unpack src of	parseRefDef src = Nothing	parser: refdef recognition disabled
 src/Cribrum/Djot/Parser.idr	      (':' :: ' ' :: body) =>	      (':' :: body) =>	parser: refdef space-after-colon dropped
-src/Cribrum/Djot/Parser.idr	  refDefsFromBlock (RefDef l u _)      = [(l, u)]	  refDefsFromBlock (RefDef l u _)      = []	parser: refdef collection drops every entry
 src/Cribrum/Djot/Parser.idr	    InlLink a (LinkReference l) xs => case lookup l tab of	    InlLink a (LinkReference l) xs => case Nothing of	parser: ref resolution always misses
-src/Cribrum/Djot/Parser.idr	      Just url => InlLink a (LinkInline url Nothing)	      Just url => InlLink a (LinkReference l)	parser: ref resolution keeps reference instead of resolving
 src/Cribrum/Djot/Parser.idr	      table = collectRefDefs raw	      table = []	parser: ref table never populated
 src/Cribrum/Elaborate.idr	isInvisibleBlock (RefDef _ _ _)      = True	isInvisibleBlock (RefDef _ _ _)      = False	elaborate: RefDef becomes visible (re-emits unwanted comment)
-src/Cribrum/Elaborate.idr	isInvisibleBlock (FootnoteDef _ _ _) = True	isInvisibleBlock (FootnoteDef _ _ _) = False	elaborate: FootnoteDef becomes visible
 src/Cribrum/Elaborate.idr	isInvisibleBlock _                   = False	isInvisibleBlock _                   = True	elaborate: every block becomes invisible (renders empty)
-src/Cribrum/Elaborate.idr	Element "main" [] (sectionize (filter (not . isInvisibleBlock) bs))	Element "main" [] (sectionize bs)	elaborate: doc skips invisibility filter (RefDef emits)
 src/Cribrum/Elaborate.idr	Just l' => l' <= lvl	Just l' => l' < lvl	elaborate: section close <= -> < (same-level headings over-nest as children)
 src/Cribrum/Djot/Parser.idr	      ('^' :: rest) => case findClose ']' rest of	      ('^' :: rest) => Nothing	parser: footnote-ref inline `[^label]` disabled
-src/Cribrum/Djot/Parser.idr	            then assert_total (parseInlinesAcc ('[' :: acc) cs)	            then flushAcc acc ++ [InlFootnoteRef ""] ++ assert_total (parseInlinesAcc [] after)	parser: empty-label footnote ref still emitted
 src/Cribrum/Djot/Parser.idr	parseFootnoteOpener s = case unpack s of	parseFootnoteOpener s = Nothing	parser: footnote-def opener recognition disabled
 src/Cribrum/Djot/Parser.idr	    Just (label, ':' :: rest) =>	    Just (label, rest) =>	parser: footnote opener no longer requires `:`
-src/Cribrum/Djot/Parser.idr	      if label == []	      if label /= []	parser: footnote opener accepts empty label only
 src/Cribrum/Djot/Parser.idr	isFootnoteOpener s = case parseFootnoteOpener s of	isFootnoteOpener s = True	parser: every line treated as footnote opener
 src/Cribrum/Djot/Parser.idr	parseAttrBlockLine s =	parseAttrBlockLine s = Nothing	parser: attribute-block line recognition disabled
-src/Cribrum/Djot/Parser.idr	  ('#' :: rest) => MkAttrs (Just (pack rest)) [] []	  ('#' :: rest) => MkAttrs Nothing [pack rest] []	parser: attr id token recorded as class
-src/Cribrum/Djot/Parser.idr	  ('.' :: rest) => MkAttrs Nothing [pack rest] []	  ('.' :: rest) => MkAttrs (Just (pack rest)) [] []	parser: attr class token recorded as id
 src/Cribrum/Djot/Parser.idr	mergeAttrs (MkAttrs i1 c1 p1) (MkAttrs i2 c2 p2) =	mergeAttrs (MkAttrs i1 c1 p1) (MkAttrs i2 c2 p2) = MkAttrs i1 c1 p1	parser: mergeAttrs always keeps left operand (drops new attrs)
 src/Cribrum/Djot/Parser.idr	  let i = case i2 of Just _ => i2; Nothing => i1	  let i = i1	parser: mergeAttrs id never updated by right operand
 src/Cribrum/Djot/Parser.idr	      c = c1 ++ c2	      c = c1	parser: mergeAttrs class list never appends right
@@ -204,10 +175,7 @@ src/Cribrum/Elaborate.idr	attrsToHAttrs (MkAttrs ident classes pairs) =	attrsToH
 src/Cribrum/Elaborate.idr	   in classAttr ++ idAttr ++ others	   in idAttr ++ classAttr ++ others	elaborate: attribute emission order id-before-class (regresses gate)
 src/Cribrum/Elaborate.idr	      classAttr = case classes of	      classAttr = []	elaborate: classes never emitted in attrsToHAttrs
 src/Cribrum/Elaborate.idr	      idAttr = case ident of	      idAttr = []	elaborate: id never emitted in attrsToHAttrs
-src/Cribrum/Elaborate.idr	if tight	if False	elaborate: tight-list collapse never fires (always wraps in <p>)
-src/Cribrum/Elaborate.idr	if tight	if True	elaborate: tight-list collapse always fires (drops <p> on loose lists)
 src/Cribrum/Elaborate.idr	divConventionTag "nav"        = Just "nav"	divConventionTag "nav"        = Nothing	elaborate: :::nav not promoted (stays div)
-src/Cribrum/Elaborate.idr	  Just tag => (tag, cs)	  Just tag => (tag, c :: cs)	elaborate: convention class not consumed (leaks into class attr)
 src/Cribrum/Elaborate.idr	  Nothing  => let (tag, cs') = promoteDiv cs in (tag, c :: cs')	  Nothing  => let (tag, cs') = promoteDiv cs in (tag, cs')	elaborate: promoteDiv drops non-convention classes
 src/Cribrum/Elaborate.idr	spanConventionTag "abbr" = Just "abbr"	spanConventionTag "abbr" = Nothing	elaborate: span .abbr not promoted (stays span)
 src/Cribrum/Elaborate.idr	promoteSpan []        = ("span", [])	promoteSpan []        = ("div", [])	elaborate: span fallthrough tag wrong (div not span)
@@ -228,7 +196,6 @@ src/Cribrum/Djot/Parser.idr	('=' :: fmt) => RawBlock (trim (pack fmt)) b	('=' ::
 src/Cribrum/Djot/Parser.idr	not (any isSpace inner)	(any isSpace inner)	parser: raw-inline whitespace guard inverted
 src/Cribrum/Djot/Parser.idr	'^' => case findClose '^' cs of	'^' => case findClose '~' cs of	parser: superscript closer ^ -> ~ (mc^2^ no longer parses)
 src/Cribrum/Djot/Parser.idr	'~' => case findClose '~' cs of	'~' => case findClose '^' cs of	parser: subscript closer ~ -> ^ (H~2~O no longer parses)
-src/Cribrum/Djot/Parser.idr	Nothing => assert_total (parseInlinesAcc ('^' :: acc) cs)	Nothing => flushAcc acc ++ [InlSuper (assert_total (parseInlinesAcc [] cs))]	parser: unclosed superscript no longer falls back to literal
 src/Cribrum/Djot/Parser.idr	if x == c1 && y == c2	if x == c1 || y == c2	parser: findClose2 pair match && -> || (braced sub/sup closer wrong)
 src/Cribrum/Djot/Parser.idr	findClose2 c1 c2 (y :: rest)	findClose2 c1 c2 rest	parser: findClose2 recursion drops a char (braced sub/sup mis-scans)
 src/Cribrum/Djot/Parser.idr	then LDQuote else RDQuote	then RDQuote else LDQuote	parser: double-quote orientation flipped (open<->close)
@@ -236,8 +203,7 @@ src/Cribrum/Djot/Parser.idr	then LSQuote	then RSQuote	parser: single-quote opene
 src/Cribrum/Djot/Parser.idr	(d :: _) => isDigit d	(d :: _) => False	parser: apostrophe-before-digit special case disabled
 src/Cribrum/Djot/Parser.idr	if m2 == 0	if m2 == 1	parser: dash-run even-divisor branch inverted (4 dashes wrong)
 src/Cribrum/Djot/Parser.idr	else if m3 == 2	else if m3 == 1	parser: dash-run mod-3==2 branch swapped (5/7 dashes wrong)
-src/Cribrum/Djot/Parser.idr	if isAsciiPunct p	if False	parser: backslash escape never recognises punctuation (no escaping)
-src/Cribrum/Djot/Parser.idr	findCloseEsc c ('\\' :: y :: xs)	findCloseEsc c ('@' :: y :: xs)	parser: emphasis closer scan stops skipping backslash escapes
+src/Cribrum/Djot/Parser.idr	if bClose then False	if bClose then True	emphasis: `}`-close-marker no longer disables opening (`_}b_` wrongly emphasised)
 src/Cribrum/Render/Html.idr	escapeChar '\x2014' = "&mdash;"	escapeChar '\x2014' = "&ndash;"	render: em-dash codepoint emitted as en-dash entity
 src/Cribrum/Render/Html.idr	escapeChar '\x2018' = "&lsquo;"	escapeChar '\x2018' = "&rsquo;"	render: left single quote codepoint emitted as right-quote entity
 src/Cribrum/Djot/Parser.idr	&& isNil cur	&& True	list: a list marker wrongly interrupts an open paragraph (1865. starts a list)
@@ -257,7 +223,8 @@ src/Cribrum/Elaborate.idr	titleHAttr (Just t) = [MkHAttr "title" (Str t)]	titleH
 src/Cribrum/Djot/Parser.idr	(beforeRev, reverse wordRev)	(beforeRev, [])	inline attr: trailing-word scope emptied (attr never wraps preceding word)
 src/Cribrum/Djot/Parser.idr	if all isValidAttrToken (braceTokens body)	if True	inline attr: invalid token no longer rejected (`{foo}` wrongly an empty attr block)
 src/Cribrum/Djot/Parser.idr	go acc iq    True  ('}'  :: cs) = Just (reverse acc, cs)	go acc iq    True  ('}'  :: cs) = go ('}' :: acc) iq True cs	inline attr: unterminated comment no longer ends at close brace (block unrecognised)
-src/Cribrum/Djot/Parser.idr	findCloseEsc c ('{' :: xs)       = case scanBraceBody xs of	findCloseEsc c ('{' :: xs)       = case the (Maybe (List Char, List Char)) Nothing of	emphasis: brace-block skip disabled (quoted delim inside attrs wrongly closes emphasis)
+src/Cribrum/Djot/Parser.idr	elem x opSeen	True	emphasis: link body destroys emphasis even with no pending opener (`[x_y](x_y)` loses its link)
+src/Cribrum/Djot/Parser.idr	innerRev == []	False	emphasis: empty-emphasis exclusion disabled (`__` wrongly becomes <em></em>)
 src/Cribrum/Djot/Parser.idr	then parseMultiLineAttrBlock x xs	then parseMultiLineAttrBlock x []	block attr: multi-line `{...}` prefix loses continuation lines (never closes, becomes paragraph)
 src/Cribrum/Elaborate.idr	listAttrs = attrsToHAttrs a	listAttrs = []	list: own Attrs dropped (class/id never reach the list element)
 src/Cribrum/Elaborate.idr	MkHAttr ("data-" ++ n) v :: kept	a :: kept	draft: disallowed attr not renamed to data-* (repair fails, draft errors)
@@ -267,3 +234,8 @@ src/Cribrum/Djot/Parser.idr	('$' :: rest) => (True, rest)	('$' :: rest) => (Fals
 src/Cribrum/Djot/Parser.idr	InlMath isDisplay (pack (verbatimStrip inner))	InlMath True (pack (verbatimStrip inner))	math emit: force isDisplay=True (drops inline math)
 src/Cribrum/Elaborate.idr	if isDisplay then "math display" else "math inline"	if isDisplay then "math inline" else "math display"	math class: swap inline/display class names
 src/Cribrum/Elaborate.idr	if isDisplay then "\\[" ++ s ++ "\\]" else "\\(" ++ s ++ "\\)"	if isDisplay then "\\(" ++ s ++ "\\)" else "\\[" ++ s ++ "\\]"	math delim: swap \[..\] and \(..\) wrappers
+src/Cribrum/Djot/Parser.idr	flushE acc ++ [EInl InlSoftBreak]	flushE acc	parser: inline newline drops soft break
+src/Cribrum/Djot/Parser.idr	flushE acc ++ [EInl InlSoftBreak]	flushE acc ++ [EInl InlHardBreak]	parser: soft break upgraded to hard break
+src/Cribrum/Djot/Parser.idr	flushE acc' ++ [EInl InlHardBreak]	flushE acc'	parser: hard break emission dropped
+src/Cribrum/Djot/Parser.idr	flushE acc' ++ [EInl InlHardBreak]	flushE acc' ++ [EInl InlSoftBreak]	parser: hard break downgraded to soft break
+src/Cribrum/Djot/Parser.idr	flushE acc ++ [EInl (InlSmart Ellipsis)]	flushE acc	parser: ellipsis emission dropped

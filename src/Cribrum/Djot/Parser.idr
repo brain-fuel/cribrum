@@ -159,37 +159,6 @@ scanBraceBody = go [] False False
     go acc _     _     ('}'  :: cs) = Just (reverse acc, cs)
     go acc iq    ic    (c    :: cs) = go (c :: acc) iq ic cs
 
-||| Like `findClose`, but backslash-aware: a `\` and the character it
-||| escapes are carried into the inner content verbatim, so an escaped
-||| delimiter (`\_`, `\*`) never counts as the closer. Used for emphasis
-||| and strong, where Djot honours backslash escapes (verbatim does not,
-||| so that path keeps the plain `findClose`).
-|||
-||| Also brace-aware: an inline attribute block `{...}` (whose body may
-||| contain the delimiter inside a quoted value, e.g. `{key="*"}`) is
-||| skipped wholesale, so the delimiter inside it never closes the span.
-||| This lets `*b{#id key="*"}*` close on the trailing `*` (attributes-004).
-findCloseEsc : Char -> List Char -> Maybe (List Char, List Char)
-findCloseEsc _ []                = Nothing
-findCloseEsc c ('\\' :: y :: xs) = case findCloseEsc c xs of
-  Just (ins, rest) => Just ('\\' :: y :: ins, rest)
-  Nothing          => Nothing
-findCloseEsc c ('{' :: xs)       = case scanBraceBody xs of
-  Just (body, afterBrace) => case assert_total (findCloseEsc c afterBrace) of
-    Just (ins, rest) => Just ('{' :: body ++ ['}'] ++ ins, rest)
-    Nothing          => Nothing
-  Nothing => if '{' == c
-               then Just ([], xs)
-               else case findCloseEsc c xs of
-                 Just (ins, rest) => Just ('{' :: ins, rest)
-                 Nothing          => Nothing
-findCloseEsc c (x :: xs) =
-  if x == c
-    then Just ([], xs)
-    else case findCloseEsc c xs of
-      Just (ins, rest) => Just (x :: ins, rest)
-      Nothing          => Nothing
-
 ||| Collapse a reference label to its matching key: internal whitespace
 ||| runs (spaces, tabs, newlines from continuation lines) fold to a
 ||| single space, and leading/trailing whitespace is trimmed. Djot
@@ -241,6 +210,164 @@ inlinesText = concatMap one
 flushAcc : List Char -> List Inline
 flushAcc []  = []
 flushAcc acc = [InlText (pack (reverse acc))]
+
+--------------------------------------------------------------------------------
+-- Emphasis / strong via a delimiter stack (djot.lua `between_matched`).
+--
+-- The inline tokenizer below resolves verbatim, links, autolinks, braces,
+-- sub/superscript, and smart punctuation eagerly, but it does NOT pair
+-- `_`/`*` markers — it emits them as `EDelim` tokens into a flat `ETok`
+-- stream. A separate post-pass (`resolveEmph`) walks that stream with an
+-- opener stack and pairs delimiters innermost-first, exactly as the
+-- reference `djot.lua` does. Because verbatim/autolink/link spans are
+-- already opaque `EInl` atoms by the time the stack runs, a `_`/`*` inside
+-- a code span or autolink can never be a delimiter (precedence is correct
+-- by construction: `*foo` `*` ``` → `*foo<code>*</code>`).
+--
+-- djot.lua specifics replicated here:
+--   * Delimiters are SINGLE characters (a run of N `*` is N separate
+--     openers/closers), so `*****a*****` nests five `<strong>` and
+--     `**a**` is `<strong><strong>a</strong></strong>`.
+--   * `can_open`  = the following char is not ASCII whitespace.
+--   * `can_close` = the preceding char is not ASCII whitespace.
+--     "ASCII whitespace" here is ` \t\n\r\f\v` ONLY — U+00A0 (NBSP) is
+--     NOT whitespace for flanking, so `*<nbsp>a<nbsp>*` IS strong
+--     (corpus emphasis-004/009).
+--   * A `{` immediately before a delimiter is an OPEN marker: it forces
+--     can_open (even before whitespace) and keys the opener as brace-`_`.
+--   * A `}` immediately after a delimiter is a CLOSE marker: it forces
+--     can_close (even after whitespace) and the closer only matches a
+--     brace-keyed opener. This is what makes `{_ x_ _}` -> `<em> x_ </em>`.
+--------------------------------------------------------------------------------
+
+||| ASCII whitespace for djot flanking (Lua `%s`): space, tab, newline,
+||| carriage return, form feed, vertical tab. Deliberately EXCLUDES
+||| U+00A0 (NBSP) and other Unicode spaces, which do not block emphasis.
+flankSpace : Char -> Bool
+flankSpace c = c == ' ' || c == '\t' || c == '\n'
+            || c == '\r' || c == '\f' || c == '\v'
+
+||| One inline token in the pre-emphasis stream: either an already-resolved
+||| inline atom (`EInl`), or a single `_`/`*` delimiter carrying its
+||| can-open / can-close flags and whether it is brace-marked (`{`-open or
+||| `}`-close). `braceOpen`/`braceClose` come from the adjacent `{`/`}`.
+data ETok : Type where
+  EInl   : Inline -> ETok
+  EDelim : (ch : Char) -> (canOpen : Bool) -> (canClose : Bool)
+        -> (braceOpen : Bool) -> (braceClose : Bool) -> ETok
+
+||| A frame on the opener stack: the delimiter char, whether it was a
+||| brace-keyed opener, and the inline output accumulated (in reverse)
+||| since this opener was pushed.
+record EFrame where
+  constructor MkEFrame
+  frChar    : Char
+  frBrace   : Bool
+  frOutRev  : List Inline
+
+||| Render a delimiter token back to its literal inline (used when a
+||| delimiter never pairs). A `}`-close-marked delimiter literally carried
+||| its trailing `}` in source; the brace is re-emitted so unmatched
+||| `_}` stays `_}` (corpus emphasis-026).
+delimLiteral : Char -> (braceClose : Bool) -> Inline
+delimLiteral c False = InlText (pack [c])
+delimLiteral c True  = InlText (pack [c, '}'])
+
+||| Wrap matched inline content in `<em>` (`_`) or `<strong>` (`*`).
+emWrap : Char -> List Inline -> Inline
+emWrap '_' xs = InlEmph xs
+emWrap _   xs = InlStrong xs
+
+||| Append an inline to a reversed-output accumulator, coalescing adjacent
+||| `InlText` so the stack pass does not fragment plain runs.
+pushOut : Inline -> List Inline -> List Inline
+pushOut (InlText t) (InlText u :: rest) = InlText (u ++ t) :: rest
+pushOut x           outRev              = x :: outRev
+
+||| Merge adjacent `InlText` siblings into one and drop empty `InlText`s,
+||| so the delimiter-stack output is canonical (one `InlText` per plain
+||| run, matching the rest of the inline tokenizer). Single left-to-right
+||| pass over a reversed accumulator (`pushOut` coalesces), so it is
+||| structurally total. Nested inline lists are already canonical from
+||| their own `parseInlines` pass and are left untouched.
+coalesceText : List Inline -> List Inline
+coalesceText = reverse . go []
+  where
+    go : List Inline -> List Inline -> List Inline
+    go acc []                = acc
+    go acc (InlText "" :: xs) = go acc xs
+    go acc (x :: xs)         = go (pushOut x acc) xs
+
+||| Pop opener frames looking for the nearest frame whose char matches the
+||| closer `c` and whose brace-key agrees with `wantBrace`. Frames skipped
+||| over are flattened back into the body as their literal opener char plus
+||| their accumulated content (those openers never paired). Returns
+||| `Just (matchedFrame, bodyInsideRev, framesBelow)` on a hit, where
+||| `bodyInsideRev` is the reversed inline content between the matched
+||| opener and the closer; `Nothing` if no compatible opener exists.
+|||
+||| `innerRev` is the output accumulated *inside* the innermost open frame
+||| at the moment of the closer (i.e. the current top-of-stack body).
+matchOpener : (c : Char) -> (wantBrace : Bool)
+           -> (innerRev : List Inline) -> List EFrame
+           -> Maybe (EFrame, List Inline, List EFrame)
+matchOpener c wantBrace innerRev [] = Nothing
+matchOpener c wantBrace innerRev (fr :: frs) =
+  if frChar fr == c && frBrace fr == wantBrace
+    then Just (fr, innerRev, frs)
+    else
+      -- This opener does not match; collapse it into the body as its
+      -- literal char, then keep searching below it.
+      let lit     = delimLiteral (frChar fr) False
+          merged  = innerRev ++ [lit] ++ reverse (frOutRev fr)
+       in matchOpener c wantBrace merged frs
+
+||| Resolve `_`/`*` delimiters in a token stream into `InlEmph`/`InlStrong`.
+||| Implements djot.lua's stack discipline: each delimiter is one char;
+||| a closer pairs with the NEAREST compatible opener; unmatched openers
+||| and closers fall back to literal text.
+resolveEmph : List ETok -> List Inline
+resolveEmph = go [] []
+  where
+    -- `stack` holds open frames, innermost first. `outRev` is the body
+    -- accumulated at the CURRENT (innermost) level, in reverse order.
+    go : (outRev : List Inline) -> (stack : List EFrame)
+       -> List ETok -> List Inline
+    go outRev stack [] =
+      -- End of stream: every still-open frame failed to close. Flatten
+      -- the stack back to literal text in SOURCE order. `stack` is
+      -- innermost-first; the current `outRev` is the innermost body, which
+      -- the innermost (head) opener char precedes. For each frame (from
+      -- innermost out) the contribution is `body-before-opener ++ [opener]`
+      -- prepended to the accumulated suffix.
+      foldl
+        (\suffix, fr =>
+           reverse (frOutRev fr)
+             ++ (delimLiteral (frChar fr) False :: suffix))
+        (reverse outRev) stack
+    go outRev stack (EInl x :: rest) =
+      go (pushOut x outRev) stack rest
+    go outRev stack (EDelim c canOpen canClose bOpen bClose :: rest) =
+      -- Try to close first (djot pairs a closer eagerly with the nearest
+      -- compatible opener), then fall back to opening, else literal. A
+      -- match with an EMPTY body (opener immediately adjacent to closer,
+      -- e.g. `__`) is excluded per djot.lua (`openposend ~= pos - 1`).
+      let asOpen : List Inline -> List EFrame -> List Inline
+          asOpen oR st =
+            if canOpen
+              then go [] (MkEFrame c bOpen oR :: st) rest
+              else go (pushOut (delimLiteral c bClose) oR) st rest
+       in if canClose
+            then case matchOpener c bClose outRev stack of
+              Just (fr, innerRev, frs) =>
+                if innerRev == []
+                  then asOpen outRev stack
+                  else
+                    let wrapped  = emWrap c (reverse innerRev)
+                        outBelow = pushOut wrapped (frOutRev fr)
+                     in go outBelow frs rest
+              Nothing => asOpen outRev stack
+            else asOpen outRev stack
 
 ||| `True` iff `c` is an ASCII punctuation character — exactly the set
 ||| Djot lets a backslash escape (``!"#$%&'()*+,-./:;<=>?@[\]^_`{|}~``).
@@ -394,21 +521,6 @@ stripHardBreakMarker []           = Nothing
 stripHardBreakMarker ('\\' :: rs) = Just rs
 stripHardBreakMarker (c :: rs)    =
   if c == ' ' || c == '\t' then stripHardBreakMarker rs else Nothing
-
-||| Emphasis opener (`*`/`_`) is blocked when the next character is
-||| whitespace or end-of-input. `cs` is the character list after the
-||| marker.
-openerBlocked : List Char -> Bool
-openerBlocked []       = True
-openerBlocked (c :: _) = isSpace c
-
-||| Emphasis closer (`*`/`_`) is blocked when the character immediately
-||| before it (the last character of `inner`) is whitespace. `inner` is
-||| the body between opener and closer.
-closerBlocked : List Char -> Bool
-closerBlocked inner = case reverse inner of
-  []        => True
-  (c :: _)  => isSpace c
 
 --------------------------------------------------------------------------------
 -- Inline attribute blocks (`{#id .cls key=val}` attached to inline content).
@@ -598,6 +710,27 @@ isAutolinkBody body =
       hasAt    = any (== '@') body
    in noWhite && (hasColon || hasAt)
 
+||| `True` iff the consumed source of a candidate link/image (`src`)
+||| contains an UNESCAPED `_`/`*` that (a) is one of the pending opener
+||| chars in `opSeen` and (b) is a valid emphasis closer there (the
+||| preceding source char is not ASCII whitespace). Djot resolves links
+||| and emphasis on one shared opener stack, so when an open emphasis
+||| delimiter to the left finds its matching closer inside a would-be
+||| link body, the emphasis wins and the link is destroyed
+||| (`*[a](b*)` -> `<strong>[a](b</strong>)`, corpus links-020 / emph-030).
+||| An escaped delimiter (`\*`) is skipped, so `*[a](b\*)` keeps the link.
+linkBodyClosesEmph : (opSeen : List Char) -> (src : List Char) -> Bool
+linkBodyClosesEmph []     _   = False
+linkBodyClosesEmph opSeen src = go ' ' src
+  where
+    go : (prev : Char) -> List Char -> Bool
+    go _    []               = False
+    go _    ('\\' :: _ :: xs) = go 'x' xs   -- escaped char: never a closer
+    go prev (x :: xs)        =
+      if (x == '_' || x == '*') && elem x opSeen && not (flankSpace prev)
+        then True
+        else go x xs
+
 mutual
   ||| Parse the body inside `[...]` and the matching `(...)` URL or
   ||| `[...]` reference label. Returns an `InlLink` plus the rest of
@@ -685,12 +818,21 @@ mutual
       _ => Nothing
     Nothing => Nothing
 
-  ||| Drive the tokenizer with a plain-character accumulator. `acc` is
-  ||| the reversed list of plain characters scanned so far in the
-  ||| current run; pairs flush it, unpaired markers append to it.
-  parseInlinesAcc : List Char -> List Char -> List Inline
-  parseInlinesAcc acc [] = flushAcc acc
-  parseInlinesAcc acc (c :: cs) = case c of
+  ||| Flush a reversed plain-text accumulator to `EInl`-wrapped tokens.
+  flushE : List Char -> List ETok
+  flushE acc = map EInl (flushAcc acc)
+
+  ||| Tokenize an inline character list into the pre-emphasis `ETok`
+  ||| stream. `acc` is the reversed run of pending plain characters; a
+  ||| recognised non-emphasis construct flushes it and emits an `EInl`
+  ||| atom, while a `_`/`*` marker flushes and emits a single `EDelim`
+  ||| (paired later by `resolveEmph`). Inner content of boundary
+  ||| constructs (sub/super/link/decorator/span) is fully resolved via
+  ||| `parseInlines` so emphasis never crosses those boundaries.
+  parseInlinesAcc : (prev : Char) -> (opSeen : List Char)
+                 -> List Char -> List Char -> List ETok
+  parseInlinesAcc prev opSeen acc [] = flushE acc
+  parseInlinesAcc prev opSeen acc (c :: cs) = case c of
     -- Backslash escape (Djot): `\` + an ASCII-punctuation char emits that
     -- character literally and suppresses any markup / smart-punctuation
     -- meaning it would otherwise carry. The escaped char joins the plain
@@ -699,32 +841,19 @@ mutual
     '\\' => case cs of
       (p :: rest) =>
         if isAsciiPunct p
-          then assert_total (parseInlinesAcc (p :: acc) rest)
-          else assert_total (parseInlinesAcc ('\\' :: acc) cs)
-      [] => flushAcc ('\\' :: acc)
-    -- Emphasis / strong flanking rule (Djot): the marker is emphasised
-    -- iff the opener and closer agree on their adjacent-whitespace
-    -- status. Both have inside-whitespace (`_ a _`) → emphasis; both
-    -- have non-whitespace inside (`_a_`) → emphasis; asymmetric
-    -- (`_ a_` or `_a _`) → marker stays literal. Empty body always
-    -- fails. On any rule failure the marker joins the plain-text
-    -- accumulator and parsing continues.
-    '_' => case findCloseEsc '_' cs of
-      Just (inner, after) =>
-        if inner == [] || openerBlocked cs /= closerBlocked inner
-          then assert_total (parseInlinesAcc ('_' :: acc) cs)
-          else flushAcc acc
-            ++ [InlEmph (assert_total (parseInlinesAcc [] inner))]
-            ++ assert_total (parseInlinesAcc [] after)
-      Nothing => assert_total (parseInlinesAcc ('_' :: acc) cs)
-    '*' => case findCloseEsc '*' cs of
-      Just (inner, after) =>
-        if inner == [] || openerBlocked cs /= closerBlocked inner
-          then assert_total (parseInlinesAcc ('*' :: acc) cs)
-          else flushAcc acc
-            ++ [InlStrong (assert_total (parseInlinesAcc [] inner))]
-            ++ assert_total (parseInlinesAcc [] after)
-      Nothing => assert_total (parseInlinesAcc ('*' :: acc) cs)
+          then assert_total (parseInlinesAcc p opSeen (p :: acc) rest)
+          else assert_total (parseInlinesAcc '\\' opSeen ('\\' :: acc) cs)
+      [] => flushE ('\\' :: acc)
+    -- Emphasis / strong (Djot, `between_matched`): emit a single-character
+    -- `EDelim` carrying its flanking flags; pairing happens in the
+    -- post-pass `resolveEmph`. can_open = next char is not ASCII
+    -- whitespace; can_close = prev char is not ASCII whitespace. A leading
+    -- `{` open-marker (head of `acc` == '{') forces can_open and is
+    -- consumed (dropped from `acc`); a trailing `}` close-marker (head of
+    -- `cs` == '}') forces can_close, is consumed, and keys the closer to a
+    -- brace opener.
+    '_' => emitDelim '_' prev opSeen acc cs
+    '*' => emitDelim '*' prev opSeen acc cs
     -- Djot decorator spans: `{+ … +}` (insert), `{- … -}` (delete),
     -- `{= … =}` (highlight / mark). Each takes inline content between
     -- the open and close markers and elaborates to the matching HTML
@@ -733,27 +862,27 @@ mutual
       ('+' :: rest) => case findClose2 '+' '}' rest of
         Just (inner, after) =>
           if inner == []
-            then assert_total (parseInlinesAcc ('{' :: acc) cs)
-            else flushAcc acc
-              ++ [InlInsert (assert_total (parseInlines inner))]
-              ++ assert_total (parseInlinesAcc [] after)
-        Nothing => assert_total (parseInlinesAcc ('{' :: acc) cs)
+            then assert_total (parseInlinesAcc '{' opSeen ('{' :: acc) cs)
+            else flushE acc
+              ++ [EInl (InlInsert (assert_total (parseInlines inner)))]
+              ++ assert_total (parseInlinesAcc '}' opSeen [] after)
+        Nothing => assert_total (parseInlinesAcc '{' opSeen ('{' :: acc) cs)
       ('-' :: rest) => case findClose2 '-' '}' rest of
         Just (inner, after) =>
           if inner == []
-            then assert_total (parseInlinesAcc ('{' :: acc) cs)
-            else flushAcc acc
-              ++ [InlDelete (assert_total (parseInlines inner))]
-              ++ assert_total (parseInlinesAcc [] after)
-        Nothing => assert_total (parseInlinesAcc ('{' :: acc) cs)
+            then assert_total (parseInlinesAcc '{' opSeen ('{' :: acc) cs)
+            else flushE acc
+              ++ [EInl (InlDelete (assert_total (parseInlines inner)))]
+              ++ assert_total (parseInlinesAcc '}' opSeen [] after)
+        Nothing => assert_total (parseInlinesAcc '{' opSeen ('{' :: acc) cs)
       ('=' :: rest) => case findClose2 '=' '}' rest of
         Just (inner, after) =>
           if inner == []
-            then assert_total (parseInlinesAcc ('{' :: acc) cs)
-            else flushAcc acc
-              ++ [InlHighlight (assert_total (parseInlines inner))]
-              ++ assert_total (parseInlinesAcc [] after)
-        Nothing => assert_total (parseInlinesAcc ('{' :: acc) cs)
+            then assert_total (parseInlinesAcc '{' opSeen ('{' :: acc) cs)
+            else flushE acc
+              ++ [EInl (InlHighlight (assert_total (parseInlines inner)))]
+              ++ assert_total (parseInlinesAcc '}' opSeen [] after)
+        Nothing => assert_total (parseInlinesAcc '{' opSeen ('{' :: acc) cs)
       -- Braced superscript/subscript (`{^...^}` / `{~...~}`). The braces
       -- let the body carry leading/trailing whitespace (`H{~2 ~}O` ->
       -- `H<sub>2 </sub>O`). A missing two-char closer leaves the `{`
@@ -761,19 +890,26 @@ mutual
       ('^' :: rest) => case findClose2 '^' '}' rest of
         Just (inner, after) =>
           if inner == []
-            then assert_total (parseInlinesAcc ('{' :: acc) cs)
-            else flushAcc acc
-              ++ [InlSuper (assert_total (parseInlinesAcc [] inner))]
-              ++ assert_total (parseInlinesAcc [] after)
-        Nothing => assert_total (parseInlinesAcc ('{' :: acc) cs)
+            then assert_total (parseInlinesAcc '{' opSeen ('{' :: acc) cs)
+            else flushE acc
+              ++ [EInl (InlSuper (assert_total (parseInlines inner)))]
+              ++ assert_total (parseInlinesAcc '}' opSeen [] after)
+        Nothing => assert_total (parseInlinesAcc '{' opSeen ('{' :: acc) cs)
       ('~' :: rest) => case findClose2 '~' '}' rest of
         Just (inner, after) =>
           if inner == []
-            then assert_total (parseInlinesAcc ('{' :: acc) cs)
-            else flushAcc acc
-              ++ [InlSub (assert_total (parseInlinesAcc [] inner))]
-              ++ assert_total (parseInlinesAcc [] after)
-        Nothing => assert_total (parseInlinesAcc ('{' :: acc) cs)
+            then assert_total (parseInlinesAcc '{' opSeen ('{' :: acc) cs)
+            else flushE acc
+              ++ [EInl (InlSub (assert_total (parseInlines inner)))]
+              ++ assert_total (parseInlinesAcc '}' opSeen [] after)
+        Nothing => assert_total (parseInlinesAcc '{' opSeen ('{' :: acc) cs)
+      -- Brace emphasis open-marker (`{_ … _}` / `{* … *}`): a `{` directly
+      -- before a `_`/`*` is an open-marker in djot, NOT an attribute block.
+      -- Keep `{` literal so `emitDelim` sees it as the open-marker (it forces
+      -- can_open and is dropped); the matching `}`-marked closer then pairs
+      -- with it regardless of inner whitespace (corpus emphasis-018).
+      ('_' :: _) => assert_total (parseInlinesAcc '{' opSeen ('{' :: acc) cs)
+      ('*' :: _) => assert_total (parseInlinesAcc '{' opSeen ('{' :: acc) cs)
       -- Inline attribute block `{#id .cls key=val}`. Attaches to the
       -- immediately-preceding word (the trailing non-space run in `acc`):
       -- that word is wrapped in an `InlSpan` carrying the attrs. An empty
@@ -783,46 +919,48 @@ mutual
       _ => case scanInlineAttr cs of
         Just (attrs, after) =>
           if attrs == emptyAttrs
-            then flushAcc acc ++ assert_total (parseInlinesAcc [] after)
+            then flushE acc ++ assert_total (parseInlinesAcc '}' opSeen [] after)
             else case splitTrailingWord acc of
               (_, [])         =>
-                flushAcc acc ++ assert_total (parseInlinesAcc [] after)
+                flushE acc ++ assert_total (parseInlinesAcc '}' opSeen [] after)
               (beforeRev, wd) =>
-                flushAcc beforeRev
-                  ++ [InlSpan attrs (assert_total (parseInlines wd))]
-                  ++ assert_total (parseInlinesAcc [] after)
-        Nothing => assert_total (parseInlinesAcc ('{' :: acc) cs)
+                flushE beforeRev
+                  ++ [EInl (InlSpan attrs (assert_total (parseInlines wd)))]
+                  ++ assert_total (parseInlinesAcc '}' opSeen [] after)
+        Nothing => assert_total (parseInlinesAcc '{' opSeen ('{' :: acc) cs)
     '`' =>
       let (more, afterOpen) = takeBacktickRun cs
           openerLen         = S (length more)
        in case findVerbatimClose openerLen afterOpen of
             Just (inner, after) =>
               if inner == []
-                then assert_total (parseInlinesAcc ('`' :: acc) cs)
+                then assert_total (parseInlinesAcc '`' opSeen ('`' :: acc) cs)
                 else case takeRawFormatAttr after of
                   -- `` `…`{=fmt} `` — raw inline of the named format. The
                   -- elaborator gates on `fmt` (html injects, else suppressed).
                   Just (fmt, after') =>
-                    flushAcc acc
-                      ++ [InlRaw fmt (pack (verbatimStrip inner))]
-                      ++ assert_total (parseInlinesAcc [] after')
+                    flushE acc
+                      ++ [EInl (InlRaw fmt (pack (verbatimStrip inner)))]
+                      ++ assert_total (parseInlinesAcc '}' opSeen [] after')
                   Nothing =>
-                    flushAcc acc
-                      ++ [InlVerbatim emptyAttrs (pack (verbatimStrip inner))]
-                      ++ assert_total (parseInlinesAcc [] after)
+                    flushE acc
+                      ++ [EInl (InlVerbatim emptyAttrs (pack (verbatimStrip inner)))]
+                      ++ assert_total (parseInlinesAcc '`' opSeen [] after)
             Nothing =>
               -- Unclosed opener: per spec, consumes the rest of the
               -- inline content. (The inline parser runs per line, so
               -- "rest" here is line-bounded; multi-line verbatim still
               -- requires the paragraph-spanning lift.)
               if afterOpen == []
-                then assert_total (parseInlinesAcc ('`' :: acc) cs)
-                else flushAcc acc
-                  ++ [InlVerbatim emptyAttrs (pack (verbatimStrip afterOpen))]
+                then assert_total (parseInlinesAcc '`' opSeen ('`' :: acc) cs)
+                else flushE acc
+                  ++ [EInl (InlVerbatim emptyAttrs (pack (verbatimStrip afterOpen)))]
     -- Djot math: a `$` (inline) or `$$` (display) immediately followed by
     -- an inline verbatim span. The verbatim body is raw (not markup-parsed)
     -- and rides into `InlMath`; the elaborator wraps it in `\(…\)` / `\[…\]`.
-    -- A `$`/`$$` NOT followed by a backtick stays literal text.
+    -- A `$`/`$$` NOT followed by a backtick stays literal text. The math
+    -- span is an opaque atom (`EInl`), so `prev` becomes the closing
+    -- backtick and `opSeen` rides through unchanged.
     '$' =>
       let (isDisplay, afterDollars) = case cs of
                                         ('$' :: rest) => (True, rest)
@@ -834,12 +972,12 @@ mutual
                in case findVerbatimClose openerLen afterOpen of
                     Just (inner, after) =>
                       if inner == []
-                        then assert_total (parseInlinesAcc ('$' :: acc) cs)
-                        else flushAcc acc
-                          ++ [InlMath isDisplay (pack (verbatimStrip inner))]
-                          ++ assert_total (parseInlinesAcc [] after)
-                    Nothing => assert_total (parseInlinesAcc ('$' :: acc) cs)
-            _ => assert_total (parseInlinesAcc ('$' :: acc) cs)
+                        then assert_total (parseInlinesAcc '$' opSeen ('$' :: acc) cs)
+                        else flushE acc
+                          ++ [EInl (InlMath isDisplay (pack (verbatimStrip inner)))]
+                          ++ assert_total (parseInlinesAcc '`' opSeen [] after)
+                    Nothing => assert_total (parseInlinesAcc '$' opSeen ('$' :: acc) cs)
+            _ => assert_total (parseInlinesAcc '$' opSeen ('$' :: acc) cs)
     -- Superscript (`^...^`) and subscript (`~...~`). Unlike emphasis,
     -- Djot imposes no whitespace-flanking restriction on these markers:
     -- the only requirement is a matching closer and a non-empty body
@@ -848,19 +986,19 @@ mutual
     '^' => case findClose '^' cs of
       Just (inner, after) =>
         if inner == []
-          then assert_total (parseInlinesAcc ('^' :: acc) cs)
-          else flushAcc acc
-            ++ [InlSuper (assert_total (parseInlinesAcc [] inner))]
-            ++ assert_total (parseInlinesAcc [] after)
-      Nothing => assert_total (parseInlinesAcc ('^' :: acc) cs)
+          then assert_total (parseInlinesAcc '^' opSeen ('^' :: acc) cs)
+          else flushE acc
+            ++ [EInl (InlSuper (assert_total (parseInlines inner)))]
+            ++ assert_total (parseInlinesAcc '^' opSeen [] after)
+      Nothing => assert_total (parseInlinesAcc '^' opSeen ('^' :: acc) cs)
     '~' => case findClose '~' cs of
       Just (inner, after) =>
         if inner == []
-          then assert_total (parseInlinesAcc ('~' :: acc) cs)
-          else flushAcc acc
-            ++ [InlSub (assert_total (parseInlinesAcc [] inner))]
-            ++ assert_total (parseInlinesAcc [] after)
-      Nothing => assert_total (parseInlinesAcc ('~' :: acc) cs)
+          then assert_total (parseInlinesAcc '~' opSeen ('~' :: acc) cs)
+          else flushE acc
+            ++ [EInl (InlSub (assert_total (parseInlines inner)))]
+            ++ assert_total (parseInlinesAcc '~' opSeen [] after)
+      Nothing => assert_total (parseInlinesAcc '~' opSeen ('~' :: acc) cs)
     '[' => case cs of
       -- Footnote reference `[^label]` — `^` immediately after `[` and a
       -- non-empty label terminated by `]`. Falls back to literal `[` if
@@ -868,15 +1006,19 @@ mutual
       ('^' :: rest) => case findClose ']' rest of
         Just (label, after) =>
           if label == []
-            then assert_total (parseInlinesAcc ('[' :: acc) cs)
-            else flushAcc acc
-                   ++ [InlFootnoteRef (pack label)]
-                   ++ assert_total (parseInlinesAcc [] after)
-        Nothing => assert_total (parseInlinesAcc ('[' :: acc) cs)
+            then assert_total (parseInlinesAcc '[' opSeen ('[' :: acc) cs)
+            else flushE acc
+                   ++ [EInl (InlFootnoteRef (pack label))]
+                   ++ assert_total (parseInlinesAcc ']' opSeen [] after)
+        Nothing => assert_total (parseInlinesAcc '[' opSeen ('[' :: acc) cs)
       _ => case parseLinkBody cs of
         Just (link, after) =>
-          flushAcc acc ++ [link]
-            ++ assert_total (parseInlinesAcc [] after)
+          -- A pending emphasis opener to the left whose matching closer
+          -- lies inside this link body destroys the link (shared stack).
+          if linkBodyClosesEmph opSeen (take (length cs `minus` length after) cs)
+            then assert_total (parseInlinesAcc '[' opSeen ('[' :: acc) cs)
+            else flushE acc ++ [EInl link]
+              ++ assert_total (parseInlinesAcc ')' opSeen [] after)
         Nothing =>
           -- Bracketed inline span: `[text]{attrs}`. When `[...]` is not a
           -- link but its `]` is immediately followed by an attribute block,
@@ -886,18 +1028,23 @@ mutual
             Just (inner, ('{' :: braceRest)) =>
               case scanInlineAttr braceRest of
                 Just (attrs, after) =>
-                  flushAcc acc
-                    ++ [InlSpan attrs (assert_total (parseInlines inner))]
-                    ++ assert_total (parseInlinesAcc [] after)
-                Nothing => assert_total (parseInlinesAcc ('[' :: acc) cs)
-            _ => assert_total (parseInlinesAcc ('[' :: acc) cs)
+                  if linkBodyClosesEmph opSeen
+                       (take (length cs `minus` length after) cs)
+                    then assert_total (parseInlinesAcc '[' opSeen ('[' :: acc) cs)
+                    else flushE acc
+                      ++ [EInl (InlSpan attrs (assert_total (parseInlines inner)))]
+                      ++ assert_total (parseInlinesAcc '}' opSeen [] after)
+                Nothing => assert_total (parseInlinesAcc '[' opSeen ('[' :: acc) cs)
+            _ => assert_total (parseInlinesAcc '[' opSeen ('[' :: acc) cs)
     '!' => case cs of
       ('[' :: rest) => case parseImageBody rest of
         Just (img, after) =>
-          flushAcc acc ++ [img]
-            ++ assert_total (parseInlinesAcc [] after)
-        Nothing => assert_total (parseInlinesAcc ('!' :: acc) cs)
-      _ => assert_total (parseInlinesAcc ('!' :: acc) cs)
+          if linkBodyClosesEmph opSeen (take (length rest `minus` length after) rest)
+            then assert_total (parseInlinesAcc '!' opSeen ('!' :: acc) cs)
+            else flushE acc ++ [EInl img]
+              ++ assert_total (parseInlinesAcc ')' opSeen [] after)
+        Nothing => assert_total (parseInlinesAcc '!' opSeen ('!' :: acc) cs)
+      _ => assert_total (parseInlinesAcc '!' opSeen ('!' :: acc) cs)
     '<' => case findClose '>' cs of
       Just (inner, after) =>
         if isAutolinkBody inner
@@ -909,47 +1056,106 @@ mutual
             let text    = pack inner
                 isEmail = any (== '@') inner && not (any (== ':') inner)
                 url     = if isEmail then "mailto:" ++ text else text
-             in flushAcc acc
-                  ++ [InlLink emptyAttrs (LinkAuto url) [InlText text]]
-                  ++ assert_total (parseInlinesAcc [] after)
-          else assert_total (parseInlinesAcc ('<' :: acc) cs)
-      Nothing => assert_total (parseInlinesAcc ('<' :: acc) cs)
+             in flushE acc
+                  ++ [EInl (InlLink emptyAttrs (LinkAuto url) [InlText text])]
+                  ++ assert_total (parseInlinesAcc '>' opSeen [] after)
+          else assert_total (parseInlinesAcc '<' opSeen ('<' :: acc) cs)
+      Nothing => assert_total (parseInlinesAcc '<' opSeen ('<' :: acc) cs)
     -- Smart punctuation: dash runs, ellipsis, and orientation-aware
     -- curly quotes. The full hyphen run is consumed and split into
     -- em-/en-dashes per `dashRun`; a lone hyphen stays literal.
     '-' => case spanRun '-' cs of
       (n, rest) =>
         if n == 1
-          then assert_total (parseInlinesAcc ('-' :: acc) cs)
-          else flushAcc acc ++ dashRun n
-                 ++ assert_total (parseInlinesAcc [] rest)
+          then assert_total (parseInlinesAcc '-' opSeen ('-' :: acc) cs)
+          else flushE acc ++ map EInl (dashRun n)
+                 ++ assert_total (parseInlinesAcc '-' opSeen [] rest)
     '.' => case cs of
       ('.' :: '.' :: rest) =>
-        flushAcc acc ++ [InlSmart Ellipsis]
-          ++ assert_total (parseInlinesAcc [] rest)
-      _ => assert_total (parseInlinesAcc ('.' :: acc) cs)
+        flushE acc ++ [EInl (InlSmart Ellipsis)]
+          ++ assert_total (parseInlinesAcc '.' opSeen [] rest)
+      _ => assert_total (parseInlinesAcc '.' opSeen ('.' :: acc) cs)
     '"' =>
-      flushAcc acc ++ [InlSmart (doubleQuote acc cs)]
-        ++ assert_total (parseInlinesAcc [] cs)
+      flushE acc ++ [EInl (InlSmart (doubleQuote acc cs))]
+        ++ assert_total (parseInlinesAcc '"' opSeen [] cs)
     '\'' =>
-      flushAcc acc ++ [InlSmart (singleQuote acc cs)]
-        ++ assert_total (parseInlinesAcc [] cs)
+      flushE acc ++ [EInl (InlSmart (singleQuote acc cs))]
+        ++ assert_total (parseInlinesAcc '\'' opSeen [] cs)
     -- Line break inside a paragraph body. The paragraph driver joins
     -- continuation lines with literal '\n' so multi-line constructs
     -- (verbatim spans) can swallow the newline naturally; outside such
     -- constructs the newline emits a soft/hard break inline. A trailing
     -- `\\` (with optional whitespace after) flips the break to hard.
     '\n' => case stripHardBreakMarker acc of
-      Just acc' => flushAcc acc' ++ [InlHardBreak]
-        ++ assert_total (parseInlinesAcc [] cs)
-      Nothing   => flushAcc acc ++ [InlSoftBreak]
-        ++ assert_total (parseInlinesAcc [] cs)
-    other => assert_total (parseInlinesAcc (other :: acc) cs)
+      Just acc' => flushE acc' ++ [EInl InlHardBreak]
+        ++ assert_total (parseInlinesAcc '\n' opSeen [] cs)
+      Nothing   => flushE acc ++ [EInl InlSoftBreak]
+        ++ assert_total (parseInlinesAcc '\n' opSeen [] cs)
+    other => assert_total (parseInlinesAcc other opSeen (other :: acc) cs)
 
-  ||| Top-level inline tokenizer over character lists.
+  ||| Emit a single emphasis/strong delimiter token. `marker` is `_` or
+  ||| `*`. `prev` is the source char immediately before the marker (used
+  ||| for flanking when `acc` is empty, e.g. just after an atom such as a
+  ||| code span or link). `acc` is the reversed pending plain text; `cs`
+  ||| is the input AFTER the marker. Handles the `{`-open-marker (drops the
+  ||| `{` from `acc`) and `}`-close-marker (consumes the trailing `}`), and
+  ||| computes can-open / can-close from ASCII-whitespace flanking, then
+  ||| continues tokenizing the remainder.
+  emitDelim : (marker : Char) -> (prev : Char) -> (opSeen : List Char)
+           -> List Char -> List Char -> List ETok
+  emitDelim marker prev opSeen acc cs =
+    let bOpen        : Bool
+        bOpen        = case acc of
+                         ('{' :: _) => True
+                         _          => False
+        accNoBrace   : List Char
+        accNoBrace   = if bOpen then drop 1 acc else acc
+        bClose       : Bool
+        bClose       = case cs of
+                         ('}' :: _) => True
+                         _          => False
+        rest         : List Char
+        rest         = if bClose then drop 1 cs else cs
+        -- Effective preceding source char: the head of the pending text if
+        -- any, else the threaded `prev` (atom closer / break / line start).
+        prevChar     : Char
+        prevChar     = case accNoBrace of
+                         (p :: _) => p
+                         []       => prev
+        nextNonSpace : Bool
+        nextNonSpace = case cs of
+                         (n :: _) => not (flankSpace n)
+                         []       => False
+        prevNonSpace : Bool
+        prevNonSpace = not (flankSpace prevChar)
+        -- can_open: next char non-space (or forced by `{` open-marker);
+        -- a `}` close-marker disables opening.
+        canOpen      : Bool
+        canOpen      = if bClose then False
+                       else if bOpen then True
+                       else nextNonSpace
+        -- can_close: prev char non-space (or forced by `}` close-marker);
+        -- a `{` open-marker disables closing.
+        canClose     : Bool
+        canClose     = if bOpen then False
+                       else if bClose then True
+                       else prevNonSpace
+        -- Record this marker as a pending opener char so a later `[...]`
+        -- link/image whose body contains a matching emphasis CLOSER is
+        -- destroyed (djot's shared opener stack: `*[a](b*)` -> strong).
+        opSeen'      : List Char
+        opSeen'      = if canOpen then marker :: opSeen else opSeen
+     in flushE accNoBrace
+          ++ [EDelim marker canOpen canClose bOpen bClose]
+          ++ assert_total (parseInlinesAcc marker opSeen' [] rest)
+
+  ||| Top-level inline tokenizer over character lists: tokenize, then
+  ||| resolve `_`/`*` delimiters into emphasis/strong via the stack pass.
+  ||| Initial `prev` is a space (line start = boundary).
   public export
   parseInlines : List Char -> List Inline
-  parseInlines chars = parseInlinesAcc [] chars
+  parseInlines chars =
+    coalesceText (resolveEmph (assert_total (parseInlinesAcc ' ' [] [] chars)))
 
 ||| Parse a single line's inline content. Empty string yields no inlines;
 ||| otherwise the inline tokenizer runs over the line's characters.

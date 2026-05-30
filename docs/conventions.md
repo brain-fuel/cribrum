@@ -55,8 +55,8 @@ honour.
 | Soft line break       | `Text " "`                 | spike    | Single space — standard Djot HTML behaviour. |
 | Hard line break       | `<br>`                     | spike    | Void element. |
 | Comment               | `Comment`                  | spike    | HTML comment node. |
-| Emphasis              | `<em>`                     | spike    | Flanking by inside-whitespace agreement; closer scan skips backslash-escaped markers (`_\__` → `<em>_</em>`). |
-| Strong                | `<strong>`                 | spike    | As emphasis (`*`). |
+| Emphasis              | `<em>`                     | spike    | `_`; resolved by a CommonMark-style delimiter stack (`resolveEmph`, mirroring djot.lua `between_matched`): single-char delimiters paired innermost-first with run-length nesting; can-open/can-close by ASCII-whitespace flanking (NBSP does **not** block — `*<nbsp>a<nbsp>*` is strong); `{`/`}` open/close markers (`{_ … _}`); empty `__` excluded; `_\__` → `<em>_</em>`. Verbatim/autolink/link spans are opaque atoms before the stack runs, so a marker inside them is literal. |
+| Strong                | `<strong>`                 | spike    | `*`; same delimiter-stack resolver as emphasis. `*****a*****` nests five `<strong>`. A pending opener whose closer falls inside a would-be link body destroys the link (`*[a](b*)` → `<strong>[a](b</strong>)`). |
 | Highlighted           | `<mark>`                   | spike    | |
 | Superscript           | `<sup>`                    | spike    | `^x^`; braced `{^ x ^}` keeps inner whitespace. No flanking restriction. |
 | Subscript             | `<sub>`                    | spike    | `~x~`; braced `{~ x ~}` keeps inner whitespace. No flanking restriction. |

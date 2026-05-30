@@ -60,9 +60,24 @@
 > normalises whitespace + strips the `<main>` wrapper, and compares
 > against the expected reference output. A baseline file
 > (`test/djot-ref/baseline.txt`) lists currently-passing tests;
-> regressions fail the gate, additions are tracked. **198 / 246**
-> upstream-ingested tests now pass at the baseline (full `jgm/djot`
-> corpus ingestion shipped). The climb from 116 came in two parallel
+> regressions fail the gate, additions are tracked. **205 / 246**
+> upstream-ingested tests now pass (full `jgm/djot` corpus ingestion
+> shipped); the baseline floor stays at 198 until the next single-threaded
+> `djotref-update`. The `emphasis-*` climb from 198 came from replacing the
+> first-closer flanking heuristic with a CommonMark-style **delimiter
+> stack** (`resolveEmph` in `Cribrum.Djot.Parser`, mirroring djot.lua's
+> `between_matched`): single-char `_`/`*` delimiters paired innermost-first
+> with run-length nesting (`*****a*****` -> five `<strong>`), ASCII-only
+> flanking whitespace (NBSP does not block emphasis, so `*<nbsp>a<nbsp>*`
+> is strong), `{`/`}` open/close markers (`{_ … _}`), empty-emphasis
+> exclusion (`__`), and correct precedence — verbatim / autolink / link
+> spans are opaque atoms before the stack runs, so a `_`/`*` inside them is
+> literal (`*foo` `` `*` `` -> `*foo<code>*</code>`). Links and emphasis
+> share an opener stack: a pending opener whose matching closer lies inside
+> a would-be link body destroys the link (`*[a](b*)` ->
+> `<strong>[a](b</strong>)`). Newly passing: emphasis-017/022/026/029/032/
+> 033 + verbatim-004 (emphasis-018 remains blocked at the block layer,
+> where a line-leading `{` is consumed as a block-attribute prefix). The climb from 116 came in two parallel
 > rounds of conformance slices: (1) raw passthrough (`raw-*`),
 > super/subscript (`super-subscript-*`), smart-punctuation + emphasis +
 > escapes (`smart-*`/`emphasis-*`/`escapes-*`), and an indentation-aware

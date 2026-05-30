@@ -682,6 +682,116 @@ ext_inline_nested_emphasis_in_strong = oneShot $
                        ]
                    ]])
 
+||| N-fold nesting (corpus emphasis-029): a run of five `*` openers pairs
+||| innermost-first with five `*` closers, nesting five `<strong>`. The
+||| delimiter-stack resolver splits the run one char at a time.
+export
+ext_inline_fivefold_strong_nesting : Property
+ext_inline_fivefold_strong_nesting = oneShot $
+  parseDoc "*****a*****"
+    === ok (doc [paraMulti
+                   [ InlStrong [InlStrong [InlStrong [InlStrong
+                       [InlStrong [InlText "a"]]]]] ]])
+
+||| Verbatim takes precedence over emphasis: the `*` inside the code span
+||| is literal, so the leading `*` finds no closer and stays text
+||| (corpus verbatim-004). The closer scan must not peek inside `` `…` ``.
+export
+ext_inline_verbatim_blocks_emphasis_closer : Property
+ext_inline_verbatim_blocks_emphasis_closer = oneShot $
+  parseDoc "*foo`*`"
+    === ok (doc [paraMulti
+                   [ InlText "*foo"
+                   , InlVerbatim emptyAttrs "*"
+                   ]])
+
+||| An emphasis marker inside an unbalanced code span is literal: `_`a_`b`
+||| -> `_<code>a_</code>b` (corpus emphasis-032). The leading `_` has no
+||| real closer (the second `_` lives inside the verbatim) so it is text.
+export
+ext_inline_verbatim_swallows_inner_marker : Property
+ext_inline_verbatim_swallows_inner_marker = oneShot $
+  parseDoc "_`a_`b"
+    === ok (doc [paraMulti
+                   [ InlText "_"
+                   , InlVerbatim emptyAttrs "a_"
+                   , InlText "b"
+                   ]])
+
+||| Autolink takes precedence over emphasis (corpus emphasis-033): the
+||| `_` inside the angle-bracketed URL is part of the link, not a closer,
+||| so the leading `_` stays literal.
+export
+ext_inline_autolink_blocks_emphasis_closer : Property
+ext_inline_autolink_blocks_emphasis_closer = oneShot $
+  parseDoc "_<http://example.com/a_b>"
+    === ok (doc [paraMulti
+                   [ InlText "_"
+                   , InlLink emptyAttrs
+                       (LinkAuto "http://example.com/a_b")
+                       [InlText "http://example.com/a_b"]
+                   ]])
+
+||| A `_` opener immediately followed by `}` is a close-marker, not an
+||| opener, so `_}b_` stays literal (corpus emphasis-026). Pins the
+||| `}`-close-marker flanking override.
+export
+ext_inline_close_marker_brace_blocks_open : Property
+ext_inline_close_marker_brace_blocks_open = oneShot $
+  parseDoc "_}b_" === ok (doc [para "_}b_"])
+
+||| Shared opener stack: a pending `*` emphasis opener whose matching `*`
+||| closer lies inside a would-be link body destroys the link
+||| (corpus links-and-images-020): `*[closed](hello*)` ->
+||| `<strong>[closed](hello</strong>)`.
+export
+ext_inline_emphasis_destroys_link : Property
+ext_inline_emphasis_destroys_link = oneShot $
+  parseDoc "*[closed](hello*)"
+    === ok (doc [paraMulti
+                   [ InlStrong [InlText "[closed](hello"]
+                   , InlText ")"
+                   ]])
+
+||| An ESCAPED `*` inside the link body is not a closer, so the link
+||| survives and the leading `*` stays literal (corpus
+||| links-and-images-021): `*[closed](hello\*)`.
+export
+ext_inline_escaped_marker_keeps_link : Property
+ext_inline_escaped_marker_keeps_link = oneShot $
+  parseDoc "*[closed](hello\\*)"
+    === ok (doc [paraMulti
+                   [ InlText "*"
+                   , InlLink emptyAttrs (LinkInline "hello*" Nothing)
+                       [InlText "closed"]
+                   ]])
+
+||| With NO pending emphasis opener, a link whose body merely contains a
+||| `_` still forms (corpus links-and-images-026): `[x_y](x_y)`. Pins the
+||| `opSeen` guard so link destruction only fires under a real opener.
+export
+ext_inline_link_with_underscore_unaffected : Property
+ext_inline_link_with_underscore_unaffected = oneShot $
+  parseDoc "[x_y](x_y)"
+    === ok (doc [paraMulti
+                   [ InlLink emptyAttrs (LinkInline "x_y" Nothing)
+                       [InlText "x_y"]
+                   ]])
+
+||| Link destruction is CHAR-SPECIFIC: a pending `_` opener does not let a
+||| `*` inside the link body destroy the link — only a matching `_` would.
+||| `_x [a*b](c)` keeps the link (the lone `_` has no `_` closer, so it is
+||| literal). Pins the `elem x opSeen` guard in `linkBodyClosesEmph`.
+export
+ext_inline_link_survives_other_marker : Property
+ext_inline_link_survives_other_marker = oneShot $
+  parseDoc "_x [a*b](c)"
+    === ok (doc [paraMulti
+                   [ InlText "_x "
+                   , InlLink emptyAttrs (LinkInline "c" Nothing)
+                       [InlText "a*b"]
+                   ]])
+
 --------------------------------------------------------------------------------
 -- Inline images (`![alt](src)`).
 --------------------------------------------------------------------------------
@@ -1937,6 +2047,15 @@ group = MkGroup "Cribrum.Djot.Parser"
   , ("ext_inline_empty_emphasis_is_text",        ext_inline_empty_emphasis_is_text)
   , ("ext_inline_unpaired_link_is_text",         ext_inline_unpaired_link_is_text)
   , ("ext_inline_nested_emphasis_in_strong",     ext_inline_nested_emphasis_in_strong)
+  , ("ext_inline_fivefold_strong_nesting",       ext_inline_fivefold_strong_nesting)
+  , ("ext_inline_verbatim_blocks_emphasis_closer", ext_inline_verbatim_blocks_emphasis_closer)
+  , ("ext_inline_verbatim_swallows_inner_marker", ext_inline_verbatim_swallows_inner_marker)
+  , ("ext_inline_autolink_blocks_emphasis_closer", ext_inline_autolink_blocks_emphasis_closer)
+  , ("ext_inline_close_marker_brace_blocks_open", ext_inline_close_marker_brace_blocks_open)
+  , ("ext_inline_emphasis_destroys_link",        ext_inline_emphasis_destroys_link)
+  , ("ext_inline_escaped_marker_keeps_link",     ext_inline_escaped_marker_keeps_link)
+  , ("ext_inline_link_with_underscore_unaffected", ext_inline_link_with_underscore_unaffected)
+  , ("ext_inline_link_survives_other_marker",     ext_inline_link_survives_other_marker)
   , ("ext_single_item_unordered_list",           ext_single_item_unordered_list)
   , ("ext_multi_item_unordered_list",            ext_multi_item_unordered_list)
   , ("ext_unordered_list_then_paragraph",        ext_unordered_list_then_paragraph)
