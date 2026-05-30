@@ -28,6 +28,8 @@ import public Data.So
 import Cribrum.Node
 import Cribrum.Djot.Surface
 import Cribrum.Html.Valid
+import Cribrum.Html.Model
+import Cribrum.Html.Category
 import public Cribrum.AA.Typed
 
 %default total
@@ -85,17 +87,62 @@ data ElabError : Type where
   ||| node (heading-no-skip, duplicate-id, unique-main).
   StructuralAaFailure : (rule : String) -> (path : Maybe (List Nat)) -> ElabError
 
+||| Join strings with a separator (unambiguous; avoids `concat` overload
+||| resolution on `String`/`List`).
+joinStr : (sep : String) -> List String -> String
+joinStr _   []        = ""
+joinStr sep (x :: xs) = foldl (\acc, s => acc ++ sep ++ s) x xs
+
+||| Render a tree path for a diagnostic. `[]` is the document root; a
+||| non-empty path is the 0-indexed child route from the root.
+public export
+showElabPath : List Nat -> String
+showElabPath [] = "the document root"
+showElabPath p  = "child path " ++ show p ++ " (root -> "
+                    ++ joinStr " -> " (map (("child " ++) . show) p)
+                    ++ ")"
+
+||| Human-readable, actionable explanation of a content-model rejection.
+||| The structural cases that already read clearly fall back to `Show`.
+public export
+explainReject : RejectionClass -> String
+explainReject (DisallowedAttr tag attr) =
+  "attribute `" ++ attr ++ "` is not a valid HTML attribute on <" ++ tag
+    ++ "> — it is not a global attribute, nor an aria-*, data-*, or on* "
+    ++ "event handler. Remove it, or rename it to `data-" ++ attr ++ "`."
+explainReject (InteractiveInInteractive anc child) =
+  "<" ++ child ++ "> is interactive content and may not be nested inside <"
+    ++ anc ++ ">. Unwrap it, or move it out of the <" ++ anc ++ ">."
+explainReject (UnknownTag t) =
+  "<" ++ t ++ "> is not a known HTML element."
+explainReject (IllegalChild p c) =
+  "<" ++ c ++ "> is not allowed directly inside <" ++ p ++ ">."
+explainReject (BlockInPhrasing p c) =
+  "<" ++ c ++ "> is block-level content and cannot appear inside the "
+    ++ "phrasing-only element <" ++ p ++ ">."
+explainReject other = show other
+
+||| One-line meaning of a structural-AA rule id, for diagnostics.
+public export
+explainRule : String -> String
+explainRule "anchor-href"     = " — every <a> must carry an href"
+explainRule "link-empty-href" = " — an <a href=\"\"> is ineffective; give it a real destination"
+explainRule "img-alt"         = " — every <img> needs an alt"
+explainRule "link-name"       = " — every <a href> needs accessible text"
+explainRule "button-name"     = " — every <button> needs an accessible name"
+explainRule _                 = ""
+
 public export
 Show ElabError where
   show (LocatedHtmlError lr) =
-    "Elaboration produced invalid HTML: " ++ show lr
+    "invalid HTML at " ++ showElabPath (path lr) ++ ": " ++ explainReject (reason lr)
   show (InvalidProducedHtml t) =
     "Elaboration produced HTML with unknown tag: " ++ t
   show (StructuralAaFailure r p) =
-    "Structural accessibility failure: " ++ r
+    "structural accessibility failure (" ++ r ++ ")" ++ explainRule r
       ++ case p of
-           Nothing   => " (whole-tree)"
-           Just path => " at " ++ show path
+           Nothing   => " — affecting the whole document"
+           Just path => " at " ++ showElabPath path
 
 --------------------------------------------------------------------------------
 -- Deciding the StructuralAA conjunct.
@@ -693,3 +740,153 @@ elaborate doc =
         Right p  => case decStructuralAA h of
           Left (rule, path) => Left (StructuralAaFailure rule path)
           Right aa          => Right (h ** (p, aa))
+
+--------------------------------------------------------------------------------
+-- Draft mode: placeholder repair + actionable warnings.
+--
+-- Strict `elaborate` hard-errors on invalid / inaccessible output. Draft
+-- mode instead *repairs* the common author mistakes into valid placeholder
+-- nodes — each tagged with a `data-cribrum-todo` marker and reported as a
+-- `DraftWarning` — so a work-in-progress document still renders
+-- (proof-carrying) while loudly flagging what must be fixed. This is the
+-- "clear first, then fix" workflow, akin to Rust's `todo!()`: the output
+-- compiles/renders, but it is unmistakably unfinished.
+--
+-- Repaired patterns (the structurally-decidable author mistakes):
+--   * disallowed attribute `x="v"`   -> renamed to `data-x="v"`   (1a)
+--   * interactive element inside <a>  -> demoted to <span>         (1b)
+--   * <a> with no href / empty href   -> href="#"                  (2a/2b)
+--
+-- Anything draft cannot repair (unknown tags, illegal nesting, duplicate
+-- ids, heading skips, …) still hard-errors: draft repairs author slips,
+-- it is not a "make any tree valid" escape hatch.
+--------------------------------------------------------------------------------
+
+||| A single thing the author must fix before the document is strict-clean.
+public export
+record DraftWarning where
+  constructor MkDraftWarning
+  ||| Path-into-tree of the repaired node (`[]` = root).
+  path   : List Nat
+  ||| Stable rule id the placeholder stands in for.
+  rule   : String
+  ||| What is wrong (the diagnosis).
+  detail : String
+  ||| What the author must do to fix it (the `todo!`).
+  todo   : String
+
+public export
+Show DraftWarning where
+  show w = "TODO[" ++ rule w ++ " @ " ++ showElabPath (path w) ++ "]: "
+             ++ detail w ++ "  (fix: " ++ todo w ++ ")"
+
+||| `True` iff `tag` is interactive content (per the element catalog).
+draftIsInteractive : String -> Bool
+draftIsInteractive t = elem Interactive (categoriesOf t)
+
+||| Rename every attribute not permitted on `tag` to `data-<name>` (always
+||| valid, value preserved). Returns the fixed attr list + the renamed
+||| original names (for warnings).
+draftFixAttrs : (tag : String) -> List HAttr -> (List HAttr, List String)
+draftFixAttrs _   []                        = ([], [])
+draftFixAttrs tag (a@(MkHAttr n v) :: rest) =
+  let (kept, renamed) = draftFixAttrs tag rest
+   in if isAllowedAttrName tag n
+        then (a :: kept, renamed)
+        else (MkHAttr ("data-" ++ n) v :: kept, n :: renamed)
+
+||| `(hasHrefKey, hrefIsUsable)` for an attribute list.
+draftHrefStatus : List HAttr -> (Bool, Bool)
+draftHrefStatus []                             = (False, False)
+draftHrefStatus (MkHAttr "href" (Str v) :: _)  = (True, v /= "")
+draftHrefStatus (MkHAttr "href" _ :: _)        = (True, True)
+draftHrefStatus (_ :: xs)                      = draftHrefStatus xs
+
+||| Force `href="#"`, replacing any existing href (else appending one).
+draftSetHref : List HAttr -> List HAttr
+draftSetHref []                        = [MkHAttr "href" (Str "#")]
+draftSetHref (MkHAttr "href" _ :: xs)  = MkHAttr "href" (Str "#") :: xs
+draftSetHref (a :: xs)                 = a :: draftSetHref xs
+
+||| Short combined id for the visible `data-cribrum-todo` marker.
+draftMarkerId : (demote : Bool) -> (renamed : List String) -> (fixHref : Bool) -> String
+draftMarkerId d r h =
+  let parts : List String
+      parts = (if d then ["interactive-in-interactive"] else [])
+            ++ (if isNil r then [] else ["disallowed-attr"])
+            ++ (if h then ["href"] else [])
+   in case parts of
+        [] => "fixme"
+        ps => joinStr "+" ps
+
+mutual
+  ||| Repair one node: returns the (valid) placeholder node + warnings.
+  ||| `inAnchor` tracks whether we are inside an `<a>` ancestor.
+  draftRepair : (path : List Nat) -> (inAnchor : Bool) -> HExpr
+             -> (HExpr, List DraftWarning)
+  draftRepair _    _        (Text s)    = (Text s, [])
+  draftRepair _    _        (Comment s) = (Comment s, [])
+  draftRepair _    _        (Raw s)     = (Raw s, [])
+  draftRepair path inAnchor (Element tag attrs cs) =
+    let -- (1b) demote interactive content nested inside an <a>.
+        demote  = inAnchor && draftIsInteractive tag
+        tag1    = if demote then "span" else tag
+        wDemote = if demote
+                    then [MkDraftWarning path "interactive-in-interactive"
+                           ("<" ++ tag ++ "> is interactive and cannot be nested inside an <a>")
+                           ("unwrap it or move it out of the link "
+                             ++ "(draft demoted it to <span>)")]
+                    else []
+        -- (1a) rename disallowed attributes (run against the final tag).
+        (keptAttrs, renamed) = draftFixAttrs tag1 attrs
+        wAttrs = map (\n => MkDraftWarning path "disallowed-attr"
+                            ("attribute `" ++ n ++ "` is not valid HTML on <" ++ tag1 ++ ">")
+                            ("remove it or make it a real attribute "
+                              ++ "(draft renamed it to `data-" ++ n ++ "`)"))
+                     renamed
+        -- (2a/2b) anchors need a usable href.
+        (hasHref, goodHref) = draftHrefStatus keptAttrs
+        fixHref   = tag1 == "a" && not goodHref
+        attrsHref = if fixHref then draftSetHref keptAttrs else keptAttrs
+        wHref = if fixHref
+                  then [MkDraftWarning path
+                         (if hasHref then "link-empty-href" else "anchor-href")
+                         (if hasHref then "this <a> has an empty href"
+                                     else "this <a> has no href")
+                         ("point it at a real destination (draft used href=\"#\")")]
+                  else []
+        touched = demote || not (isNil renamed) || fixHref
+        attrsFinal = if touched
+                       then attrsHref
+                              ++ [MkHAttr "data-cribrum-todo"
+                                    (Str (draftMarkerId demote renamed fixHref))]
+                       else attrsHref
+        inAnchor'   = tag1 == "a" || inAnchor
+        (cs', wcs)  = draftRepairList path 0 inAnchor' cs
+     in (Element tag1 attrsFinal cs', wDemote ++ wAttrs ++ wHref ++ wcs)
+
+  draftRepairList : List Nat -> Nat -> Bool -> List HExpr
+                 -> (List HExpr, List DraftWarning)
+  draftRepairList _    _   _        []        = ([], [])
+  draftRepairList path idx inAnchor (c :: cs) =
+    let (c',  w1) = draftRepair (path ++ [idx]) inAnchor c
+        (cs', w2) = draftRepairList path (S idx) inAnchor cs
+     in (c' :: cs', w1 ++ w2)
+
+||| Draft elaboration: repairs the structurally-decidable author mistakes
+||| into valid placeholders and returns the proof-carrying tree alongside
+||| the list of `DraftWarning`s describing what still must be fixed. Mistakes
+||| draft cannot repair still surface as a hard `ElabError` (so draft is an
+||| authoring aid, not a way to smuggle malformed HTML past the guarantees).
+public export
+elaborateDraft : Doc
+              -> Either ElabError
+                   (h : HExpr ** (IsValidHtml h, StructuralAA h, List DraftWarning))
+elaborateDraft doc =
+  let raw                  = elaborateDoc doc
+      (repaired, warnings) = draftRepair [] False raw
+   in case decideHtmlLocated repaired of
+        Left  lr => Left (LocatedHtmlError lr)
+        Right p  => case decStructuralAA repaired of
+          Left (rule, path) => Left (StructuralAaFailure rule path)
+          Right aa          => Right (repaired ** (p, aa, warnings))

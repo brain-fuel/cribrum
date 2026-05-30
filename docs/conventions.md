@@ -249,5 +249,28 @@ hard-errors to located findings so work-in-progress (a half-captioned
 the by-construction guarantee holds. The guarantee is stated **only** for
 strict mode.
 
+`Cribrum.Elaborate.elaborateDraft` implements this as a **placeholder
+repair**: it rewrites the structurally-decidable author mistakes into valid
+stand-ins, each tagged with a visible `data-cribrum-todo` attribute and
+reported as a `DraftWarning` (a `todo!()`-style record: path + rule +
+diagnosis + the fix to apply). The return type stays proof-carrying —
+`(h ** (IsValidHtml h, StructuralAA h, List DraftWarning))` — so the draft
+output is *itself* valid HTML, just unmistakably unfinished. This is the
+"clear first, then fix" loop: render with placeholders, then resolve each
+TODO. Repaired patterns:
+
+| Mistake | Strict (hard error) | Draft (placeholder + warning) |
+|---------|---------------------|-------------------------------|
+| disallowed attribute `x="v"` | `DisallowedAttr tag x` | renamed to `data-x="v"` (value kept) |
+| interactive element inside `<a>` | `InteractiveInInteractive` | demoted to `<span>` (its `href` → `data-href`) |
+| `<a>` with no / empty href | `anchor-href` / `link-empty-href` | `href="#"` |
+
+Anything draft cannot repair (unknown tag, illegal nesting, duplicate id,
+heading skip, …) still hard-errors — draft fixes author slips, it is not a
+"make any tree valid" escape hatch. Strict-mode errors themselves now carry a
+localized, semantic message (`explainReject` / `explainRule` + the tree
+path), e.g. *"attribute `key` is not a valid HTML attribute on `<span>` … at
+child path [0, 0]"*.
+
 The strict/draft distinction is enforced at the elaborator boundary; both
 modes share the catalog above.

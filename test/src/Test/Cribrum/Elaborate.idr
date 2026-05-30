@@ -1,12 +1,14 @@
 module Test.Cribrum.Elaborate
 
 import Data.Vect
+import Data.String
 import Hedgehog
 import Cribrum.Node
 import Cribrum.Djot.Surface
 import Cribrum.Djot.Parser
 import Cribrum.Html.Valid
 import Cribrum.Elaborate
+import Cribrum.Render.Html
 
 %default total
 
@@ -981,6 +983,62 @@ ext_highlight_interior_marker_closes_on_pair = oneShot $
       === Element "main" []
             [Element "p" [] [Element "mark" [] [Text "a=b"]]]
 
+--------------------------------------------------------------------------------
+-- Strict semantic errors + draft-mode placeholder repair.
+--------------------------------------------------------------------------------
+
+||| (1a, strict) A disallowed author attribute is a hard error carrying a
+||| clear, localized, *semantic* message — not just a raw constructor dump.
+export
+ext_strict_disallowed_attr_explained : Property
+ext_strict_disallowed_attr_explained = oneShot $
+  case parseDoc "hi{key=\"x\"}\n" of
+    Left e  => failWith Nothing ("parse: " ++ show e)
+    Right d => case elaborate d of
+      Right _ => failWith Nothing "expected a strict rejection"
+      Left e  =>
+        let s = show e
+         in (isInfixOf "not a valid HTML attribute" s
+               && isInfixOf "key" s
+               && isInfixOf "span" s) === True
+
+||| (1a, draft) The same attribute is repaired to `data-key` (value
+||| preserved) + flagged with a `disallowed-attr` warning; the tree is
+||| proof-carrying (the `Right` carries `IsValidHtml`/`StructuralAA`).
+export
+ext_draft_disallowed_attr_renamed : Property
+ext_draft_disallowed_attr_renamed = oneShot $
+  case parseDoc "hi{key=\"x\"}\n" of
+    Left e  => failWith Nothing ("parse: " ++ show e)
+    Right d => case elaborateDraft d of
+      Left e => failWith Nothing ("draft should repair, got: " ++ show e)
+      Right (h ** (_, _, ws)) =>
+        (isInfixOf "data-key=\"x\"" (renderHtml h)
+           && any (\w => w.rule == "disallowed-attr") ws) === True
+
+||| (1b, draft) A nested `<a>` is demoted to `<span>` + flagged.
+export
+ext_draft_nested_anchor_demoted : Property
+ext_draft_nested_anchor_demoted = oneShot $
+  case parseDoc "[[foo](bar)](baz)\n" of
+    Left e  => failWith Nothing ("parse: " ++ show e)
+    Right d => case elaborateDraft d of
+      Left e => failWith Nothing ("draft should repair, got: " ++ show e)
+      Right (_ ** (_, _, ws)) =>
+        any (\w => w.rule == "interactive-in-interactive") ws === True
+
+||| (2b, draft) An empty href is filled with a `#` placeholder + flagged.
+export
+ext_draft_empty_href_filled : Property
+ext_draft_empty_href_filled = oneShot $
+  case parseDoc "[link][]\n\n[link]:\n" of
+    Left e  => failWith Nothing ("parse: " ++ show e)
+    Right d => case elaborateDraft d of
+      Left e => failWith Nothing ("draft should repair, got: " ++ show e)
+      Right (h ** (_, _, ws)) =>
+        (isInfixOf "href=\"#\"" (renderHtml h)
+           && any (\w => w.rule == "link-empty-href") ws) === True
+
 export
 group : Group
 group = MkGroup "Cribrum.Elaborate"
@@ -1064,4 +1122,8 @@ group = MkGroup "Cribrum.Elaborate"
   , ("ext_ordered_different_delims_split",      ext_ordered_different_delims_split)
   , ("ext_highlight_interior_marker_closes_on_pair",
         ext_highlight_interior_marker_closes_on_pair)
+  , ("ext_strict_disallowed_attr_explained",   ext_strict_disallowed_attr_explained)
+  , ("ext_draft_disallowed_attr_renamed",      ext_draft_disallowed_attr_renamed)
+  , ("ext_draft_nested_anchor_demoted",        ext_draft_nested_anchor_demoted)
+  , ("ext_draft_empty_href_filled",            ext_draft_empty_href_filled)
   ]

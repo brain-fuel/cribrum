@@ -260,3 +260,6 @@ src/Cribrum/Djot/Parser.idr	go acc iq    True  ('}'  :: cs) = Just (reverse acc,
 src/Cribrum/Djot/Parser.idr	findCloseEsc c ('{' :: xs)       = case scanBraceBody xs of	findCloseEsc c ('{' :: xs)       = case the (Maybe (List Char, List Char)) Nothing of	emphasis: brace-block skip disabled (quoted delim inside attrs wrongly closes emphasis)
 src/Cribrum/Djot/Parser.idr	then parseMultiLineAttrBlock x xs	then parseMultiLineAttrBlock x []	block attr: multi-line `{...}` prefix loses continuation lines (never closes, becomes paragraph)
 src/Cribrum/Elaborate.idr	listAttrs = attrsToHAttrs a	listAttrs = []	list: own Attrs dropped (class/id never reach the list element)
+src/Cribrum/Elaborate.idr	MkHAttr ("data-" ++ n) v :: kept	a :: kept	draft: disallowed attr not renamed to data-* (repair fails, draft errors)
+src/Cribrum/Elaborate.idr	inAnchor && draftIsInteractive tag	False	draft: interactive-in-anchor demotion disabled (a-in-a survives, draft errors)
+src/Cribrum/Elaborate.idr	tag1 == "a" && not goodHref	False	draft: anchor href placeholder never applied (empty href survives, draft errors)
