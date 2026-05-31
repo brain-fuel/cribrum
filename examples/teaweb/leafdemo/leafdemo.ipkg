@@ -1,0 +1,12 @@
+package leafdemo
+version = 0.1.0
+brief   = "TEAWeb leaf-coverage demo — Http / Random / OnAnimationFrame / Port+SendPort / OnKeyDown."
+
+sourcedir = "src"
+depends   = base
+          , contrib
+          , cribrum
+          , teaweb
+
+main       = Main
+executable = "leafdemo"

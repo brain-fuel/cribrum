@@ -356,10 +356,19 @@ through Cribrum's own pipeline (matching `README.dj`'s role).
   as content on `aa.ts` rather than a new pipeline. Catalog growth
   (~50 SCs / ~35 ACT rules) + `Cribrum.AA.Pass` data-interpreter refactor
   (plan §P3.2) remain.
-- **Phase T (TEAWeb) full inventory**: MVP slice ships (Html, Event,
-  Cmd None/Batch/Focus/Blur, Sub None/Batch, Program, Runtime, plus
-  examples/teaweb/counter demo). Still missing: Sub leaf variants
-  (OnKeyDown/Every/OnAnimationFrame/Port), Cmd Http/Random/After,
-  Ports module, post-Phase-2 typed view-builders, post-Phase-4
-  StructuralAA-in-view-codomain, keyed-children reconcile, T6 docs
-  nav demo.
+- **Phase T (TEAWeb) full inventory**: complete leaf set ships and is
+  interpreted by `Runtime`. `Cmd` = None/Batch/Focus/Blur/Http/Random/
+  After/SendPort; `Sub` = None/Batch/OnKeyDown/OnKeyUp/OnAnimationFrame/
+  Every/Port (all installed + diffed across renders via `diffSubs`);
+  `Ports` module (T5) wraps SendPort/Port. Async Cmds round-trip through
+  one-shot `cmdHandlers`. Keyed-children + in-place attribute reconcile
+  landed (D-sequence). Demos: counter (Every + After +
+  Focus/onClick/onInput), docsnav (T6), and **leafdemo**
+  (`examples/teaweb/leafdemo/`, `make leafdemo`) which drives the
+  remaining chez-untestable shims end-to-end in a real bundle: Http
+  (`GET ./hello.json`), Random (die roll), OnAnimationFrame (toggleable
+  rAF leaf — also exercises the live install/teardown sub-diff),
+  OnKeyDown (document key listener), and a SendPort→host→Port echo
+  round-trip. The unit suites cover the data / diff layers; leafdemo
+  covers the FFI boundary. Still ahead: post-Phase-2 typed
+  view-builders, post-Phase-4 StructuralAA-in-view-codomain.

@@ -18,10 +18,11 @@
 ||| driven by `IORef` state); only the FFI leaves cross the boundary.
 ||| `update` and `view` never see `IO`.
 |||
-||| MVP slice: `Cmd None / Batch / Focus / Blur` interpreted; `Sub` is
-||| `None`-only at the moment (Counter+Focus demo needs no
-||| subscriptions). Wiring for keyed-children diff + non-MVP Sub
-||| variants arrives without touching the dispatch contract.
+||| Full inventory interpreted: `Cmd None / Batch / Focus / Blur / Http /
+||| Random / After / SendPort`, and every `Sub` leaf (`OnKeyDown /
+||| OnKeyUp / OnAnimationFrame / Every / Port`) installed + diffed across
+||| renders (see `diffSubs`). Async Cmds (Http / Random / After) round-
+||| trip through one-shot `cmdHandlers` entries keyed by a fresh id.
 module TEAWeb.Runtime
 
 import Data.IORef

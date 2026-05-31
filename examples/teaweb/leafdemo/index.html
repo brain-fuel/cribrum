@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>TEAWeb — leaf coverage</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 36rem; margin: 2rem auto; }
+      .leaf-demo { padding: 1rem; border: 1px solid #ccc; border-radius: 0.5rem; }
+      section { margin: 1rem 0; padding-top: 0.5rem; border-top: 1px solid #eee; }
+      h1 { font-size: 1.3rem; } h2 { font-size: 1rem; color: #444; }
+      button { padding: 0.4rem 0.8rem; }
+      .row { display: flex; gap: 0.5rem; margin: 0.3rem 0; font-variant-numeric: tabular-nums; }
+      .label { color: #666; min-width: 6rem; }
+      .val { font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <main id="app"></main>
+
+    <!--
+      Host-side port wiring. Registered BEFORE the bundle so the outbound
+      subscriber is live by the time the user clicks "Ping". The app sends
+      on the `echo-out` outbound port (Cmd.SendPort); we echo the payload
+      straight back on the `echo` inbound port (delivered to the app's
+      Sub.Port subscription). The inbound receiver __cribrumPorts["echo"]
+      is installed by the runtime's Sub installer at mount.
+    -->
+    <script>
+      window.__cribrumOutPorts = window.__cribrumOutPorts || {};
+      (window.__cribrumOutPorts["echo-out"] =
+        window.__cribrumOutPorts["echo-out"] || []).push(function (payload) {
+          // Bounce it back asynchronously to prove a full round-trip
+          // through the host, not a synchronous self-call.
+          setTimeout(function () {
+            var inbound = window.__cribrumPorts && window.__cribrumPorts["echo"];
+            if (typeof inbound === "function") {
+              inbound("host echoed: " + payload);
+            }
+          }, 60);
+        });
+    </script>
+
+    <script src="build/exec/leafdemo"></script>
+  </body>
+</html>

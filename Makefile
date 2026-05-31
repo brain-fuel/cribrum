@@ -1,4 +1,4 @@
-.PHONY: test test-fast test-cribrum test-teaweb djotref djotref-update djotref-ingest oracle mutation ingest ingest-check build clean readme docsnav preprocess help
+.PHONY: test test-fast test-cribrum test-teaweb djotref djotref-update djotref-ingest oracle mutation ingest ingest-check build clean readme docsnav leafdemo preprocess help
 
 help:
 	@echo "Targets:"
@@ -16,6 +16,7 @@ help:
 	@echo "  build          Typecheck cribrum + teaweb libraries"
 	@echo "  readme         Render README.dj -> README.html via the actual Cribrum pipeline"
 	@echo "  docsnav        Regenerate examples/teaweb/docsnav/{index.html,src/Generated.idr} from README.dj, then JS-build the island"
+	@echo "  leafdemo       JS-build the TEAWeb leaf-coverage demo (Http/Random/rAF/Port+SendPort/OnKeyDown)"
 	@echo "  preprocess     Splice {% include: path %} directives: make preprocess IN=host.dj [OUT=combined.dj]"
 	@echo "  clean          Remove build artifacts"
 
@@ -69,8 +70,13 @@ docsnav:
 	    examples/teaweb/docsnav/src/Generated.idr
 	pack --cg javascript build examples/teaweb/docsnav/docsnav.ipkg
 
+leafdemo:
+	pack --cg javascript build examples/teaweb/leafdemo/leafdemo.ipkg
+	@echo "Serve over HTTP (fetch needs a real origin), then open index.html:"
+	@echo "  python3 -m http.server -d examples/teaweb/leafdemo"
+
 preprocess:
 	pack run tools/preprocess/preprocess.ipkg $(IN) $(OUT)
 
 clean:
-	rm -rf build test/build test/teaweb/build tools/preprocess/build tools/render-doc/build tools/render-docsnav/build tools/run-djotref/build examples/teaweb/docsnav/build
+	rm -rf build test/build test/teaweb/build tools/preprocess/build tools/render-doc/build tools/render-docsnav/build tools/run-djotref/build examples/teaweb/docsnav/build examples/teaweb/leafdemo/build
