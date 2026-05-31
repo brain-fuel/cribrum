@@ -416,3 +416,14 @@ mount prog hostId = do
         run newCmd
   -- Run the initial Cmd after the first render.
   run initialCmd
+
+||| Mount an `AccessibleProgram` — a program whose `view` returns an
+||| `AccessibleView msg`, i.e. whose every render is statically known to be
+||| valid, accessible HTML. The runtime loop is identical to `mount`'s; the
+||| only difference is the entry type, which guarantees at the boundary that
+||| no non-accessible view can reach the DOM. We project the accessible
+||| program down to a plain `Program` (forgetting the now-discharged proof)
+||| and reuse `mount` verbatim.
+export
+mountAccessible : AccessibleProgram model msg -> (hostId : String) -> IO ()
+mountAccessible ap hostId = mount (forgetAccessible ap) hostId
