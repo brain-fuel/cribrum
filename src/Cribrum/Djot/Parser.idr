@@ -1370,9 +1370,15 @@ parseCodeFenceOpen s =
       tickN    = countFenceChars '`' stripped
       tildeN   = countFenceChars '~' stripped
    in if tickN >= 3
-        then let after = pack (drop tickN (unpack stripped)) in
+        then let after = pack (drop tickN (unpack stripped))
+                 info  = trim after in
+             -- A backtick fence's info string must contain neither a
+             -- backtick (else it's an inline verbatim run, code-blocks-004)
+             -- nor an internal space (the info names a single language,
+             -- code-blocks-005 — `` ``` not a code block `` is verbatim).
              if not (any (== '`') (unpack after))
-               then Just ('`', tickN, trim after)
+                && not (any isSpace (unpack info))
+               then Just ('`', tickN, info)
                else Nothing
         else if tildeN >= 3
           then let after = pack (drop tildeN (unpack stripped)) in
@@ -2937,7 +2943,22 @@ mutual
           (checkedFlag, body) = case parseTaskMarker (unpack body0) of
             Just (c, b) => (Just c, b)
             Nothing     => (Nothing, body0)
-          contLines = map (dropLeadingSpaces ci) rest
+          -- Dedent continuation lines so the item body reparses at column 0.
+          -- Normally the content indent `ci` is the dedent, but a nested
+          -- sub-list marker may sit at an indent *between* the parent marker
+          -- (`mi`) and `ci` (lists-003: markers at columns 0,1,2). Dedenting
+          -- such lines by the full `ci` would collapse their relative indents
+          -- and flatten the nesting, so dedent by the smallest indent among
+          -- the (genuinely-indented, non-blank) continuation lines instead,
+          -- capped at `ci`. This preserves the staircase so the recursive
+          -- parser re-nests each deeper marker. Lazy column-0 continuations
+          -- (indent ≤ mi) keep the full `ci` dedent.
+          contIndents = map leadingSpaces (filter (not . isBlankLine) rest)
+          minCont = case filter (> mi) contIndents of
+                      []        => ci
+                      (c :: cs) => foldl min c cs
+          dedent  = min ci minCont
+          contLines = map (dropLeadingSpaces dedent) rest
           bodyLines = body :: contLines
           blocks    = assert_total (parseBodyBlocks bodyLines)
        in MkLI emptyAttrs checkedFlag Nothing blocks
@@ -2953,10 +2974,28 @@ mutual
     where
       mkItem : List String -> ListItem
       mkItem run =
-        let (termLs, bodyLs) = splitTermBody run
-            termSoft         = parseTermLines termLs
-            bodyBlocks       = assert_total (parseBodyBlocks bodyLs)
-         in MkLI emptyAttrs Nothing (Just termSoft) bodyBlocks
+        case run of
+          -- When the opener-line content (after `: `) is itself a
+          -- block-opener — here a code fence — the term is empty and that
+          -- content begins the definition body (definition-lists-004:
+          -- `: ``` … ``` ` is an empty term whose body is a code block).
+          (opener :: more) =>
+            let termHead = stripDefOpener opener in
+            case parseCodeFenceOpen termHead of
+              Just _ =>
+                let bodyLs     = termHead :: map (dropLeadingSpaces 2) more
+                    bodyBlocks = assert_total (parseBodyBlocks bodyLs)
+                 in MkLI emptyAttrs Nothing (Just []) bodyBlocks
+              Nothing =>
+                let (termLs, bodyLs) = splitTermBody run
+                    termSoft         = parseTermLines termLs
+                    bodyBlocks       = assert_total (parseBodyBlocks bodyLs)
+                 in MkLI emptyAttrs Nothing (Just termSoft) bodyBlocks
+          _ =>
+            let (termLs, bodyLs) = splitTermBody run
+                termSoft         = parseTermLines termLs
+                bodyBlocks       = assert_total (parseBodyBlocks bodyLs)
+             in MkLI emptyAttrs Nothing (Just termSoft) bodyBlocks
 
   ||| Inline-parse the term paragraph: each line through
   ||| `parseInlineLine`, joined by `InlSoftBreak`.

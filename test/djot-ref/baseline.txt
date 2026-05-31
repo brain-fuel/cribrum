@@ -40,11 +40,13 @@ code-blocks-001
 code-blocks-002
 code-blocks-003
 code-blocks-004
+code-blocks-005
 code-blocks-006
 code-blocks-007
 definition-lists-001
 definition-lists-002
 definition-lists-003
+definition-lists-004
 emphasis-001
 emphasis-002
 emphasis-003
@@ -135,6 +137,7 @@ links-and-images-026
 links-and-images-028
 lists-001
 lists-002
+lists-003
 lists-004
 lists-005
 lists-006
