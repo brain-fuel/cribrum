@@ -28,6 +28,9 @@
 ||| later is additive (no change to this surface).
 module TEAWeb.Sub
 
+import Data.List
+import Data.Maybe
+
 %default total
 
 ||| Subscription tree. Pure data; interpreted by `TEAWeb.Runtime`.
@@ -76,3 +79,81 @@ subCallbackId (OnKeyUp   cb _)           = Just cb
 subCallbackId (OnAnimationFrame cb _)    = Just cb
 subCallbackId (Every cb _ _)             = Just cb
 subCallbackId (Port  cb _ _)             = Just cb
+
+--------------------------------------------------------------------------------
+-- Subscription diff (Phase T4 runtime support).
+--
+-- `Sub msg` holds projection functions, so it has no `Eq`. To diff the
+-- previous installed set against a freshly-evaluated one we key each leaf
+-- by its *structural identity* — the callback id plus the non-function
+-- fields whose change requires a browser-side reinstall (an `Every`'s
+-- period, a `Port`'s name). The projection is deliberately excluded: a
+-- projection change needs no reinstall, because the dispatcher always
+-- invokes the *current* closure rebuilt from the latest leaf set.
+--------------------------------------------------------------------------------
+
+||| Structural identity of a leaf subscription: enough to decide whether
+||| two leaves across renders are "the same browser resource".
+public export
+data SubKey
+  = KKeyDown String          -- cbId
+  | KKeyUp   String          -- cbId
+  | KAnim    String          -- cbId
+  | KEvery   String Integer  -- cbId + period (period change => reinstall)
+  | KPort    String String   -- cbId + portName (portName change => reinstall)
+
+public export
+Eq SubKey where
+  KKeyDown a == KKeyDown b = a == b
+  KKeyUp   a == KKeyUp   b = a == b
+  KAnim    a == KAnim    b = a == b
+  KEvery a p == KEvery b q = a == b && p == q
+  KPort  a n == KPort  b m = a == b && n == m
+  _          == _          = False
+
+public export
+Show SubKey where
+  show (KKeyDown a) = "KKeyDown " ++ a
+  show (KKeyUp   a) = "KKeyUp " ++ a
+  show (KAnim    a) = "KAnim " ++ a
+  show (KEvery a p) = "KEvery " ++ a ++ " " ++ show p
+  show (KPort  a n) = "KPort " ++ a ++ " " ++ n
+
+||| The structural key of a leaf; `Nothing` for the `None` / `Batch`
+||| structural nodes (which `flatten` strips before any diff).
+export
+subKey : Sub msg -> Maybe SubKey
+subKey None                    = Nothing
+subKey (Batch _)               = Nothing
+subKey (OnKeyDown cb _)        = Just (KKeyDown cb)
+subKey (OnKeyUp   cb _)        = Just (KKeyUp cb)
+subKey (OnAnimationFrame cb _) = Just (KAnim cb)
+subKey (Every cb p _)          = Just (KEvery cb p)
+subKey (Port  cb n _)          = Just (KPort cb n)
+
+||| Diff two *flattened* leaf lists (as from `flatten`). Returns the
+||| leaves to install (present in `next` with a key absent from `prev`)
+||| and the callback ids to tear down (present in `prev` with a key
+||| absent from `next`).
+|||
+||| A leaf whose `SubKey` is unchanged is a no-op: its browser listener
+||| is already live and is left untouched. A same-cbId leaf with changed
+||| params (e.g. `Every "t" 1000` -> `Every "t" 500`) has a *different*
+||| key on each side, so it appears in BOTH lists — the runtime tears the
+||| old resource down first, then installs the new one, leaving exactly
+||| one live resource at the new params.
+export
+diffSubs : List (Sub msg) -> List (Sub msg)
+        -> (List (Sub msg), List String)
+diffSubs prev next =
+  let prevKeys = mapMaybe subKey prev
+      nextKeys = mapMaybe subKey next
+      toInstall  = filter (\s => case subKey s of
+                                   Nothing => False
+                                   Just k  => not (elem k prevKeys)) next
+      toTeardown = mapMaybe (\s => case subKey s of
+                                     Nothing => Nothing
+                                     Just k  => if elem k nextKeys
+                                                  then Nothing
+                                                  else subCallbackId s) prev
+   in (toInstall, toTeardown)

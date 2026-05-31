@@ -25,6 +25,7 @@
 module TEAWeb.Runtime
 
 import Data.IORef
+import Data.List
 import Cribrum.Node
 import Cribrum.Render.Dom
 import TEAWeb.Html
@@ -73,25 +74,37 @@ blurElement id = primIO (prim__blurElement id)
 -- code in anger.
 --------------------------------------------------------------------------------
 
+-- Each installer captures its teardown handle into a per-cbId registry
+-- (`window.__cribrumSubHandles[cbId]`) so `prim__teardownSub` can later
+-- remove the listener / clear the timer / cancel the frame loop. The
+-- keydown/keyup variants must store the *listener fn reference* itself
+-- (removeEventListener matches by identity); the rAF variant stores a
+-- `cancelled` flag the loop checks before re-scheduling (a bare
+-- cancelAnimationFrame races a frame already queued).
+
 %foreign "scheme:(lambda (_) 0)"
-         "browser:lambda:(cbId)=>{ document.addEventListener('keydown', (ev)=>{ window.__cribrumKey = (ev && typeof ev.key === 'string') ? ev.key : ''; if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, ev); } }); }"
+         "browser:lambda:(cbId)=>{ window.__cribrumSubHandles = window.__cribrumSubHandles || {}; const fn = (ev)=>{ window.__cribrumKey = (ev && typeof ev.key === 'string') ? ev.key : ''; if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, ev); } }; document.addEventListener('keydown', fn); window.__cribrumSubHandles[cbId] = { kind: 'keydown', fn: fn }; }"
 prim__installSubKeyDown : String -> PrimIO ()
 
 %foreign "scheme:(lambda (_) 0)"
-         "browser:lambda:(cbId)=>{ document.addEventListener('keyup', (ev)=>{ window.__cribrumKey = (ev && typeof ev.key === 'string') ? ev.key : ''; if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, ev); } }); }"
+         "browser:lambda:(cbId)=>{ window.__cribrumSubHandles = window.__cribrumSubHandles || {}; const fn = (ev)=>{ window.__cribrumKey = (ev && typeof ev.key === 'string') ? ev.key : ''; if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, ev); } }; document.addEventListener('keyup', fn); window.__cribrumSubHandles[cbId] = { kind: 'keyup', fn: fn }; }"
 prim__installSubKeyUp : String -> PrimIO ()
 
 %foreign "scheme:(lambda (_) 0)"
-         "browser:lambda:(cbId)=>{ const step = (ts)=>{ window.__cribrumTimestamp = Number(ts); if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, {}); } requestAnimationFrame(step); }; requestAnimationFrame(step); }"
+         "browser:lambda:(cbId)=>{ window.__cribrumSubHandles = window.__cribrumSubHandles || {}; const h = { kind: 'raf', cancelled: false, raf: 0 }; const step = (ts)=>{ if (h.cancelled) return; window.__cribrumTimestamp = Number(ts); if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, {}); } if (!h.cancelled) { h.raf = requestAnimationFrame(step); } }; window.__cribrumSubHandles[cbId] = h; h.raf = requestAnimationFrame(step); }"
 prim__installSubAnimationFrame : String -> PrimIO ()
 
 %foreign "scheme:(lambda (_,_) 0)"
-         "browser:lambda:(cbId,period)=>{ setInterval(()=>{ window.__cribrumTimestamp = Number(Date.now()); if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, {}); } }, period); }"
+         "browser:lambda:(cbId,period)=>{ window.__cribrumSubHandles = window.__cribrumSubHandles || {}; const id = setInterval(()=>{ window.__cribrumTimestamp = Number(Date.now()); if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, {}); } }, period); window.__cribrumSubHandles[cbId] = { kind: 'interval', id: id }; }"
 prim__installSubInterval : String -> Integer -> PrimIO ()
 
 %foreign "scheme:(lambda (_,_) 0)"
-         "browser:lambda:(cbId,portName)=>{ window.__cribrumPorts = window.__cribrumPorts || {}; window.__cribrumPorts[portName] = (msg)=>{ window.__cribrumPortMsg = String(msg); if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, {}); } }; }"
+         "browser:lambda:(cbId,portName)=>{ window.__cribrumSubHandles = window.__cribrumSubHandles || {}; window.__cribrumPorts = window.__cribrumPorts || {}; window.__cribrumPorts[portName] = (msg)=>{ window.__cribrumPortMsg = String(msg); if (typeof window.__cribrumDispatch === 'function') { window.__cribrumDispatch(cbId, {}); } }; window.__cribrumSubHandles[cbId] = { kind: 'port', portName: portName }; }"
 prim__installSubPort : String -> String -> PrimIO ()
+
+%foreign "scheme:(lambda (_) 0)"
+         "browser:lambda:(cbId)=>{ const r = (window.__cribrumSubHandles || {})[cbId]; if (!r) return; if (r.kind === 'keydown') { document.removeEventListener('keydown', r.fn); } else if (r.kind === 'keyup') { document.removeEventListener('keyup', r.fn); } else if (r.kind === 'raf') { r.cancelled = true; if (r.raf) cancelAnimationFrame(r.raf); } else if (r.kind === 'interval') { clearInterval(r.id); } else if (r.kind === 'port') { if (window.__cribrumPorts) { delete window.__cribrumPorts[r.portName]; } } delete window.__cribrumSubHandles[cbId]; }"
+prim__teardownSub : String -> PrimIO ()
 
 installSubKeyDown : String -> IO ()
 installSubKeyDown cb = primIO (prim__installSubKeyDown cb)
@@ -108,6 +121,11 @@ installSubInterval cb period = primIO (prim__installSubInterval cb period)
 installSubPort : String -> String -> IO ()
 installSubPort cb name = primIO (prim__installSubPort cb name)
 
+||| Tear down the browser resource a leaf opened, keyed by callback id.
+export
+teardownSub : String -> IO ()
+teardownSub cb = primIO (prim__teardownSub cb)
+
 ||| Walk a `Sub msg` tree, install one browser-side listener per leaf,
 ||| and build the matching `(callbackId, Event -> IO msg)` entries the
 ||| dispatcher consults to project each delivery back to `msg`.
@@ -117,37 +135,46 @@ installSubPort cb name = primIO (prim__installSubPort cb name)
 ||| for Port) before applying the user's `String -> msg` / `Double ->
 ||| msg` callback.
 |||
-||| MVP-grade: install fires once at mount. Sub-tree diff across
-||| renders (add/remove listeners as `subscriptions model` changes)
-||| arrives with keyed-children reconcile; until then `subscriptions`
-||| is effectively read once at startup. Leaves the existing
-||| `None`-only counter demo wholly unaffected.
+||| The dispatch-table entry for one leaf: its callback id paired with a
+||| projection closure that reads the right window slot and applies the
+||| leaf's `... -> msg`. PURE (no FFI) — rebuilt from the latest leaf set
+||| every render so projection changes are picked up without reinstalling
+||| the browser listener. `None` / `Batch` have no entry.
 export
-installSubs : Sub msg -> IO (List (String, Event -> IO msg))
-installSubs None         = pure []
-installSubs (Batch subs) =
-  assert_total
-    (foldlM
-       (\acc, s => do
-          entries <- installSubs s
-          pure (acc ++ entries))
-       []
-       subs)
-installSubs (OnKeyDown cb proj) = do
-  installSubKeyDown cb
-  pure [(cb, \ev => map proj currentEventKey)]
-installSubs (OnKeyUp cb proj) = do
-  installSubKeyUp cb
-  pure [(cb, \ev => map proj currentEventKey)]
-installSubs (OnAnimationFrame cb proj) = do
-  installSubAnimationFrame cb
-  pure [(cb, \ev => map proj currentEventTimestamp)]
-installSubs (Every cb period proj) = do
-  installSubInterval cb period
-  pure [(cb, \ev => map proj currentEventTimestamp)]
-installSubs (Port cb portName proj) = do
-  installSubPort cb portName
-  pure [(cb, \ev => map proj currentEventPortMsg)]
+leafEntry : Sub msg -> Maybe (String, Event -> IO msg)
+leafEntry None                   = Nothing
+leafEntry (Batch _)              = Nothing
+leafEntry (OnKeyDown cb proj)    = Just (cb, \ev => map proj currentEventKey)
+leafEntry (OnKeyUp cb proj)      = Just (cb, \ev => map proj currentEventKey)
+leafEntry (OnAnimationFrame cb proj) = Just (cb, \ev => map proj currentEventTimestamp)
+leafEntry (Every cb _ proj)      = Just (cb, \ev => map proj currentEventTimestamp)
+leafEntry (Port cb _ proj)       = Just (cb, \ev => map proj currentEventPortMsg)
+
+||| Build the dispatch table for a whole leaf list (drops structural
+||| nodes). Pure projection-building; no browser side effects.
+export
+leafEntries : List (Sub msg) -> List (String, Event -> IO msg)
+leafEntries = mapMaybe leafEntry
+
+||| Install the browser-side resource for each leaf (FFI only — the
+||| dispatch entries are built separately by `leafEntries`). Called with
+||| the *flattened* leaf list; `None` / `Batch` never reach here.
+export
+installSubLeaf : Sub msg -> IO ()
+installSubLeaf None                   = pure ()
+installSubLeaf (Batch _)              = pure ()
+installSubLeaf (OnKeyDown cb _)       = installSubKeyDown cb
+installSubLeaf (OnKeyUp cb _)         = installSubKeyUp cb
+installSubLeaf (OnAnimationFrame cb _) = installSubAnimationFrame cb
+installSubLeaf (Every cb period _)    = installSubInterval cb period
+installSubLeaf (Port cb portName _)   = installSubPort cb portName
+
+||| Install every leaf in a list. Used at mount for the initial set and
+||| in the dispatcher for the newly-appeared leaves of a re-evaluated
+||| `subscriptions`.
+export
+installSubsLeaves : List (Sub msg) -> IO ()
+installSubsLeaves = assert_total (traverse_ installSubLeaf)
 
 --------------------------------------------------------------------------------
 -- Runtime state.
@@ -171,6 +198,12 @@ record RuntimeState (m : Type) (ms : Type) where
   tree         : HExpr
   handlers     : List (String, Event -> IO ms)
   subHandlers  : List (String, Event -> IO ms)
+  ||| The flattened leaf set currently installed. Diffed against
+  ||| `flatten (subscriptions newModel)` after each update so vanished
+  ||| leaves are torn down and new ones installed. Holds whole leaves
+  ||| (not just cbIds) because teardown needs the variant and reinstall
+  ||| needs the projection.
+  prevSubs     : List (Sub ms)
   cmdHandlers  : List (String, Event -> IO ms)
   nextId       : Integer
   host         : DomNode
@@ -290,11 +323,14 @@ mount prog hostId = do
   let initialView                = prog.view initialModel
   -- Mount the initial DOM.
   mountInto host (tree initialView)
-  -- Install the initial subscription set; the resulting (cbId,
-  -- handler) entries persist across renders in `subHandlers` so the
-  -- dispatcher can find them on Sub-driven deliveries even after
-  -- view-handler refreshes.
-  subHs <- installSubs (prog.subscriptions initialModel)
+  -- Install the initial subscription set. The flattened leaf list is
+  -- kept in `prevSubs` so each later render can diff `subscriptions
+  -- newModel` against it (install new leaves, tear down vanished ones).
+  -- `subHandlers` holds the projection table, rebuilt from the latest
+  -- leaves every render so projection changes are picked up for free.
+  let initialSubs = flatten (prog.subscriptions initialModel)
+  installSubsLeaves initialSubs
+  let subHs = leafEntries initialSubs
   -- Initialise the mutable state. `model` lives here, never escapes.
   stateRef <-
     newIORef
@@ -303,6 +339,7 @@ mount prog hostId = do
         (tree initialView)
         (handlers initialView)
         subHs
+        initialSubs
         []          -- cmdHandlers: no async Cmds in flight yet
         0           -- nextId
         host)
@@ -351,13 +388,27 @@ mount prog hostId = do
         let prevTree = RuntimeState.tree s1
         let dirty = nextTree /= prevTree
         when dirty (reconcile s1.host prevTree nextTree)
+        -- Re-evaluate subscriptions for the new model and diff against
+        -- the currently-installed leaves. Tear down vanished leaves
+        -- FIRST (so a same-cbId leaf whose params changed clears its old
+        -- browser resource before the reinstall opens the new one), then
+        -- install the newly-appeared leaves. `subHandlers` is rebuilt
+        -- wholesale from the next leaf set so survivors keep firing with
+        -- their current projection and dropped leaves stop being looked
+        -- up.
+        let nextSubs           = flatten (prog.subscriptions newModel)
+        let (toInst, toTear)   = diffSubs s1.prevSubs nextSubs
+        traverse_ teardownSub toTear
+        installSubsLeaves toInst
+        let nextSubHandlers    = leafEntries nextSubs
         writeIORef
           stateRef
           (MkRuntimeState
             newModel
             nextTree
             (handlers nextView)
-            s1.subHandlers
+            nextSubHandlers
+            nextSubs
             s1.cmdHandlers
             s1.nextId
             s1.host)

@@ -17,7 +17,9 @@ modules = Test.TEAWeb.Html
         , Test.TEAWeb.Event
         , Test.TEAWeb.Cmd
         , Test.TEAWeb.Sub
+        , Test.TEAWeb.SubDiff
         , Test.TEAWeb.Ports
         , Test.TEAWeb.Keyed
+        , Test.TEAWeb.AttrDiff
         , Test.TEAWeb.Program
         , Main

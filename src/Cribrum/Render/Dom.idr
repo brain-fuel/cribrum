@@ -26,6 +26,7 @@
 module Cribrum.Render.Dom
 
 import Data.List
+import Data.Maybe
 import Data.String
 import Cribrum.Node
 
@@ -69,7 +70,16 @@ prim__setAttribute : DomNode -> String -> String -> PrimIO ()
 %foreign "browser:lambda:(node,name)=>node.removeAttribute(name)"
 prim__removeAttribute : DomNode -> String -> PrimIO ()
 
-%foreign "browser:lambda:(node,evt,cbId)=>node.addEventListener(evt,(e)=>{ if(typeof window.__cribrumDispatch==='function'){ window.__cribrumDispatch(cbId,e) } })"
+-- The listener reads the *current* callback id from the node's
+-- `data-on-<event>` attribute on every dispatch rather than capturing
+-- `cbId` by value. This makes the listener stable across in-place
+-- reconciles: an attribute-only diff that rewrites `data-on-<event>`
+-- redirects the handler with no need to remove/re-add the listener. A
+-- handler removed from the view clears the attribute, and the `c` guard
+-- makes the now-orphaned listener inert. `cbId` is still passed (and
+-- written to the attribute by `applyAttr`) so a freshly-rendered node
+-- dispatches correctly before any diff runs.
+%foreign "browser:lambda:(node,evt,cbId)=>node.addEventListener(evt,(e)=>{ var c=node.getAttribute&&node.getAttribute('data-on-'+evt); if(c&&typeof window.__cribrumDispatch==='function'){ window.__cribrumDispatch(c,e) } })"
 prim__addEventListener : DomNode -> String -> String -> PrimIO ()
 
 %foreign "browser:lambda:(parent,child)=>parent.appendChild(child)"
@@ -104,6 +114,24 @@ prim__childCount : DomNode -> PrimIO Int
 %foreign "scheme:(lambda (p,i) p)"
          "browser:lambda:(parent,i)=>parent.children[i]"
 prim__childAt : DomNode -> Int -> PrimIO DomNode
+
+-- In-place-diff building blocks. `childNode*` walk ALL child nodes
+-- (text + comment + element), unlike `childCount`/`childAt` which are
+-- element-only — the positional differ must line up against text nodes
+-- too, e.g. `<p>hi <b>x</b></p>`. `setNodeValue` updates a Text/Comment
+-- node's content without replacing the node (preserves identity).
+
+%foreign "scheme:(lambda (n,s) 0)"
+         "browser:lambda:(node,text)=>{ node.nodeValue=text; return 0; }"
+prim__setNodeValue : DomNode -> String -> PrimIO Int
+
+%foreign "scheme:(lambda (p) 0)"
+         "browser:lambda:(parent)=>parent.childNodes.length"
+prim__childNodeCount : DomNode -> PrimIO Int
+
+%foreign "scheme:(lambda (p,i) p)"
+         "browser:lambda:(parent,i)=>parent.childNodes[i]"
+prim__childNodeAt : DomNode -> Int -> PrimIO DomNode
 
 %foreign "browser:lambda:(parent)=>{ while(parent.firstChild){ parent.removeChild(parent.firstChild) } }"
 prim__clearChildren : DomNode -> PrimIO ()
@@ -408,6 +436,22 @@ export
 childAt : DomNode -> Int -> IO DomNode
 childAt n i = fromPrim (prim__childAt n i)
 
+||| Set a Text/Comment node's content in place (no node replacement).
+export
+setNodeValue : DomNode -> String -> IO ()
+setNodeValue n s = ignore (fromPrim (prim__setNodeValue n s))
+
+||| Number of child *nodes* (text + comment + element) of a node.
+export
+childNodeCount : DomNode -> IO Int
+childNodeCount n = fromPrim (prim__childNodeCount n)
+
+||| The child *node* at index `i` (0-based; into `.childNodes`, so it
+||| includes text and comment nodes — unlike `childAt`).
+export
+childNodeAt : DomNode -> Int -> IO DomNode
+childNodeAt n i = fromPrim (prim__childNodeAt n i)
+
 --------------------------------------------------------------------------------
 -- Render: HExpr -> DOM.
 --------------------------------------------------------------------------------
@@ -444,23 +488,6 @@ renderDom (Element tag attrs children) = do
 --------------------------------------------------------------------------------
 -- Reconcile: swap one tree for another under a host node.
 --------------------------------------------------------------------------------
-
-||| Day-1 implementation: blow away the host's children and rebuild from
-||| scratch. The `_previous` HExpr is accepted now for signature stability
-||| — Day-2 (keyed-children + shallow attr diff) will use it.
-|||
-||| This is the *only* function in the renderer that has to change when
-||| diff strategy evolves. Mount, render, and FFI all stay put.
-export
-reconcile : (host : DomNode) -> (previous : HExpr) -> (next : HExpr) -> IO ()
-reconcile host _ next = do
-  captureFocus
-  captureScrolls
-  clearChildren host
-  fresh <- renderDom next
-  appendChild host fresh
-  restoreScrolls
-  restoreFocus
 
 ||| Convenience for an initial mount with no previous tree.
 export
@@ -538,47 +565,282 @@ reusableKeys prevs nexts =
                               Nothing   => Nothing)
         nexts
 
-||| Place one new child under `c`: reuse its live keyed node when its key
-||| is reusable (appendChild of an attached node MOVES it), else render
-||| fresh.
-placeKeyedChild :
-     (c : DomNode) -> (keyed : List (String, DomNode)) -> (reusable : List String)
-  -> HExpr -> IO ()
-placeKeyedChild c keyed reusable h = case hexprKey h of
-  Just k => if elem k reusable
-              then case lookupKeyed k keyed of
-                     Just node => ignore (appendChild c node)
-                     Nothing   => do fresh <- renderDom h; appendChild c fresh
-              else do fresh <- renderDom h; appendChild c fresh
-  Nothing => do fresh <- renderDom h; appendChild c fresh
-
 ||| Remove a snapshotted keyed node iff its key is not being reused.
 removeStaleKeyed : (c : DomNode) -> (reusable : List String) -> (String, DomNode) -> IO ()
 removeStaleKeyed c reusable (k, node) =
   if elem k reusable then pure () else ignore (removeChild c node)
 
-||| Diff `container`'s direct element children against `next` (the new
-||| child HExpr list) and `previous` (the old one), reusing live DOM
-||| nodes for keys whose HExpr is unchanged.
-|||
-||| Strategy: snapshot the container's keyed children, compute the
-||| reuse set (keys with byte-identical HExpr on both sides), then walk
-||| `next` in order, appending either the reused live node (appendChild
-||| of an already-attached node MOVES it, so re-appending in `next`
-||| order yields the correct final ordering with no `insertBefore`
-||| bookkeeping) or a freshly-rendered node. Finally remove any old
-||| keyed node not reused. Reused nodes keep their listeners + DOM state
-||| (focus, scroll, input value) intact; this is the keyed-reconcile
-||| win over blow-and-rebuild.
+--------------------------------------------------------------------------------
+-- In-place diff (D2): pure edit computation + child strategy choice.
+--------------------------------------------------------------------------------
+
+||| The DOM attribute name an `HAttr` is written under by `applyAttr`: a
+||| plain `Str` attr uses its own name; a `Handler` is written under the
+||| synthetic `data-on-<event>` name (NOT the HAttr's `name` field, which
+||| `applyAttr` ignores for handlers). The diff must match attrs by this
+||| name to line up with how they were rendered.
 export
-reconcileKeyedChildren :
-     (container : DomNode)
-  -> (previous : List HExpr)
-  -> (next : List HExpr)
-  -> IO ()
-reconcileKeyedChildren container previous next = do
-  n     <- childCount container
-  keyed <- keyedSnapshot container 0 n
-  let reusable = reusableKeys previous next
-  traverse_ (placeKeyedChild container keyed reusable) next
-  traverse_ (removeStaleKeyed container reusable) keyed
+attrDomName : HAttr -> String
+attrDomName (MkHAttr name (Str _))         = name
+attrDomName (MkHAttr _    (Handler ev _))  = "data-on-" ++ ev
+
+||| A single attribute mutation produced by `diffAttrs`. `AddHandler`
+||| (first appearance) attaches the listener; `UpdateHandler` only
+||| rewrites the `data-on-<event>` attribute — the live-reading listener
+||| shim picks up the new callback id with no re-attach. Removals clear
+||| the attribute (a removed handler's orphaned listener reads a null
+||| attribute and is inert).
+public export
+data AttrEdit
+  = SetStr        String String        -- name, value
+  | AddHandler    String String String -- event, data-on-name, cbId
+  | UpdateHandler String String        -- data-on-name, cbId
+  | RemoveAttr    String               -- DOM name
+  | RemoveHandler String               -- data-on-name
+
+public export
+Eq AttrEdit where
+  SetStr a b        == SetStr c d        = a == c && b == d
+  AddHandler a b c  == AddHandler d e f  = a == d && b == e && c == f
+  UpdateHandler a b == UpdateHandler c d = a == c && b == d
+  RemoveAttr a      == RemoveAttr b      = a == b
+  RemoveHandler a   == RemoveHandler b   = a == b
+  _                 == _                 = False
+
+public export
+Show AttrEdit where
+  show (SetStr a b)        = "SetStr " ++ show a ++ " " ++ show b
+  show (AddHandler a b c)  = "AddHandler " ++ show a ++ " " ++ show b ++ " " ++ show c
+  show (UpdateHandler a b) = "UpdateHandler " ++ show a ++ " " ++ show b
+  show (RemoveAttr a)      = "RemoveAttr " ++ show a
+  show (RemoveHandler a)   = "RemoveHandler " ++ show a
+
+||| Find an attr in a list by its DOM name.
+lookupAttrByDom : String -> List HAttr -> Maybe HAttr
+lookupAttrByDom _    []        = Nothing
+lookupAttrByDom dom (a :: as)  =
+  if attrDomName a == dom then Just a else lookupAttrByDom dom as
+
+||| The edit needed to bring a single `next` attr into being, given what
+||| (if anything) was present under the same DOM name before.
+editForNext : (prev : List HAttr) -> HAttr -> Maybe AttrEdit
+editForNext prev a@(MkHAttr name (Str v)) =
+  case lookupAttrByDom (attrDomName a) prev of
+    Just old => if old == a then Nothing else Just (SetStr name v)
+    Nothing  => Just (SetStr name v)
+editForNext prev a@(MkHAttr _ (Handler ev cb)) =
+  let dom = attrDomName a in
+  case lookupAttrByDom dom prev of
+    Just (MkHAttr _ (Handler ev' cb')) =>
+      if ev == ev' && cb == cb' then Nothing else Just (UpdateHandler dom cb)
+    Just _  => Just (AddHandler ev dom cb)   -- was a Str under this name: attach listener
+    Nothing => Just (AddHandler ev dom cb)
+
+||| The removal needed for a `prev` attr whose DOM name is gone from `next`.
+removalForGone : (next : List HAttr) -> HAttr -> Maybe AttrEdit
+removalForGone next a =
+  let dom = attrDomName a in
+  case lookupAttrByDom dom next of
+    Just _  => Nothing
+    Nothing => case a of
+                 MkHAttr _ (Str _)       => Just (RemoveAttr dom)
+                 MkHAttr _ (Handler _ _) => Just (RemoveHandler dom)
+
+||| Minimal edit list turning the `previous` attr set into `next`. Pure;
+||| matched by DOM name (so handlers line up under `data-on-<event>`).
+export
+diffAttrs : (previous : List HAttr) -> (next : List HAttr) -> List AttrEdit
+diffAttrs previous next =
+  mapMaybe (editForNext previous) next
+    ++ mapMaybe (removalForGone next) previous
+
+||| Whether a child list carries a duplicate `data-key` — if so the keyed
+||| path can't trust first-match lookup and we fall back to positional.
+export
+hasDuplicateKeys : List HExpr -> Bool
+hasDuplicateKeys hs = go (mapMaybe hexprKey hs)
+  where
+    go : List String -> Bool
+    go []        = False
+    go (k :: ks) = elem k ks || go ks
+
+||| How to diff one container's children.
+public export
+data ChildStrategy = Keyed | Positional
+
+public export
+Eq ChildStrategy where
+  Keyed      == Keyed      = True
+  Positional == Positional = True
+  _          == _          = False
+
+public export
+Show ChildStrategy where
+  show Keyed      = "Keyed"
+  show Positional = "Positional"
+
+||| Choose the keyed strategy only when BOTH child lists are uniformly
+||| element-keyed (every child is an element carrying a distinct
+||| `data-key`). Any unkeyed/text/comment child, or a duplicate key, on
+||| either side forces the positional path — the minimal-correct boundary
+||| for mixed lists.
+export
+chooseChildStrategy : List HExpr -> List HExpr -> ChildStrategy
+chooseChildStrategy prev next =
+  if uniform prev && uniform next then Keyed else Positional
+  where
+    uniform : List HExpr -> Bool
+    uniform hs =
+      all (\h => isJust (hexprKey h)) hs && not (hasDuplicateKeys hs)
+
+--------------------------------------------------------------------------------
+-- In-place diff (D1 + D2): recursive node/children reconcile. Mutually
+-- recursive, so grouped; `assert_total` guards the structural recursion
+-- the way `renderDom` does.
+--------------------------------------------------------------------------------
+
+||| Apply one attribute edit to a live node.
+applyAttrEdit : DomNode -> AttrEdit -> IO ()
+applyAttrEdit node (SetStr name v)        = setAttribute node name v
+applyAttrEdit node (AddHandler ev dom cb) = do
+  setAttribute node dom cb
+  addEventListener node ev cb
+applyAttrEdit node (UpdateHandler dom cb) = setAttribute node dom cb
+applyAttrEdit node (RemoveAttr dom)       = removeAttribute node dom
+applyAttrEdit node (RemoveHandler dom)    = removeAttribute node dom
+
+mutual
+  ||| Diff one live node (`current`, representing `previous`) toward
+  ||| `next`. Same-tag elements diff attrs + children in place; text /
+  ||| comment content updates in place; anything else (tag change,
+  ||| text<->element, Raw change) is replaced wholesale.
+  export
+  diffNode : (parent : DomNode) -> (current : DomNode)
+          -> (previous : HExpr) -> (next : HExpr) -> IO ()
+  diffNode parent current previous next =
+    case (previous, next) of
+      (Text a, Text b) =>
+        when (a /= b) (setNodeValue current b)
+      (Comment a, Comment b) =>
+        when (a /= b) (setNodeValue current b)
+      (Element t pa pcs, Element u na ncs) =>
+        if t == u
+          then do
+            traverse_ (applyAttrEdit current) (diffAttrs pa na)
+            assert_total (diffChildren current pcs ncs)
+          else replaceWith parent current next
+      _ =>
+        if previous == next then pure () else replaceWith parent current next
+
+  ||| Replace the live `current` node under `parent` with a fresh render
+  ||| of `next`.
+  replaceWith : (parent : DomNode) -> (current : DomNode) -> (next : HExpr) -> IO ()
+  replaceWith parent current next = do
+    fresh <- renderDom next
+    ignore (replaceChild parent fresh current)
+
+  ||| Diff a container's children, choosing the keyed or positional
+  ||| strategy.
+  export
+  diffChildren : (parent : DomNode)
+              -> (previous : List HExpr) -> (next : List HExpr) -> IO ()
+  diffChildren parent previous next =
+    case chooseChildStrategy previous next of
+      Keyed      => reconcileKeyedChildren parent previous next
+      Positional => diffChildrenPositional parent previous next 0
+
+  ||| Positional child diff over `.childNodes` (element + text + comment),
+  ||| lockstep by index. Shared prefix is diffed in place; a longer
+  ||| `next` appends the tail; a longer `previous` removes its tail
+  ||| (highest index first so earlier indices stay valid).
+  diffChildrenPositional : (parent : DomNode)
+                        -> (previous : List HExpr) -> (next : List HExpr)
+                        -> (i : Int) -> IO ()
+  diffChildrenPositional parent (p :: ps) (n :: ns) i = do
+    live <- childNodeAt parent i
+    assert_total (diffNode parent live p n)
+    assert_total (diffChildrenPositional parent ps ns (i + 1))
+  diffChildrenPositional parent [] (n :: ns) i = do
+    fresh <- renderDom n
+    appendChild parent fresh
+    assert_total (diffChildrenPositional parent [] ns (i + 1))
+  diffChildrenPositional parent prev [] i =
+    -- Remove the leftover live tail [i, i+len prev). Remove from the end
+    -- so earlier indices don't shift under us.
+    removeTailFrom parent i (cast (length prev))
+  diffChildrenPositional _ [] [] _ = pure ()
+
+  ||| Remove `count` child nodes starting at `start`, highest index first.
+  removeTailFrom : (parent : DomNode) -> (start : Int) -> (count : Nat) -> IO ()
+  removeTailFrom _      _     Z         = pure ()
+  removeTailFrom parent start (S k) = do
+    node <- childNodeAt parent (start + cast k)
+    ignore (removeChild parent node)
+    assert_total (removeTailFrom parent start k)
+
+  ||| Place one `next` child under `c`. A key present on both sides reuses
+  ||| the live node: byte-identical => move it untouched; changed => move
+  ||| it AND diff in place (preserving identity + listeners). A new/unkeyed
+  ||| child renders fresh.
+  placeKeyedChild :
+       (c : DomNode) -> (keyed : List (String, DomNode))
+    -> (prevByKey : List (String, HExpr)) -> (reusable : List String)
+    -> HExpr -> IO ()
+  placeKeyedChild c keyed prevByKey reusable h = case hexprKey h of
+    Just k =>
+      case lookupKeyed k keyed of
+        Just node =>
+          if elem k reusable
+            then ignore (appendChild c node)   -- byte-identical: move only
+            else do
+              ignore (appendChild c node)       -- moved into next-order...
+              case lookup k prevByKey of        -- ...then diffed in place
+                Just oldH => assert_total (diffNode c node oldH h)
+                Nothing   => pure ()
+        Nothing => do fresh <- renderDom h; appendChild c fresh
+    Nothing => do fresh <- renderDom h; appendChild c fresh
+
+  ||| Diff `container`'s direct element children by `data-key`. Keys on
+  ||| both sides reuse their live node (moved into `next` order via
+  ||| `appendChild`); byte-identical keys are left untouched, changed keys
+  ||| are diffed in place; new keys render fresh; vanished keys are
+  ||| removed. Reused nodes keep DOM state (focus, scroll, input value)
+  ||| and their listeners.
+  export
+  reconcileKeyedChildren :
+       (container : DomNode)
+    -> (previous : List HExpr)
+    -> (next : List HExpr)
+    -> IO ()
+  reconcileKeyedChildren container previous next = do
+    n     <- childCount container
+    keyed <- keyedSnapshot container 0 n
+    let reusable  = reusableKeys previous next
+    let prevByKey = mapMaybe (\h => map (\k => (k, h)) (hexprKey h)) previous
+    traverse_ (placeKeyedChild container keyed prevByKey reusable) next
+    traverse_ (removeStaleKeyed container reusable) keyed
+
+--------------------------------------------------------------------------------
+-- Reconcile entry point (the only function the runtime calls to apply a
+-- render). Defined after the diff machinery so it needs no forward refs.
+--------------------------------------------------------------------------------
+
+||| In-place reconcile (D1+D2): the host holds exactly one rendered root
+||| child (from `mountInto` or a prior reconcile). Locate it and diff it
+||| against `next` via `diffNode`, mutating the live tree in place so DOM
+||| identity (focus, scroll, input value, listeners) survives. Falls back
+||| to a fresh mount if the host is unexpectedly empty.
+|||
+||| No focus/scroll capture-restore bracket: in-place diff never destroys
+||| the focused node, so re-focusing is unnecessary and would stomp a
+||| selection the user changed mid-update. The Day-1 blow-and-rebuild
+||| bracket retires exactly as its comments predicted.
+export
+reconcile : (host : DomNode) -> (previous : HExpr) -> (next : HExpr) -> IO ()
+reconcile host previous next = do
+  n <- childNodeCount host
+  if n <= 0
+    then mountInto host next
+    else do
+      root <- childNodeAt host 0
+      diffNode host root previous next
