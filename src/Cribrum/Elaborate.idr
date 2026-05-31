@@ -41,7 +41,7 @@ import public Cribrum.AA.Typed
 ||| Structurally-decidable accessibility, per plan.dj §Phase 4: the conjunct
 ||| of every Structural rule from `Cribrum.AA.Catalog`, promoted to a type
 ||| via `Cribrum.AA.Typed`. A value of this type witnesses that the tree
-||| passes all 21 propositions.
+||| passes all 27 propositions.
 public export
 StructuralAA : HExpr -> Type
 StructuralAA h =
@@ -65,7 +65,13 @@ StructuralAA h =
   , ObjectNamesAllOk   h
   , ThScopesAllOk      h
   , ThHasNamesAllOk    h
-  , NoEmptyHeadingsAllOk h
+  , NoEmptyHeadingsAllOk   h
+  , SelectHasOptionsAllOk  h
+  , CaptionFirstChildAllOk h
+  , InputButtonNamesAllOk  h
+  , AriaHiddenBodyAllOk    h
+  , AriaRolesAllOk         h
+  , AutocompletesAllOk     h
   )
 
 --------------------------------------------------------------------------------
@@ -217,10 +223,29 @@ decStructuralAA h = case decImgsAllOk h of
                                         Yes p20 => case decNoEmptyHeadingsAllOk h of
                                           No  _   => Left ("no-empty-heading",
                                                             pathOfFirstFailing noEmptyHeadingOkBool h)
-                                          Yes p21 => Right (p1, p2, p3, p4, p5, p6, p7
-                                                           , p8, p9, p10, p11
-                                                           , p12, p13, p14, p15, p16
-                                                           , p17, p18, p19, p20, p21)
+                                          Yes p21 => case decSelectHasOptionsAllOk h of
+                                            No  _   => Left ("select-has-options",
+                                                              pathOfFirstFailing selectHasOptionsOkBool h)
+                                            Yes p22 => case decCaptionFirstChildAllOk h of
+                                              No  _   => Left ("caption-first-child",
+                                                                pathOfFirstFailing captionFirstChildOkBool h)
+                                              Yes p23 => case decInputButtonNamesAllOk h of
+                                                No  _   => Left ("input-button-name",
+                                                                  pathOfFirstFailing inputButtonNameOkBool h)
+                                                Yes p24 => case decAriaHiddenBodyAllOk h of
+                                                  No  _   => Left ("aria-hidden-body",
+                                                                    pathOfFirstFailing ariaHiddenBodyOkBool h)
+                                                  Yes p25 => case decAriaRolesAllOk h of
+                                                    No  _   => Left ("aria-role-valid",
+                                                                      pathOfFirstFailing ariaRoleOkBool h)
+                                                    Yes p26 => case decAutocompletesAllOk h of
+                                                      No  _   => Left ("autocomplete-valid",
+                                                                        pathOfFirstFailing autocompleteOkBool h)
+                                                      Yes p27 => Right (p1, p2, p3, p4, p5, p6, p7
+                                                                       , p8, p9, p10, p11
+                                                                       , p12, p13, p14, p15, p16
+                                                                       , p17, p18, p19, p20, p21
+                                                                       , p22, p23, p24, p25, p26, p27)
 
 ||| Convert a Djot `Attrs` into the HTML attribute list. Emission
 ||| order (matching the reference Djot renderer):

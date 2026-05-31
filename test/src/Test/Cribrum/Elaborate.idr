@@ -294,6 +294,133 @@ ext_strict_accepts_clean_promoted_kinds = oneShot $
           failWith Nothing ("clean tree wrongly rejected: " ++ show other)
 
 --------------------------------------------------------------------------------
+-- Strict StructuralAA: the 6 round-2 rules promoted into the hard-error
+-- conjunct (select-has-options, caption-first-child, input-button-name,
+-- aria-hidden-body, aria-role-valid, autocomplete-valid). Each is per-node,
+-- so a violation surfaces with its catalog rule id + the located `Just path`
+-- of the offending node. A clean tree still passes the whole conjunct.
+--------------------------------------------------------------------------------
+
+||| A `<select>` with no `<option>` (directly or in an `<optgroup>`) is
+||| rejected with the `select-has-options` rule id, located at child 0.
+export
+ext_strict_rejects_select_no_options : Property
+ext_strict_rejects_select_no_options = oneShot $
+  let bad : HExpr
+      bad = Element "main" [] [Element "select" [] []]
+   in case decStructuralAA bad of
+        Right _                                  =>
+          failWith Nothing "expected select-has-options rejection"
+        Left ("select-has-options", Just [0]) => success
+        Left other                               =>
+          failWith Nothing ("wrong rule/path: " ++ show other)
+
+||| A `<table>` whose `<caption>` is NOT its first child element is
+||| rejected with the `caption-first-child` rule id, located.
+export
+ext_strict_rejects_caption_not_first : Property
+ext_strict_rejects_caption_not_first = oneShot $
+  let bad : HExpr
+      bad = Element "main" []
+              [Element "table" []
+                 [ Element "tr" [] [Element "td" [] [Text "x"]]
+                 , Element "caption" [] [Text "late"]
+                 ]]
+   in case decStructuralAA bad of
+        Right _                                   =>
+          failWith Nothing "expected caption-first-child rejection"
+        Left ("caption-first-child", Just [0]) => success
+        Left other                                =>
+          failWith Nothing ("wrong rule/path: " ++ show other)
+
+||| An `<input type="submit">` with no `value`/`aria-label`/`title`
+||| accessible name is rejected with the `input-button-name` rule id,
+||| located.
+export
+ext_strict_rejects_input_button_no_name : Property
+ext_strict_rejects_input_button_no_name = oneShot $
+  let bad : HExpr
+      bad = Element "main" []
+              [Element "input" [MkHAttr "type" (Str "submit")] []]
+   in case decStructuralAA bad of
+        Right _                                 =>
+          failWith Nothing "expected input-button-name rejection"
+        Left ("input-button-name", Just [0]) => success
+        Left other                              =>
+          failWith Nothing ("wrong rule/path: " ++ show other)
+
+||| A `<body aria-hidden="true">` hides the whole document from the
+||| accessibility tree and is rejected with the `aria-hidden-body` rule
+||| id, located.
+export
+ext_strict_rejects_aria_hidden_body : Property
+ext_strict_rejects_aria_hidden_body = oneShot $
+  let bad : HExpr
+      bad = Element "body" [MkHAttr "aria-hidden" (Str "true")] []
+   in case decStructuralAA bad of
+        Right _                                =>
+          failWith Nothing "expected aria-hidden-body rejection"
+        Left ("aria-hidden-body", Just []) => success
+        Left other                             =>
+          failWith Nothing ("wrong rule/path: " ++ show other)
+
+||| A `role="nonsense"` is not a defined WAI-ARIA role and is rejected
+||| with the `aria-role-valid` rule id, located at the offending node.
+export
+ext_strict_rejects_invalid_role : Property
+ext_strict_rejects_invalid_role = oneShot $
+  let bad : HExpr
+      bad = Element "main" []
+              [Element "span" [MkHAttr "role" (Str "nonsense")] [Text "x"]]
+   in case decStructuralAA bad of
+        Right _                                =>
+          failWith Nothing "expected aria-role-valid rejection"
+        Left ("aria-role-valid", Just [0]) => success
+        Left other                             =>
+          failWith Nothing ("wrong rule/path: " ++ show other)
+
+||| An `autocomplete="bogus"` value is not a known field-name token and
+||| is rejected with the `autocomplete-valid` rule id, located.
+export
+ext_strict_rejects_invalid_autocomplete : Property
+ext_strict_rejects_invalid_autocomplete = oneShot $
+  let bad : HExpr
+      bad = Element "main" []
+              [Element "input" [MkHAttr "autocomplete" (Str "bogus")] []]
+   in case decStructuralAA bad of
+        Right _                                  =>
+          failWith Nothing "expected autocomplete-valid rejection"
+        Left ("autocomplete-valid", Just [0]) => success
+        Left other                               =>
+          failWith Nothing ("wrong rule/path: " ++ show other)
+
+||| A clean tree exercising all six newly-promoted round-2 rules with
+||| valid forms passes the whole StructuralAA conjunct (Right). Guards
+||| against an over-eager rejection that would reject conformant trees.
+export
+ext_strict_accepts_clean_round2_kinds : Property
+ext_strict_accepts_clean_round2_kinds = oneShot $
+  let good : HExpr
+      good = Element "main" [MkHAttr "role" (Str "main")]
+               [ Element "select" []
+                   [Element "option" [] [Text "One"]]
+               , Element "table" []
+                   [ Element "caption" [] [Text "Cap"]
+                   , Element "tr" [] [Element "td" [] [Text "x"]]
+                   ]
+               , Element "input"
+                   [ MkHAttr "type" (Str "submit")
+                   , MkHAttr "value" (Str "Go")
+                   ] []
+               , Element "input"
+                   [MkHAttr "autocomplete" (Str "email")] []
+               ]
+   in case decStructuralAA good of
+        Right _    => success
+        Left other =>
+          failWith Nothing ("clean tree wrongly rejected: " ++ show other)
+
+--------------------------------------------------------------------------------
 -- PDDTs.
 --------------------------------------------------------------------------------
 
@@ -1303,6 +1430,13 @@ group = MkGroup "Cribrum.Elaborate"
   , ("ext_strict_rejects_empty_th",            ext_strict_rejects_empty_th)
   , ("ext_strict_rejects_empty_heading",       ext_strict_rejects_empty_heading)
   , ("ext_strict_accepts_clean_promoted_kinds", ext_strict_accepts_clean_promoted_kinds)
+  , ("ext_strict_rejects_select_no_options",   ext_strict_rejects_select_no_options)
+  , ("ext_strict_rejects_caption_not_first",   ext_strict_rejects_caption_not_first)
+  , ("ext_strict_rejects_input_button_no_name", ext_strict_rejects_input_button_no_name)
+  , ("ext_strict_rejects_aria_hidden_body",    ext_strict_rejects_aria_hidden_body)
+  , ("ext_strict_rejects_invalid_role",        ext_strict_rejects_invalid_role)
+  , ("ext_strict_rejects_invalid_autocomplete", ext_strict_rejects_invalid_autocomplete)
+  , ("ext_strict_accepts_clean_round2_kinds",  ext_strict_accepts_clean_round2_kinds)
   , ("pddt_heading_tags",                      pddt_heading_tags)
   , ("pddt_inline_mapping",                    pddt_inline_mapping)
   , ("ext_inline_math_span",                   ext_inline_math_span)
