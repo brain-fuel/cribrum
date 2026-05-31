@@ -253,3 +253,7 @@ src/TEAWeb/Sub.idr	elem k nextKeys	not (elem k nextKeys)	diffSubs teardown detec
 src/Cribrum/Render/Dom.idr	uniform prev && uniform next	uniform prev || uniform next	chooseChildStrategy: && -> || (mixed lists wrongly keyed)
 src/Cribrum/Render/Dom.idr	elem k ks || go ks	elem k ks && go ks	hasDuplicateKeys: || -> && (never reports a duplicate)
 src/Cribrum/Render/Dom.idr	if old == a then Nothing	if old /= a then Nothing	diffAttrs: unchanged-attr test inverted (spurious edits / drops real)
+src/Cribrum/AA/Pass.idr	toLower v == "image" && not (hasNonEmptyAttr "alt" attrs)	toLower v == "image" && (hasNonEmptyAttr "alt" attrs)	input-image-alt: drop not -> missing alt no longer flagged
+src/Cribrum/AA/Pass.idr	elem (toLower v) ["row", "col", "rowgroup", "colgroup"]	not (elem (toLower v) ["row", "col", "rowgroup", "colgroup"])	th-scope-valid: invert -> valid scope flagged, bogus passes
+src/Cribrum/AA/Pass.idr	Just _  => if hasAccessibleName attrs cs	Just _  => if not (hasAccessibleName attrs cs)	no-empty-heading: invert -> named heading flagged, empty passes
+src/Cribrum/AA/Pass.idr	trim (concatMap collectText cs) /= ""	trim (concatMap collectText cs) == ""	hasAccessibleName: invert text check (covers object + th-has-name)
