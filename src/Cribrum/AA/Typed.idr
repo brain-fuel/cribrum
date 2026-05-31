@@ -29,6 +29,7 @@ module Cribrum.AA.Typed
 
 import Data.List
 import Data.So
+import Data.String
 import Cribrum.Node
 import public Cribrum.AA.Promote
 
@@ -670,6 +671,260 @@ noEmptyHeadingsAllOk : HExpr -> Bool
 noEmptyHeadingsAllOk = allNodesOk noEmptyHeadingOkBool
 
 --------------------------------------------------------------------------------
+-- select-has-options: per-node. A `<select>` must contain at least one
+-- `<option>` (directly or inside an `<optgroup>`).
+--------------------------------------------------------------------------------
+
+selectHasOption : List HExpr -> Bool
+selectHasOption []        = False
+selectHasOption (c :: cs) = case c of
+  Element "option"   _ _   => True
+  Element "optgroup" _ gcs => selectHasOption gcs || selectHasOption cs
+  _                        => selectHasOption cs
+
+public export
+selectHasOptionsOkBool : HExpr -> Bool
+selectHasOptionsOkBool (Element "select" _ cs) = selectHasOption cs
+selectHasOptionsOkBool _                       = True
+
+public export
+SelectHasOptionsHereOk : HExpr -> Type
+SelectHasOptionsHereOk = NodeOk selectHasOptionsOkBool
+
+public export
+decSelectHasOptionsHereOk : (h : HExpr) -> Dec (SelectHasOptionsHereOk h)
+decSelectHasOptionsHereOk = decNodeOk selectHasOptionsOkBool
+
+public export
+SelectHasOptionsAllOk : HExpr -> Type
+SelectHasOptionsAllOk = AllNodesOk selectHasOptionsOkBool
+
+public export
+decSelectHasOptionsAllOk : (h : HExpr) -> Dec (SelectHasOptionsAllOk h)
+decSelectHasOptionsAllOk = decAllNodesOk selectHasOptionsOkBool
+
+public export
+selectHasOptionsAllOk : HExpr -> Bool
+selectHasOptionsAllOk = allNodesOk selectHasOptionsOkBool
+
+--------------------------------------------------------------------------------
+-- caption-first-child: per-node. A `<table>`'s `<caption>`, when present,
+-- must be its first child element. A table without a caption is fine.
+--------------------------------------------------------------------------------
+
+firstElementIsCaption : List HExpr -> Bool
+firstElementIsCaption []        = True
+firstElementIsCaption (c :: cs) = case c of
+  Element "caption" _ _ => True
+  Element _         _ _ => False
+  _                     => firstElementIsCaption cs
+
+tableHasCaption : List HExpr -> Bool
+tableHasCaption []        = False
+tableHasCaption (c :: cs) = case c of
+  Element "caption" _ _ => True
+  _                     => tableHasCaption cs
+
+public export
+captionFirstChildOkBool : HExpr -> Bool
+captionFirstChildOkBool (Element "table" _ cs) =
+  not (tableHasCaption cs) || firstElementIsCaption cs
+captionFirstChildOkBool _                      = True
+
+public export
+CaptionFirstChildHereOk : HExpr -> Type
+CaptionFirstChildHereOk = NodeOk captionFirstChildOkBool
+
+public export
+decCaptionFirstChildHereOk : (h : HExpr) -> Dec (CaptionFirstChildHereOk h)
+decCaptionFirstChildHereOk = decNodeOk captionFirstChildOkBool
+
+public export
+CaptionFirstChildAllOk : HExpr -> Type
+CaptionFirstChildAllOk = AllNodesOk captionFirstChildOkBool
+
+public export
+decCaptionFirstChildAllOk : (h : HExpr) -> Dec (CaptionFirstChildAllOk h)
+decCaptionFirstChildAllOk = decAllNodesOk captionFirstChildOkBool
+
+public export
+captionFirstChildAllOk : HExpr -> Bool
+captionFirstChildAllOk = allNodesOk captionFirstChildOkBool
+
+--------------------------------------------------------------------------------
+-- input-button-name: per-node. `<input type=button|submit|reset>` must have
+-- a non-empty `value`, `aria-label`, or `title` accessible name.
+--------------------------------------------------------------------------------
+
+isButtonInput : List HAttr -> Bool
+isButtonInput attrs = case attrValueLookup "type" attrs of
+  Just v  => elem (lowerStr v) ["button", "submit", "reset"]
+  Nothing => False
+
+public export
+inputButtonNameOkBool : HExpr -> Bool
+inputButtonNameOkBool (Element "input" attrs _) =
+  not (isButtonInput attrs)
+    || hasNonEmptyAttr "value" attrs
+    || hasNonEmptyAttr "aria-label" attrs
+    || hasNonEmptyAttr "title" attrs
+inputButtonNameOkBool _                         = True
+
+public export
+InputButtonNameHereOk : HExpr -> Type
+InputButtonNameHereOk = NodeOk inputButtonNameOkBool
+
+public export
+decInputButtonNameHereOk : (h : HExpr) -> Dec (InputButtonNameHereOk h)
+decInputButtonNameHereOk = decNodeOk inputButtonNameOkBool
+
+public export
+InputButtonNamesAllOk : HExpr -> Type
+InputButtonNamesAllOk = AllNodesOk inputButtonNameOkBool
+
+public export
+decInputButtonNamesAllOk : (h : HExpr) -> Dec (InputButtonNamesAllOk h)
+decInputButtonNamesAllOk = decAllNodesOk inputButtonNameOkBool
+
+public export
+inputButtonNamesAllOk : HExpr -> Bool
+inputButtonNamesAllOk = allNodesOk inputButtonNameOkBool
+
+--------------------------------------------------------------------------------
+-- aria-hidden-body: per-node. `<body aria-hidden="true">` hides the whole
+-- document from the accessibility tree.
+--------------------------------------------------------------------------------
+
+public export
+ariaHiddenBodyOkBool : HExpr -> Bool
+ariaHiddenBodyOkBool (Element "body" attrs _) =
+  case attrValueLookup "aria-hidden" attrs of
+    Just v  => lowerStr v /= "true"
+    Nothing => True
+ariaHiddenBodyOkBool _                        = True
+
+public export
+AriaHiddenBodyHereOk : HExpr -> Type
+AriaHiddenBodyHereOk = NodeOk ariaHiddenBodyOkBool
+
+public export
+decAriaHiddenBodyHereOk : (h : HExpr) -> Dec (AriaHiddenBodyHereOk h)
+decAriaHiddenBodyHereOk = decNodeOk ariaHiddenBodyOkBool
+
+public export
+AriaHiddenBodyAllOk : HExpr -> Type
+AriaHiddenBodyAllOk = AllNodesOk ariaHiddenBodyOkBool
+
+public export
+decAriaHiddenBodyAllOk : (h : HExpr) -> Dec (AriaHiddenBodyAllOk h)
+decAriaHiddenBodyAllOk = decAllNodesOk ariaHiddenBodyOkBool
+
+public export
+ariaHiddenBodyAllOk : HExpr -> Bool
+ariaHiddenBodyAllOk = allNodesOk ariaHiddenBodyOkBool
+
+--------------------------------------------------------------------------------
+-- aria-role-valid: per-node. A `role` attribute value must be a defined
+-- WAI-ARIA role token. An empty/absent `role` is in scope of other rules.
+--------------------------------------------------------------------------------
+
+ariaRoles : List String
+ariaRoles =
+  [ "alert", "alertdialog", "application", "article", "banner", "blockquote"
+  , "button", "caption", "cell", "checkbox", "code", "columnheader"
+  , "combobox", "complementary", "contentinfo", "definition", "deletion"
+  , "dialog", "directory", "document", "emphasis", "feed", "figure", "form"
+  , "generic", "grid", "gridcell", "group", "heading", "img", "insertion"
+  , "link", "list", "listbox", "listitem", "log", "main", "marquee", "math"
+  , "menu", "menubar", "menuitem", "menuitemcheckbox", "menuitemradio"
+  , "meter", "navigation", "none", "note", "option", "paragraph"
+  , "presentation", "progressbar", "radio", "radiogroup", "region", "row"
+  , "rowgroup", "rowheader", "scrollbar", "search", "searchbox", "separator"
+  , "slider", "spinbutton", "status", "strong", "subscript", "superscript"
+  , "switch", "tab", "table", "tablist", "tabpanel", "term", "textbox"
+  , "time", "timer", "toolbar", "tooltip", "tree", "treegrid", "treeitem" ]
+
+public export
+ariaRoleOkBool : HExpr -> Bool
+ariaRoleOkBool (Element _ attrs _) =
+  case attrValueLookup "role" attrs of
+    Just v  => let t = lowerStr v in t == "" || elem t ariaRoles
+    Nothing => True
+ariaRoleOkBool _                   = True
+
+public export
+AriaRoleHereOk : HExpr -> Type
+AriaRoleHereOk = NodeOk ariaRoleOkBool
+
+public export
+decAriaRoleHereOk : (h : HExpr) -> Dec (AriaRoleHereOk h)
+decAriaRoleHereOk = decNodeOk ariaRoleOkBool
+
+public export
+AriaRolesAllOk : HExpr -> Type
+AriaRolesAllOk = AllNodesOk ariaRoleOkBool
+
+public export
+decAriaRolesAllOk : (h : HExpr) -> Dec (AriaRolesAllOk h)
+decAriaRolesAllOk = decAllNodesOk ariaRoleOkBool
+
+public export
+ariaRolesAllOk : HExpr -> Bool
+ariaRolesAllOk = allNodesOk ariaRoleOkBool
+
+--------------------------------------------------------------------------------
+-- autocomplete-valid: per-node. An `autocomplete` value must be made of
+-- known field-name tokens (or the coarse on/off switches).
+--------------------------------------------------------------------------------
+
+autocompleteTokens : List String
+autocompleteTokens =
+  [ "on", "off"
+  , "name", "honorific-prefix", "given-name", "additional-name"
+  , "family-name", "honorific-suffix", "nickname", "username"
+  , "new-password", "current-password", "one-time-code"
+  , "organization-title", "organization", "street-address"
+  , "address-line1", "address-line2", "address-line3"
+  , "address-level1", "address-level2", "address-level3", "address-level4"
+  , "country", "country-name", "postal-code"
+  , "cc-name", "cc-given-name", "cc-additional-name", "cc-family-name"
+  , "cc-number", "cc-exp", "cc-exp-month", "cc-exp-year", "cc-csc", "cc-type"
+  , "transaction-currency", "transaction-amount", "language", "bday"
+  , "bday-day", "bday-month", "bday-year", "sex", "url", "photo"
+  , "tel", "tel-country-code", "tel-national", "tel-area-code"
+  , "tel-local", "tel-extension", "email", "impp" ]
+
+public export
+autocompleteOkBool : HExpr -> Bool
+autocompleteOkBool (Element _ attrs _) =
+  case attrValueLookup "autocomplete" attrs of
+    Just v  =>
+      let toks = filter (/= "") (map lowerStr (words v))
+       in all (\t => elem t autocompleteTokens) toks
+    Nothing => True
+autocompleteOkBool _                   = True
+
+public export
+AutocompleteHereOk : HExpr -> Type
+AutocompleteHereOk = NodeOk autocompleteOkBool
+
+public export
+decAutocompleteHereOk : (h : HExpr) -> Dec (AutocompleteHereOk h)
+decAutocompleteHereOk = decNodeOk autocompleteOkBool
+
+public export
+AutocompletesAllOk : HExpr -> Type
+AutocompletesAllOk = AllNodesOk autocompleteOkBool
+
+public export
+decAutocompletesAllOk : (h : HExpr) -> Dec (AutocompletesAllOk h)
+decAutocompletesAllOk = decAllNodesOk autocompleteOkBool
+
+public export
+autocompletesAllOk : HExpr -> Bool
+autocompletesAllOk = allNodesOk autocompleteOkBool
+
+--------------------------------------------------------------------------------
 -- document-lang: ROOT-only rule. Proposition fires only when the top-level
 -- node is `<html>`; descendant `<html>` nodes (illegal anyway under
 -- Phase-2 validity) are ignored here.
@@ -847,4 +1102,10 @@ isTypedPromoted "object-name"       = True
 isTypedPromoted "th-scope-valid"    = True
 isTypedPromoted "th-has-name"       = True
 isTypedPromoted "no-empty-heading"  = True
+isTypedPromoted "select-has-options"  = True
+isTypedPromoted "caption-first-child" = True
+isTypedPromoted "input-button-name"   = True
+isTypedPromoted "aria-hidden-body"    = True
+isTypedPromoted "aria-role-valid"     = True
+isTypedPromoted "autocomplete-valid"  = True
 isTypedPromoted _                   = False

@@ -715,6 +715,163 @@ ext_heading_with_text_ok = oneShot $
     Right report => elem "no-empty-heading" (ruleIds report) === False
     Left e       => failWith Nothing e
 
+-- ----------------------------------------------------------------------------
+-- New structural rules: select-has-options, caption-first-child,
+-- input-button-name, aria-hidden-body, aria-role-valid, autocomplete-valid.
+-- ----------------------------------------------------------------------------
+
+export
+ext_select_without_options_fires : Property
+ext_select_without_options_fires = oneShot $
+  case checked (Element "select" [MkHAttr "name" (Str "x")] []) of
+    Right report => elem "select-has-options" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_select_with_option_ok : Property
+ext_select_with_option_ok = oneShot $
+  case checked (Element "select" [MkHAttr "name" (Str "x")]
+                 [ Element "option" [] [Text "A"] ]) of
+    Right report => elem "select-has-options" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+||| An `<option>` nested inside an `<optgroup>` still satisfies the rule.
+export
+ext_select_option_in_optgroup_ok : Property
+ext_select_option_in_optgroup_ok = oneShot $
+  case checked (Element "select" [MkHAttr "name" (Str "x")]
+                 [ Element "optgroup" [MkHAttr "label" (Str "g")]
+                     [ Element "option" [] [Text "A"] ] ]) of
+    Right report => elem "select-has-options" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_caption_not_first_fires : Property
+ext_caption_not_first_fires = oneShot $
+  case checked (Element "table" []
+                 [ Element "tr"      [] [ Element "td" [] [Text "x"] ]
+                 , Element "caption" [] [Text "late caption"]
+                 ]) of
+    Right report => elem "caption-first-child" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_caption_first_ok : Property
+ext_caption_first_ok = oneShot $
+  case checked (Element "table" []
+                 [ Element "caption" [] [Text "title"]
+                 , Element "tr"      [] [ Element "td" [] [Text "x"] ]
+                 ]) of
+    Right report => elem "caption-first-child" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+||| A table with no caption at all never triggers the placement rule.
+export
+ext_table_no_caption_skipped : Property
+ext_table_no_caption_skipped = oneShot $
+  case checked (Element "table" []
+                 [ Element "tr" [] [ Element "td" [] [Text "x"] ] ]) of
+    Right report => elem "caption-first-child" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_input_button_without_name_fires : Property
+ext_input_button_without_name_fires = oneShot $
+  case checked (Element "input" [MkHAttr "type" (Str "button")] []) of
+    Right report => elem "input-button-name" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_input_button_with_value_ok : Property
+ext_input_button_with_value_ok = oneShot $
+  case checked (Element "input" [ MkHAttr "type"  (Str "submit")
+                                , MkHAttr "value" (Str "Send")
+                                ] []) of
+    Right report => elem "input-button-name" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+||| A text input (not a button-type) is out of scope for input-button-name.
+export
+ext_input_text_skips_button_name : Property
+ext_input_text_skips_button_name = oneShot $
+  case checked (Element "input" [MkHAttr "type" (Str "text")] []) of
+    Right report => elem "input-button-name" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_aria_hidden_body_fires : Property
+ext_aria_hidden_body_fires = oneShot $
+  case checked (Element "body" [MkHAttr "aria-hidden" (Str "true")]
+                 [Element "p" [] [Text "."]]) of
+    Right report => elem "aria-hidden-body" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_aria_hidden_body_false_ok : Property
+ext_aria_hidden_body_false_ok = oneShot $
+  case checked (Element "body" [MkHAttr "aria-hidden" (Str "false")]
+                 [Element "p" [] [Text "."]]) of
+    Right report => elem "aria-hidden-body" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+||| `aria-hidden` on a non-body element is out of scope for this rule.
+export
+ext_aria_hidden_div_skipped : Property
+ext_aria_hidden_div_skipped = oneShot $
+  case checked (Element "div" [MkHAttr "aria-hidden" (Str "true")] [Text "x"]) of
+    Right report => elem "aria-hidden-body" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_invalid_role_fires : Property
+ext_invalid_role_fires = oneShot $
+  case checked (Element "div" [MkHAttr "role" (Str "buton")] [Text "x"]) of
+    Right report => elem "aria-role-valid" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_valid_role_ok : Property
+ext_valid_role_ok = oneShot $
+  case checked (Element "div" [MkHAttr "role" (Str "navigation")] [Text "x"]) of
+    Right report => elem "aria-role-valid" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+||| No `role` attribute at all never triggers aria-role-valid.
+export
+ext_no_role_skipped : Property
+ext_no_role_skipped = oneShot $
+  case checked (Element "div" [] [Text "x"]) of
+    Right report => elem "aria-role-valid" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_invalid_autocomplete_fires : Property
+ext_invalid_autocomplete_fires = oneShot $
+  case checked (Element "input" [ MkHAttr "type"         (Str "text")
+                                , MkHAttr "autocomplete" (Str "full-name")
+                                ] []) of
+    Right report => elem "autocomplete-valid" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_valid_autocomplete_ok : Property
+ext_valid_autocomplete_ok = oneShot $
+  case checked (Element "input" [ MkHAttr "type"         (Str "text")
+                                , MkHAttr "autocomplete" (Str "given-name")
+                                ] []) of
+    Right report => elem "autocomplete-valid" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+||| `autocomplete="off"` (a coarse switch) is a known token.
+export
+ext_autocomplete_off_ok : Property
+ext_autocomplete_off_ok = oneShot $
+  case checked (Element "input" [ MkHAttr "type"         (Str "text")
+                                , MkHAttr "autocomplete" (Str "off")
+                                ] []) of
+    Right report => elem "autocomplete-valid" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
 group = MkGroup "Cribrum.AA.Pass"
   [ ("ext_valid_p_no_findings",                ext_valid_p_no_findings)
   , ("ext_img_no_alt_emits_finding",           ext_img_no_alt_emits_finding)
@@ -788,4 +945,22 @@ group = MkGroup "Cribrum.AA.Pass"
   , ("ext_th_with_text_ok",                    ext_th_with_text_ok)
   , ("ext_empty_heading_fires",                ext_empty_heading_fires)
   , ("ext_heading_with_text_ok",               ext_heading_with_text_ok)
+  , ("ext_select_without_options_fires",       ext_select_without_options_fires)
+  , ("ext_select_with_option_ok",              ext_select_with_option_ok)
+  , ("ext_select_option_in_optgroup_ok",       ext_select_option_in_optgroup_ok)
+  , ("ext_caption_not_first_fires",            ext_caption_not_first_fires)
+  , ("ext_caption_first_ok",                   ext_caption_first_ok)
+  , ("ext_table_no_caption_skipped",           ext_table_no_caption_skipped)
+  , ("ext_input_button_without_name_fires",    ext_input_button_without_name_fires)
+  , ("ext_input_button_with_value_ok",         ext_input_button_with_value_ok)
+  , ("ext_input_text_skips_button_name",       ext_input_text_skips_button_name)
+  , ("ext_aria_hidden_body_fires",             ext_aria_hidden_body_fires)
+  , ("ext_aria_hidden_body_false_ok",          ext_aria_hidden_body_false_ok)
+  , ("ext_aria_hidden_div_skipped",            ext_aria_hidden_div_skipped)
+  , ("ext_invalid_role_fires",                 ext_invalid_role_fires)
+  , ("ext_valid_role_ok",                      ext_valid_role_ok)
+  , ("ext_no_role_skipped",                    ext_no_role_skipped)
+  , ("ext_invalid_autocomplete_fires",         ext_invalid_autocomplete_fires)
+  , ("ext_valid_autocomplete_ok",              ext_valid_autocomplete_ok)
+  , ("ext_autocomplete_off_ok",                ext_autocomplete_off_ok)
   ]

@@ -60,10 +60,12 @@ ext_promoted_count_matches = oneShot $
   length promotedIdsInCatalog === length structuralIds
 
 ||| The expected Structural rule ids — pins the catalog shape and
-||| guards against silent renames in `aa.ts`. 21 Structural rules:
+||| guards against silent renames in `aa.ts`. 27 Structural rules:
 ||| 16 prior (11 originals + area-alt, link-empty-href, meta-no-refresh,
 ||| summary-not-empty, track-kind) + input-image-alt, object-name,
-||| th-scope-valid, th-has-name, no-empty-heading.
+||| th-scope-valid, th-has-name, no-empty-heading + select-has-options,
+||| caption-first-child, input-button-name, aria-hidden-body,
+||| aria-role-valid, autocomplete-valid.
 export
 ext_structural_ids_canonical : Property
 ext_structural_ids_canonical = oneShot $
@@ -89,6 +91,12 @@ ext_structural_ids_canonical = oneShot $
          , "th-scope-valid"
          , "th-has-name"
          , "no-empty-heading"
+         , "select-has-options"
+         , "caption-first-child"
+         , "input-button-name"
+         , "aria-hidden-body"
+         , "aria-role-valid"
+         , "autocomplete-valid"
          ]
 
 ||| Heuristic/Runtime rules. Pinned so any reclassification (or addition

@@ -69,14 +69,34 @@ export const AA_CATALOG: AARuleRow[] = [
     title: "Each `<area>` with `href` must have an `alt` attribute",
     confidence: "Structural", severity: "Error" },
 
+  { id: "aria-hidden-body",
+    wcag: "4.1.2", level: "A",
+    title: "`<body>` must not carry `aria-hidden=\"true\"` (hides the whole page from assistive tech)",
+    confidence: "Structural", severity: "Error" },
+
   { id: "aria-label-redundant",
     wcag: "4.1.2", level: "AA",
     title: "`aria-label` should not duplicate the element's visible text",
     confidence: "Heuristic", severity: "Warning" },
 
+  { id: "aria-role-valid",
+    wcag: "4.1.2", level: "A",
+    title: "A `role` attribute value must be a defined WAI-ARIA role token",
+    confidence: "Structural", severity: "Error" },
+
+  { id: "autocomplete-valid",
+    wcag: "1.3.5", level: "AA",
+    title: "An `autocomplete` value must be a known token (or on/off)",
+    confidence: "Structural", severity: "Error" },
+
   { id: "button-name",
     wcag: "4.1.2", level: "A",
     title: "Each `<button>` must have an accessible name (text content or `aria-label`)",
+    confidence: "Structural", severity: "Error" },
+
+  { id: "caption-first-child",
+    wcag: "1.3.1", level: "A",
+    title: "A `<table>` `<caption>`, if present, must be the table's first child",
     confidence: "Structural", severity: "Error" },
 
   { id: "document-lang",
@@ -114,6 +134,11 @@ export const AA_CATALOG: AARuleRow[] = [
     title: "`<input type=\"image\">` must have a non-empty `alt` attribute",
     confidence: "Structural", severity: "Error" },
 
+  { id: "input-button-name",
+    wcag: "4.1.2", level: "A",
+    title: "`<input type=\"button|submit|reset\">` must have a `value` or `aria-label`/`title` accessible name",
+    confidence: "Structural", severity: "Error" },
+
   { id: "label-for-control",
     wcag: "1.3.1", level: "A",
     title: "Each `<label>` must have a `for` attribute or contain its control",
@@ -148,6 +173,11 @@ export const AA_CATALOG: AARuleRow[] = [
     wcag: "2.4.3", level: "A",
     title: "Positive `tabindex` values disrupt natural focus order",
     confidence: "Heuristic", severity: "Warning" },
+
+  { id: "select-has-options",
+    wcag: "4.1.2", level: "A",
+    title: "A `<select>` must contain at least one `<option>` to be operable",
+    confidence: "Structural", severity: "Error" },
 
   { id: "summary-not-empty",
     wcag: "1.3.1", level: "A",

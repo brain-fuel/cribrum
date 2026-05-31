@@ -370,6 +370,135 @@ checkNoEmptyHeading p t attrs cs = case isHeadingTag t of
                        ("<" ++ t ++ "> has no accessible name (empty heading)")]
   Nothing => []
 
+||| `<select>` must contain at least one `<option>` (directly or inside an
+||| `<optgroup>`); an empty select offers nothing operable. STRUCTURAL.
+selectHasOption : List HExpr -> Bool
+selectHasOption []        = False
+selectHasOption (c :: cs) = case c of
+  Element "option"   _ _   => True
+  Element "optgroup" _ gcs => selectHasOption gcs || selectHasOption cs
+  _                        => selectHasOption cs
+
+checkSelectHasOptions : Path -> String -> List HExpr -> List Finding
+checkSelectHasOptions p "select" cs =
+  if selectHasOption cs
+    then []
+    else [MkFinding ruleSelectHasOptions p
+            "<select> contains no <option>"]
+checkSelectHasOptions _ _ _ = []
+
+||| A `<table>`'s `<caption>`, when present, must be its first child element
+||| (the HTML spec fixes this position; a misplaced caption is not announced
+||| as the table's name). A table without a caption is fine. STRUCTURAL.
+firstElementIsCaption : List HExpr -> Bool
+firstElementIsCaption []        = True   -- no element children: vacuously ok
+firstElementIsCaption (c :: cs) = case c of
+  Element "caption" _ _ => True
+  Element _         _ _ => False          -- first element is something else
+  _                     => firstElementIsCaption cs  -- skip text/comment/raw
+
+tableHasCaption : List HExpr -> Bool
+tableHasCaption = any (\c => case c of
+  Element "caption" _ _ => True
+  _                     => False)
+
+checkCaptionFirstChild : Path -> String -> List HExpr -> List Finding
+checkCaptionFirstChild p "table" cs =
+  if tableHasCaption cs && not (firstElementIsCaption cs)
+    then [MkFinding ruleCaptionFirstChild p
+            "<caption> must be the <table>'s first child"]
+    else []
+checkCaptionFirstChild _ _ _ = []
+
+||| `<input type=button|submit|reset>` is a button control; its accessible
+||| name comes from the `value` attribute (or `aria-label`/`title`). A reset/
+||| submit button defaults to a UA-supplied label, but a plain `type=button`
+||| with no value is unnamed. STRUCTURAL.
+isButtonInput : String -> Bool
+isButtonInput v = elem (toLower v) ["button", "submit", "reset"]
+
+checkInputButtonName : Path -> String -> List HAttr -> List Finding
+checkInputButtonName p "input" attrs = case attrValue "type" attrs of
+  Just t  => if isButtonInput t
+               && not (hasNonEmptyAttr "value" attrs)
+               && not (hasNonEmptyAttr "aria-label" attrs)
+               && not (hasNonEmptyAttr "title" attrs)
+               then [MkFinding ruleInputButtonName p
+                       ("<input type=\"" ++ toLower t
+                          ++ "\"> has no accessible name (no value/aria-label/title)")]
+               else []
+  Nothing => []
+checkInputButtonName _ _ _ = []
+
+||| `aria-hidden="true"` on `<body>` removes the entire document from the
+||| accessibility tree. STRUCTURAL.
+checkAriaHiddenBody : Path -> String -> List HAttr -> List Finding
+checkAriaHiddenBody p "body" attrs = case attrValue "aria-hidden" attrs of
+  Just v  => if toLower (trim v) == "true"
+               then [MkFinding ruleAriaHiddenBody p
+                       "aria-hidden=\"true\" on <body> hides the whole page"]
+               else []
+  Nothing => []
+checkAriaHiddenBody _ _ _ = []
+
+||| WAI-ARIA 1.2 role token set (the values legal as a single `role` token).
+||| A `role` value not in this set is undefined and ignored by AT. STRUCTURAL.
+ariaRoles : List String
+ariaRoles =
+  [ "alert", "alertdialog", "application", "article", "banner", "blockquote"
+  , "button", "caption", "cell", "checkbox", "code", "columnheader"
+  , "combobox", "complementary", "contentinfo", "definition", "deletion"
+  , "dialog", "directory", "document", "emphasis", "feed", "figure", "form"
+  , "generic", "grid", "gridcell", "group", "heading", "img", "insertion"
+  , "link", "list", "listbox", "listitem", "log", "main", "marquee", "math"
+  , "menu", "menubar", "menuitem", "menuitemcheckbox", "menuitemradio"
+  , "meter", "navigation", "none", "note", "option", "paragraph"
+  , "presentation", "progressbar", "radio", "radiogroup", "region", "row"
+  , "rowgroup", "rowheader", "scrollbar", "search", "searchbox", "separator"
+  , "slider", "spinbutton", "status", "strong", "subscript", "superscript"
+  , "switch", "tab", "table", "tablist", "tabpanel", "term", "textbox"
+  , "time", "timer", "toolbar", "tooltip", "tree", "treegrid", "treeitem" ]
+
+checkAriaRoleValid : Path -> String -> List HAttr -> List Finding
+checkAriaRoleValid p _ attrs = case attrValue "role" attrs of
+  Just v  =>
+    let tok = toLower (trim v)
+     in if tok == "" || elem tok ariaRoles
+          then []
+          else [MkFinding ruleAriaRoleValid p
+                  ("role=\"" ++ v ++ "\" is not a defined ARIA role")]
+  Nothing => []
+
+||| `autocomplete` field-name tokens (the closed set that names an input's
+||| purpose per WCAG 1.3.5 + HTML autofill detail tokens). `on`/`off` are the
+||| coarse switches. A token outside this set is undefined. STRUCTURAL.
+autocompleteTokens : List String
+autocompleteTokens =
+  [ "on", "off"
+  , "name", "honorific-prefix", "given-name", "additional-name"
+  , "family-name", "honorific-suffix", "nickname", "username"
+  , "new-password", "current-password", "one-time-code"
+  , "organization-title", "organization", "street-address"
+  , "address-line1", "address-line2", "address-line3"
+  , "address-level1", "address-level2", "address-level3", "address-level4"
+  , "country", "country-name", "postal-code"
+  , "cc-name", "cc-given-name", "cc-additional-name", "cc-family-name"
+  , "cc-number", "cc-exp", "cc-exp-month", "cc-exp-year", "cc-csc", "cc-type"
+  , "transaction-currency", "transaction-amount", "language", "bday"
+  , "bday-day", "bday-month", "bday-year", "sex", "url", "photo"
+  , "tel", "tel-country-code", "tel-national", "tel-area-code"
+  , "tel-local", "tel-extension", "email", "impp" ]
+
+checkAutocompleteValid : Path -> String -> List HAttr -> List Finding
+checkAutocompleteValid p _ attrs = case attrValue "autocomplete" attrs of
+  Just v  =>
+    let toks = filter (/= "") (map toLower (words (trim v)))
+     in if all (\t => elem t autocompleteTokens) toks
+          then []
+          else [MkFinding ruleAutocompleteValid p
+                  ("autocomplete=\"" ++ v ++ "\" contains an unknown token")]
+  Nothing => []
+
 --------------------------------------------------------------------------------
 -- Heading-skip check (whole-tree, not per-node).
 --------------------------------------------------------------------------------
@@ -521,6 +650,12 @@ nodeRuleImpls =
   , (ruleThScopeValid,       pAttr      checkThScopeValid)
   , (ruleThHasName,          pNode      checkThHasName)
   , (ruleNoEmptyHeading,     pNode      checkNoEmptyHeading)
+  , (ruleSelectHasOptions,   pCh        checkSelectHasOptions)
+  , (ruleCaptionFirstChild,  pCh        checkCaptionFirstChild)
+  , (ruleInputButtonName,    pAttr      checkInputButtonName)
+  , (ruleAriaHiddenBody,     pAttr      checkAriaHiddenBody)
+  , (ruleAriaRoleValid,      pAttr      checkAriaRoleValid)
+  , (ruleAutocompleteValid,  pAttr      checkAutocompleteValid)
   ]
 
 ||| Whole-tree rule signature. Invoked once on the document root by
