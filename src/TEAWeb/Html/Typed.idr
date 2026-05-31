@@ -145,6 +145,10 @@ isTagAllowedIn "blockquote" c = isFlowTag c
 isTagAllowedIn "form"       c = isFlowTag c
 isTagAllowedIn "li"         c = isFlowTag c
 isTagAllowedIn "figcaption" c = isFlowTag c
+-- Table cells + caption → flow-content children (OnlyCategories [Flow]).
+isTagAllowedIn "td"         c = isFlowTag c
+isTagAllowedIn "th"         c = isFlowTag c
+isTagAllowedIn "caption"    c = isFlowTag c
 -- Phrasing parents → phrasing-content children.
 isTagAllowedIn "p"          c = isPhrasingTag c
 isTagAllowedIn "h1"         c = isPhrasingTag c
@@ -169,6 +173,37 @@ isTagAllowedIn "ol" "li"       = True
 isTagAllowedIn "ol" "script"   = True
 isTagAllowedIn "ol" "template" = True
 isTagAllowedIn "ol" _           = False
+-- Table structural parents (OnlyTags ... False). Exact-tag membership,
+-- no text, matching the catalog's allowed-child sets.
+isTagAllowedIn "table" "caption"  = True
+isTagAllowedIn "table" "colgroup" = True
+isTagAllowedIn "table" "thead"    = True
+isTagAllowedIn "table" "tbody"    = True
+isTagAllowedIn "table" "tfoot"    = True
+isTagAllowedIn "table" "tr"       = True
+isTagAllowedIn "table" "script"   = True
+isTagAllowedIn "table" "template" = True
+isTagAllowedIn "table" _           = False
+isTagAllowedIn "thead" "tr"       = True
+isTagAllowedIn "thead" "script"   = True
+isTagAllowedIn "thead" "template" = True
+isTagAllowedIn "thead" _           = False
+isTagAllowedIn "tbody" "tr"       = True
+isTagAllowedIn "tbody" "script"   = True
+isTagAllowedIn "tbody" "template" = True
+isTagAllowedIn "tbody" _           = False
+isTagAllowedIn "tfoot" "tr"       = True
+isTagAllowedIn "tfoot" "script"   = True
+isTagAllowedIn "tfoot" "template" = True
+isTagAllowedIn "tfoot" _           = False
+isTagAllowedIn "tr" "td"          = True
+isTagAllowedIn "tr" "th"          = True
+isTagAllowedIn "tr" "script"      = True
+isTagAllowedIn "tr" "template"    = True
+isTagAllowedIn "tr" _              = False
+isTagAllowedIn "colgroup" "col"      = True
+isTagAllowedIn "colgroup" "template" = True
+isTagAllowedIn "colgroup" _           = False
 -- Transparent / unspecified parents: accept anything.
 isTagAllowedIn "a"        _ = True
 isTagAllowedIn "figure"   _ = True
@@ -211,6 +246,12 @@ allowsText "footer"     = True
 allowsText "blockquote" = True
 allowsText "form"       = True
 allowsText "li"         = True
+-- Table cells + caption are OnlyCategories [Flow] → text (phrasing ⊆
+-- flow) is permitted. The OnlyTags table-structure parents (table,
+-- thead, tbody, tfoot, tr, colgroup) fall through to the False default.
+allowsText "td"         = True
+allowsText "th"         = True
+allowsText "caption"    = True
 -- Transparent / unspecified.
 allowsText "a"          = True
 allowsText "figure"     = True
@@ -225,6 +266,7 @@ allowsComment "br"    = False
 allowsComment "hr"    = False
 allowsComment "img"   = False
 allowsComment "input" = False
+allowsComment "col"   = False
 allowsComment _       = True
 
 --------------------------------------------------------------------------------
@@ -424,6 +466,62 @@ blockquoteT_ : List (Attr msg) -> List (Child "blockquote" msg) -> TypedView "bl
 blockquoteT_ = typedElement_ "blockquote"
 
 --------------------------------------------------------------------------------
+-- Table family — content-model-typed structure.
+--
+-- The child rules below are not hand-asserted here; they are the
+-- `isTagAllowedIn` policy branches added for the table tags, each of
+-- which is pinned to the catalog (`childAllowedBool`) by the drift gate
+-- `pddt_typed_table_predicate_matches_catalog`. A child not permitted by
+-- the parent's catalog content model fails to auto-discharge the
+-- `So (isTagAllowedIn parent child)` witness in `c_`, i.e. it is a
+-- compile error at the typed constructor boundary:
+--
+--   * `tableT_` admits only caption / colgroup / thead / tbody / tfoot /
+--     tr (+ script / template).
+--   * `theadT_` / `tbodyT_` / `tfootT_` admit only `tr` (+ script /
+--     template); no bare `td`/`th`.
+--   * `trT_` admits only `td` / `th` (+ script / template).
+--   * `tdT_` / `thT_` / `captionT_` admit flow content (incl. text).
+--   * `colgroupT_` admits only `col` (+ template); `colT_` is void.
+--------------------------------------------------------------------------------
+
+public export
+tableT_ : List (Attr msg) -> List (Child "table" msg) -> TypedView "table" msg
+tableT_ = typedElement_ "table"
+
+public export
+captionT_ : List (Attr msg) -> List (Child "caption" msg) -> TypedView "caption" msg
+captionT_ = typedElement_ "caption"
+
+public export
+colgroupT_ : List (Attr msg) -> List (Child "colgroup" msg) -> TypedView "colgroup" msg
+colgroupT_ = typedElement_ "colgroup"
+
+public export
+theadT_ : List (Attr msg) -> List (Child "thead" msg) -> TypedView "thead" msg
+theadT_ = typedElement_ "thead"
+
+public export
+tbodyT_ : List (Attr msg) -> List (Child "tbody" msg) -> TypedView "tbody" msg
+tbodyT_ = typedElement_ "tbody"
+
+public export
+tfootT_ : List (Attr msg) -> List (Child "tfoot" msg) -> TypedView "tfoot" msg
+tfootT_ = typedElement_ "tfoot"
+
+public export
+trT_ : List (Attr msg) -> List (Child "tr" msg) -> TypedView "tr" msg
+trT_ = typedElement_ "tr"
+
+public export
+tdT_ : List (Attr msg) -> List (Child "td" msg) -> TypedView "td" msg
+tdT_ = typedElement_ "td"
+
+public export
+thT_ : List (Attr msg) -> List (Child "th" msg) -> TypedView "th" msg
+thT_ = typedElement_ "th"
+
+--------------------------------------------------------------------------------
 -- Void-element typed wrappers — no children to type-check.
 --------------------------------------------------------------------------------
 
@@ -442,6 +540,11 @@ imgT_ attrs = MkTypedView (mkElement "img" attrs [])
 public export
 inputT_ : List (Attr msg) -> TypedView "input" msg
 inputT_ attrs = MkTypedView (mkElement "input" attrs [])
+
+||| `<col>` — void table-column element (NoChildren in the catalog).
+public export
+colT_ : List (Attr msg) -> TypedView "col" msg
+colT_ attrs = MkTypedView (mkElement "col" attrs [])
 
 --------------------------------------------------------------------------------
 -- Bridge back to the untyped TEAWeb.Html layer.

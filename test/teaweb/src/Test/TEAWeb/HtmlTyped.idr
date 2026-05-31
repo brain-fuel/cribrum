@@ -134,6 +134,81 @@ ext_nested_typed_views_concat_handlers = withTests 1 . property $ do
   length (handlers (view v)) === 2
   map fst (handlers (view v)) === ["c1", "c2"]
 
+||| Well-formed table builds from typed constructors: caption, colgroup
+||| of cols, thead/tbody of trs, trs of th/td cells. Every child position
+||| is auto-discharged against the catalog content model — this whole
+||| expression typechecking *is* the positive content-model proof.
+export
+ext_tableT_well_formed_builds : Property
+ext_tableT_well_formed_builds = withTests 1 . property $ do
+  let v : TypedView "table" Msg
+      v = tableT_ []
+            [ c_ (captionT_  [] [tx_ "Scores"])
+            , c_ (colgroupT_ [] [ c_ (colT_ []), c_ (colT_ []) ])
+            , c_ (theadT_ []
+                [ c_ (trT_ []
+                    [ c_ (thT_ [] [tx_ "Name"])
+                    , c_ (thT_ [] [tx_ "Pts"])
+                    ])
+                ])
+            , c_ (tbodyT_ []
+                [ c_ (trT_ []
+                    [ c_ (tdT_ [] [tx_ "Ada"])
+                    , c_ (tdT_ [] [ c_ (strongT_ [] [tx_ "99"]) ])
+                    ])
+                ])
+            ]
+  case tree (view v) of
+    Element t _ cs => do
+      t === "table"
+      length cs === 4
+    _              => failWith Nothing "expected table Element"
+  -- The whole typed tree is, by construction, valid HTML: route the
+  -- underlying view through the Phase-2 gate as a belt-and-braces check.
+  case viewSafe (unTyped v) of
+    Right _ => pure ()
+    Left e  => failWith Nothing ("typed table should pass viewSafe: " ++ show e)
+
+||| Negative side of the guarantee, at the *catalog* level: a stray `<p>`
+||| placed directly under `<table>` (which the typed `tableT_` constructor
+||| makes a compile error, since `isTagAllowedIn "table" "p" = False` does
+||| not auto-discharge) is rejected by the same content model the typed
+||| layer consumes. We build the malformed tree with the *untyped*
+||| constructors — the only way to express it as a runtime value — and
+||| show the model rejects it with the table-structure rejection class.
+export
+ext_malformed_table_rejected_by_model : Property
+ext_malformed_table_rejected_by_model = withTests 1 . property $ do
+  -- `isTagAllowedIn "table" "p"` is False, so `c_ (pT_ ...)` under a
+  -- `tableT_` would fail to typecheck. The validator agrees:
+  isTagAllowedIn "table" "p" === False
+  let bad : View Msg
+      bad = mkElement "table" [] [ mkElement "p" [] [text_ "loose"] ]
+  case viewSafe bad of
+    Right _                            =>
+      failWith Nothing "expected viewSafe to reject p directly under table"
+    Left (InvalidHtml (MkLocatedReject path reason)) => do
+      path === [0]
+      case reason of
+        MalformedTable parent child => do
+          parent === "table"
+          child  === "p"
+        other => failWith Nothing ("expected MalformedTable, got " ++ show other)
+
+||| A bare `<td>` directly under `<table>` (skipping the required
+||| row/section nesting) is likewise rejected by the catalog the typed
+||| layer reuses; `isTagAllowedIn` refuses to discharge it.
+export
+ext_td_directly_in_table_rejected : Property
+ext_td_directly_in_table_rejected = withTests 1 . property $ do
+  isTagAllowedIn "table" "td" === False
+  isTagAllowedIn "tr"    "td" === True
+  let bad : View Msg
+      bad = mkElement "table" [] [ mkElement "td" [] [text_ "x"] ]
+  case viewSafe bad of
+    Right _ => failWith Nothing "expected viewSafe to reject td directly under table"
+    Left _  => pure ()
+
 ||| `unTyped` exposes the underlying `View msg` to the rest of the
 ||| TEAWeb pipeline (Program.view, viewSafe, etc.).
 export
@@ -188,6 +263,36 @@ pddt_typed_predicate_matches_catalog = withTests 1 . property $
     isTagAllowedIn parent childTag
       === childAllowedBool parent (Element childTag [] [])
 
+||| Table-family drift gate. Same single-source-of-truth pin as above, but
+||| over the table parents + table-relevant child tags. Every typed table
+||| constructor's permitted-child rule must equal the catalog
+||| (`childAllowedBool`) — so the compile-time `So (isTagAllowedIn ...)`
+||| witness the typed table layer discharges is exactly the catalog's
+||| content-model decision, never a hand-coded second copy.
+tableParents : List String
+tableParents =
+  [ "table", "caption", "colgroup", "thead", "tbody", "tfoot", "tr"
+  , "td", "th"
+  ]
+
+tableChildCandidates : List String
+tableChildCandidates =
+  [ "caption", "colgroup", "col", "thead", "tbody", "tfoot", "tr"
+  , "td", "th", "p", "div", "span", "li", "ul", "script", "template"
+  , "strong", "a"
+  ]
+
+tableDriftPairs : List (String, String)
+tableDriftPairs =
+  [ (p, c) | p <- tableParents, c <- tableChildCandidates ]
+
+export
+pddt_typed_table_predicate_matches_catalog : Property
+pddt_typed_table_predicate_matches_catalog = withTests 1 . property $
+  for_ tableDriftPairs $ \(parent, childTag) =>
+    isTagAllowedIn parent childTag
+      === childAllowedBool parent (Element childTag [] [])
+
 --------------------------------------------------------------------------------
 -- PDDT — every typed shorthand produces an Element with the expected tag.
 --------------------------------------------------------------------------------
@@ -224,6 +329,16 @@ shorthandT =
   , (view (codeT_      [] []), "code")
   , (view (preT_       [] []), "pre")
   , (view (blockquoteT_ [] []), "blockquote")
+  , (view (tableT_     [] []), "table")
+  , (view (captionT_   [] []), "caption")
+  , (view (colgroupT_  [] []), "colgroup")
+  , (view (theadT_     [] []), "thead")
+  , (view (tbodyT_     [] []), "tbody")
+  , (view (tfootT_     [] []), "tfoot")
+  , (view (trT_        [] []), "tr")
+  , (view (tdT_        [] []), "td")
+  , (view (thT_        [] []), "th")
+  , (view (colT_       []),    "col")
   , (view (brT_        []),    "br")
   , (view (hrT_        []),    "hr")
   , (view (imgT_       []),    "img")
@@ -265,8 +380,12 @@ group = MkGroup "TEAWeb.Html.Typed"
   , ("ext_buttonT_carries_handler",              ext_buttonT_carries_handler)
   , ("ext_voidT_wrappers_are_childless",         ext_voidT_wrappers_are_childless)
   , ("ext_nested_typed_views_concat_handlers",   ext_nested_typed_views_concat_handlers)
+  , ("ext_tableT_well_formed_builds",            ext_tableT_well_formed_builds)
+  , ("ext_malformed_table_rejected_by_model",    ext_malformed_table_rejected_by_model)
+  , ("ext_td_directly_in_table_rejected",        ext_td_directly_in_table_rejected)
   , ("ext_unTyped_projects_view",                ext_unTyped_projects_view)
   , ("pddt_typed_predicate_matches_catalog",     pddt_typed_predicate_matches_catalog)
+  , ("pddt_typed_table_predicate_matches_catalog", pddt_typed_table_predicate_matches_catalog)
   , ("pddt_typed_shorthand_tags",                pddt_typed_shorthand_tags)
   , ("pbt_typed_button_handlers_propagate",      pbt_typed_button_handlers_propagate)
   ]
