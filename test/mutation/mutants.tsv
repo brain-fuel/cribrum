@@ -257,3 +257,9 @@ src/Cribrum/AA/Pass.idr	toLower v == "image" && not (hasNonEmptyAttr "alt" attrs
 src/Cribrum/AA/Pass.idr	elem (toLower v) ["row", "col", "rowgroup", "colgroup"]	not (elem (toLower v) ["row", "col", "rowgroup", "colgroup"])	th-scope-valid: invert -> valid scope flagged, bogus passes
 src/Cribrum/AA/Pass.idr	Just _  => if hasAccessibleName attrs cs	Just _  => if not (hasAccessibleName attrs cs)	no-empty-heading: invert -> named heading flagged, empty passes
 src/Cribrum/AA/Pass.idr	trim (concatMap collectText cs) /= ""	trim (concatMap collectText cs) == ""	hasAccessibleName: invert text check (covers object + th-has-name)
+src/Cribrum/AA/Pass.idr	if selectHasOption cs	if not (selectHasOption cs)	select-has-options: invert -> populated select flagged, empty passes
+src/Cribrum/AA/Pass.idr	if tableHasCaption cs && not (firstElementIsCaption cs)	if tableHasCaption cs && (firstElementIsCaption cs)	caption-first-child: drop not -> misplaced caption no longer flagged
+src/Cribrum/AA/Pass.idr	Just t  => if isButtonInput t	Just t  => if not (isButtonInput t)	input-button-name: invert -> nameless button input no longer flagged
+src/Cribrum/AA/Pass.idr	if toLower (trim v) == "true"	if toLower (trim v) /= "true"	aria-hidden-body: invert -> aria-hidden body no longer flagged
+src/Cribrum/AA/Pass.idr	if tok == "" || elem tok ariaRoles	if tok == "" || not (elem tok ariaRoles)	aria-role-valid: invert -> valid role flagged, bogus passes
+src/Cribrum/AA/Pass.idr	all (\t => elem t autocompleteTokens) toks	all (\t => not (elem t autocompleteTokens)) toks	autocomplete-valid: invert token membership
