@@ -109,6 +109,11 @@ export const AA_CATALOG: AARuleRow[] = [
     title: "Images must have an `alt` attribute",
     confidence: "Structural", severity: "Error" },
 
+  { id: "input-image-alt",
+    wcag: "1.1.1", level: "A",
+    title: "`<input type=\"image\">` must have a non-empty `alt` attribute",
+    confidence: "Structural", severity: "Error" },
+
   { id: "label-for-control",
     wcag: "1.3.1", level: "A",
     title: "Each `<label>` must have a `for` attribute or contain its control",
@@ -129,6 +134,16 @@ export const AA_CATALOG: AARuleRow[] = [
     title: "`<meta http-equiv=\"refresh\">` triggers an unsolicited timeout",
     confidence: "Structural", severity: "Error" },
 
+  { id: "no-empty-heading",
+    wcag: "1.3.1", level: "A",
+    title: "Heading elements (`<h1>`..`<h6>`) must have a non-empty accessible name",
+    confidence: "Structural", severity: "Error" },
+
+  { id: "object-name",
+    wcag: "1.1.1", level: "A",
+    title: "Each `<object>` must have an accessible name (text content, `aria-label`, or `title`)",
+    confidence: "Structural", severity: "Error" },
+
   { id: "positive-tabindex",
     wcag: "2.4.3", level: "A",
     title: "Positive `tabindex` values disrupt natural focus order",
@@ -137,6 +152,16 @@ export const AA_CATALOG: AARuleRow[] = [
   { id: "summary-not-empty",
     wcag: "1.3.1", level: "A",
     title: "`<details>` must contain a non-empty `<summary>` for accessible name",
+    confidence: "Structural", severity: "Error" },
+
+  { id: "th-has-name",
+    wcag: "1.3.1", level: "A",
+    title: "Each table header cell (`<th>`) must have a non-empty accessible name",
+    confidence: "Structural", severity: "Error" },
+
+  { id: "th-scope-valid",
+    wcag: "1.3.1", level: "A",
+    title: "A `<th scope>` value must be one of row, col, rowgroup, colgroup",
     confidence: "Structural", severity: "Error" },
 
   { id: "track-kind",

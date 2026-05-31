@@ -318,6 +318,58 @@ checkPositiveTabindex p attrs = case attrValue "tabindex" attrs of
     Nothing => []                      -- non-numeric (e.g. tabindex="-1") ignored
   Nothing => []
 
+||| `<input type="image">` is a graphical submit button and must carry a
+||| non-empty `alt` (WCAG 1.1.1). STRUCTURAL.
+checkInputImageAlt : Path -> String -> List HAttr -> List Finding
+checkInputImageAlt p "input" attrs =
+  case attrValue "type" attrs of
+    Just v  => if toLower v == "image" && not (hasNonEmptyAttr "alt" attrs)
+                 then [MkFinding ruleInputImageAlt p
+                         "<input type=\"image\"> missing non-empty alt attribute"]
+                 else []
+    Nothing => []
+checkInputImageAlt _ _ _ = []
+
+||| `<object>` embeds external content and must expose an accessible name
+||| (fallback text, `aria-label`, or `title`). STRUCTURAL.
+checkObjectName : Path -> String -> List HAttr -> List HExpr -> List Finding
+checkObjectName p "object" attrs cs =
+  if hasAccessibleName attrs cs
+    then []
+    else [MkFinding ruleObjectName p
+            "<object> has no accessible name (empty text + no aria-label/title)"]
+checkObjectName _ _ _ _ = []
+
+||| A `<th scope>` value must be one of {row, col, rowgroup, colgroup};
+||| a `<th>` without `scope` is fine. STRUCTURAL.
+checkThScopeValid : Path -> String -> List HAttr -> List Finding
+checkThScopeValid p "th" attrs = case attrValue "scope" attrs of
+  Just v  => if elem (toLower v) ["row", "col", "rowgroup", "colgroup"]
+               then []
+               else [MkFinding ruleThScopeValid p
+                       ("<th scope=\"" ++ v ++ "\"> is not a valid scope value")]
+  Nothing => []
+checkThScopeValid _ _ _ = []
+
+||| Table header cell `<th>` must have an accessible name. STRUCTURAL.
+checkThHasName : Path -> String -> List HAttr -> List HExpr -> List Finding
+checkThHasName p "th" attrs cs =
+  if hasAccessibleName attrs cs
+    then []
+    else [MkFinding ruleThHasName p
+            "<th> has no accessible name (empty text + no aria-label/title)"]
+checkThHasName _ _ _ _ = []
+
+||| Heading element (`<h1>`..`<h6>`) must have a non-empty accessible name.
+||| STRUCTURAL.
+checkNoEmptyHeading : Path -> String -> List HAttr -> List HExpr -> List Finding
+checkNoEmptyHeading p t attrs cs = case isHeadingTag t of
+  Just _  => if hasAccessibleName attrs cs
+               then []
+               else [MkFinding ruleNoEmptyHeading p
+                       ("<" ++ t ++ "> has no accessible name (empty heading)")]
+  Nothing => []
+
 --------------------------------------------------------------------------------
 -- Heading-skip check (whole-tree, not per-node).
 --------------------------------------------------------------------------------
@@ -464,6 +516,11 @@ nodeRuleImpls =
   , (ruleSummaryNotEmpty,    pCh        checkSummaryNotEmpty)
   , (ruleAriaLabelRedundant, pNode      checkAriaLabelRedundant)
   , (rulePositiveTabindex,   pAttrsOnly checkPositiveTabindex)
+  , (ruleInputImageAlt,      pAttr      checkInputImageAlt)
+  , (ruleObjectName,         pNode      checkObjectName)
+  , (ruleThScopeValid,       pAttr      checkThScopeValid)
+  , (ruleThHasName,          pNode      checkThHasName)
+  , (ruleNoEmptyHeading,     pNode      checkNoEmptyHeading)
   ]
 
 ||| Whole-tree rule signature. Invoked once on the document root by

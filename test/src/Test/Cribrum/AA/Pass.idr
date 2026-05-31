@@ -609,6 +609,112 @@ ext_tabindex_negative_one_ok = oneShot $
       filter ((== "positive-tabindex") . Rule.id . rule) report === []
     Left e => failWith Nothing e
 
+-- ----------------------------------------------------------------------------
+-- New structural rules: input-image-alt, object-name, th-scope-valid,
+-- th-has-name, no-empty-heading.
+-- ----------------------------------------------------------------------------
+
+export
+ext_input_image_without_alt_fires : Property
+ext_input_image_without_alt_fires = oneShot $
+  case checked (Element "input"
+                 [ MkHAttr "type" (Str "image")
+                 , MkHAttr "src"  (Str "/submit.png") ] []) of
+    Right report => elem "input-image-alt" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_input_image_with_alt_ok : Property
+ext_input_image_with_alt_ok = oneShot $
+  case checked (Element "input"
+                 [ MkHAttr "type" (Str "image")
+                 , MkHAttr "src"  (Str "/submit.png")
+                 , MkHAttr "alt"  (Str "Submit") ] []) of
+    Right report => elem "input-image-alt" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+||| A text input (not type=image) never triggers input-image-alt.
+export
+ext_input_text_skips_image_alt : Property
+ext_input_text_skips_image_alt = oneShot $
+  case checked (Element "input" [MkHAttr "type" (Str "text")] []) of
+    Right report => elem "input-image-alt" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_object_without_name_fires : Property
+ext_object_without_name_fires = oneShot $
+  case checked (Element "object" [MkHAttr "data" (Str "/movie.swf")] []) of
+    Right report => elem "object-name" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_object_with_fallback_text_ok : Property
+ext_object_with_fallback_text_ok = oneShot $
+  case checked (Element "object" [MkHAttr "data" (Str "/movie.swf")]
+                 [ Text "A short film" ]) of
+    Right report => elem "object-name" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_object_with_aria_label_ok : Property
+ext_object_with_aria_label_ok = oneShot $
+  case checked (Element "object" [ MkHAttr "data"       (Str "/movie.swf")
+                                 , MkHAttr "aria-label" (Str "A short film")
+                                 ] []) of
+    Right report => elem "object-name" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_th_invalid_scope_fires : Property
+ext_th_invalid_scope_fires = oneShot $
+  case checked (Element "th" [MkHAttr "scope" (Str "diagonal")] [Text "x"]) of
+    Right report => elem "th-scope-valid" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_th_valid_scope_ok : Property
+ext_th_valid_scope_ok = oneShot $
+  case checked (Element "th" [MkHAttr "scope" (Str "col")] [Text "x"]) of
+    Right report => elem "th-scope-valid" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+||| A `<th>` with no `scope` attribute never triggers th-scope-valid.
+export
+ext_th_no_scope_skips_scope_rule : Property
+ext_th_no_scope_skips_scope_rule = oneShot $
+  case checked (Element "th" [] [Text "Name"]) of
+    Right report => elem "th-scope-valid" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_th_without_name_fires : Property
+ext_th_without_name_fires = oneShot $
+  case checked (Element "th" [] []) of
+    Right report => elem "th-has-name" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_th_with_text_ok : Property
+ext_th_with_text_ok = oneShot $
+  case checked (Element "th" [] [Text "Name"]) of
+    Right report => elem "th-has-name" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
+export
+ext_empty_heading_fires : Property
+ext_empty_heading_fires = oneShot $
+  case checked (Element "h2" [] []) of
+    Right report => elem "no-empty-heading" (ruleIds report) === True
+    Left e       => failWith Nothing e
+
+export
+ext_heading_with_text_ok : Property
+ext_heading_with_text_ok = oneShot $
+  case checked (Element "h2" [] [Text "Section title"]) of
+    Right report => elem "no-empty-heading" (ruleIds report) === False
+    Left e       => failWith Nothing e
+
 group = MkGroup "Cribrum.AA.Pass"
   [ ("ext_valid_p_no_findings",                ext_valid_p_no_findings)
   , ("ext_img_no_alt_emits_finding",           ext_img_no_alt_emits_finding)
@@ -669,4 +775,17 @@ group = MkGroup "Cribrum.AA.Pass"
   , ("ext_positive_tabindex_is_heuristic",     ext_positive_tabindex_is_heuristic)
   , ("ext_tabindex_zero_ok",                   ext_tabindex_zero_ok)
   , ("ext_tabindex_negative_one_ok",           ext_tabindex_negative_one_ok)
+  , ("ext_input_image_without_alt_fires",      ext_input_image_without_alt_fires)
+  , ("ext_input_image_with_alt_ok",            ext_input_image_with_alt_ok)
+  , ("ext_input_text_skips_image_alt",         ext_input_text_skips_image_alt)
+  , ("ext_object_without_name_fires",          ext_object_without_name_fires)
+  , ("ext_object_with_fallback_text_ok",       ext_object_with_fallback_text_ok)
+  , ("ext_object_with_aria_label_ok",          ext_object_with_aria_label_ok)
+  , ("ext_th_invalid_scope_fires",             ext_th_invalid_scope_fires)
+  , ("ext_th_valid_scope_ok",                  ext_th_valid_scope_ok)
+  , ("ext_th_no_scope_skips_scope_rule",       ext_th_no_scope_skips_scope_rule)
+  , ("ext_th_without_name_fires",              ext_th_without_name_fires)
+  , ("ext_th_with_text_ok",                    ext_th_with_text_ok)
+  , ("ext_empty_heading_fires",                ext_empty_heading_fires)
+  , ("ext_heading_with_text_ok",               ext_heading_with_text_ok)
   ]

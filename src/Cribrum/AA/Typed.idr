@@ -501,6 +501,175 @@ tracksAllOk : HExpr -> Bool
 tracksAllOk = allNodesOk trackOkBool
 
 --------------------------------------------------------------------------------
+-- input-image-alt: per-node. `<input type="image">` is a graphical submit
+-- button; under WCAG 1.1.1 it must carry a non-empty `alt`. Non-image
+-- inputs (and inputs without an explicit `type`) are not in scope.
+--------------------------------------------------------------------------------
+
+isImageInput : List HAttr -> Bool
+isImageInput attrs = case attrValueLookup "type" attrs of
+  Just v  => lowerStr v == "image"
+  Nothing => False
+
+public export
+inputImageOkBool : HExpr -> Bool
+inputImageOkBool (Element "input" attrs _) =
+  not (isImageInput attrs) || hasNonEmptyAttr "alt" attrs
+inputImageOkBool _                         = True
+
+public export
+InputImageHereOk : HExpr -> Type
+InputImageHereOk = NodeOk inputImageOkBool
+
+public export
+decInputImageHereOk : (h : HExpr) -> Dec (InputImageHereOk h)
+decInputImageHereOk = decNodeOk inputImageOkBool
+
+public export
+InputImagesAllOk : HExpr -> Type
+InputImagesAllOk = AllNodesOk inputImageOkBool
+
+public export
+decInputImagesAllOk : (h : HExpr) -> Dec (InputImagesAllOk h)
+decInputImagesAllOk = decAllNodesOk inputImageOkBool
+
+public export
+inputImagesAllOk : HExpr -> Bool
+inputImagesAllOk = allNodesOk inputImageOkBool
+
+--------------------------------------------------------------------------------
+-- object-name: per-node. An `<object>` embeds external content; under WCAG
+-- 1.1.1 it must expose an accessible name (its fallback text content, an
+-- `aria-label`, or a `title`).
+--------------------------------------------------------------------------------
+
+public export
+objectNameOkBool : HExpr -> Bool
+objectNameOkBool (Element "object" attrs cs) = hasAccessibleName attrs cs
+objectNameOkBool _                           = True
+
+public export
+ObjectNameHereOk : HExpr -> Type
+ObjectNameHereOk = NodeOk objectNameOkBool
+
+public export
+decObjectNameHereOk : (h : HExpr) -> Dec (ObjectNameHereOk h)
+decObjectNameHereOk = decNodeOk objectNameOkBool
+
+public export
+ObjectNamesAllOk : HExpr -> Type
+ObjectNamesAllOk = AllNodesOk objectNameOkBool
+
+public export
+decObjectNamesAllOk : (h : HExpr) -> Dec (ObjectNamesAllOk h)
+decObjectNamesAllOk = decAllNodesOk objectNameOkBool
+
+public export
+objectNamesAllOk : HExpr -> Bool
+objectNamesAllOk = allNodesOk objectNameOkBool
+
+--------------------------------------------------------------------------------
+-- th-scope-valid: per-node. When a `<th>` carries a `scope` attribute, its
+-- value must be one of {row, col, rowgroup, colgroup}; an out-of-enum value
+-- mis-associates the header with cells. A `<th>` with no `scope` is fine
+-- (scope is optional).
+--------------------------------------------------------------------------------
+
+public export
+thScopeOkBool : HExpr -> Bool
+thScopeOkBool (Element "th" attrs _) =
+  case attrValueLookup "scope" attrs of
+    Just v  => elem (lowerStr v) ["row", "col", "rowgroup", "colgroup"]
+    Nothing => True
+thScopeOkBool _                      = True
+
+public export
+ThScopeHereOk : HExpr -> Type
+ThScopeHereOk = NodeOk thScopeOkBool
+
+public export
+decThScopeHereOk : (h : HExpr) -> Dec (ThScopeHereOk h)
+decThScopeHereOk = decNodeOk thScopeOkBool
+
+public export
+ThScopesAllOk : HExpr -> Type
+ThScopesAllOk = AllNodesOk thScopeOkBool
+
+public export
+decThScopesAllOk : (h : HExpr) -> Dec (ThScopesAllOk h)
+decThScopesAllOk = decAllNodesOk thScopeOkBool
+
+public export
+thScopesAllOk : HExpr -> Bool
+thScopesAllOk = allNodesOk thScopeOkBool
+
+--------------------------------------------------------------------------------
+-- th-has-name: per-node. A table header cell `<th>` must have an accessible
+-- name (non-empty text content, `aria-label`, or `title`). An empty header
+-- cell gives assistive tech nothing to announce for its column/row.
+--------------------------------------------------------------------------------
+
+public export
+thHasNameOkBool : HExpr -> Bool
+thHasNameOkBool (Element "th" attrs cs) = hasAccessibleName attrs cs
+thHasNameOkBool _                       = True
+
+public export
+ThHasNameHereOk : HExpr -> Type
+ThHasNameHereOk = NodeOk thHasNameOkBool
+
+public export
+decThHasNameHereOk : (h : HExpr) -> Dec (ThHasNameHereOk h)
+decThHasNameHereOk = decNodeOk thHasNameOkBool
+
+public export
+ThHasNamesAllOk : HExpr -> Type
+ThHasNamesAllOk = AllNodesOk thHasNameOkBool
+
+public export
+decThHasNamesAllOk : (h : HExpr) -> Dec (ThHasNamesAllOk h)
+decThHasNamesAllOk = decAllNodesOk thHasNameOkBool
+
+public export
+thHasNamesAllOk : HExpr -> Bool
+thHasNamesAllOk = allNodesOk thHasNameOkBool
+
+--------------------------------------------------------------------------------
+-- no-empty-heading: per-node. A heading element (`<h1>`..`<h6>`) must have a
+-- non-empty accessible name (text content, `aria-label`, or `title`). An
+-- empty heading disrupts navigation by assistive tech.
+--------------------------------------------------------------------------------
+
+isHeadingName : String -> Bool
+isHeadingName t = elem t ["h1", "h2", "h3", "h4", "h5", "h6"]
+
+public export
+noEmptyHeadingOkBool : HExpr -> Bool
+noEmptyHeadingOkBool (Element t attrs cs) =
+  if isHeadingName t then hasAccessibleName attrs cs else True
+noEmptyHeadingOkBool _                    = True
+
+public export
+NoEmptyHeadingHereOk : HExpr -> Type
+NoEmptyHeadingHereOk = NodeOk noEmptyHeadingOkBool
+
+public export
+decNoEmptyHeadingHereOk : (h : HExpr) -> Dec (NoEmptyHeadingHereOk h)
+decNoEmptyHeadingHereOk = decNodeOk noEmptyHeadingOkBool
+
+public export
+NoEmptyHeadingsAllOk : HExpr -> Type
+NoEmptyHeadingsAllOk = AllNodesOk noEmptyHeadingOkBool
+
+public export
+decNoEmptyHeadingsAllOk : (h : HExpr) -> Dec (NoEmptyHeadingsAllOk h)
+decNoEmptyHeadingsAllOk = decAllNodesOk noEmptyHeadingOkBool
+
+public export
+noEmptyHeadingsAllOk : HExpr -> Bool
+noEmptyHeadingsAllOk = allNodesOk noEmptyHeadingOkBool
+
+--------------------------------------------------------------------------------
 -- document-lang: ROOT-only rule. Proposition fires only when the top-level
 -- node is `<html>`; descendant `<html>` nodes (illegal anyway under
 -- Phase-2 validity) are ignored here.
@@ -673,4 +842,9 @@ isTypedPromoted "link-empty-href"   = True
 isTypedPromoted "meta-no-refresh"   = True
 isTypedPromoted "summary-not-empty" = True
 isTypedPromoted "track-kind"        = True
+isTypedPromoted "input-image-alt"   = True
+isTypedPromoted "object-name"       = True
+isTypedPromoted "th-scope-valid"    = True
+isTypedPromoted "th-has-name"       = True
+isTypedPromoted "no-empty-heading"  = True
 isTypedPromoted _                   = False
