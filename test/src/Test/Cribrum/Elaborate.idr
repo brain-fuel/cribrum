@@ -189,6 +189,111 @@ ext_unique_main_failure_whole_tree = oneShot $
           failWith Nothing ("wrong rule/path: " ++ show other)
 
 --------------------------------------------------------------------------------
+-- Strict StructuralAA: the 5 rules promoted into the hard-error conjunct
+-- (input-image-alt, object-name, th-scope-valid, th-has-name,
+-- no-empty-heading). Each is per-node, so a violation surfaces with its
+-- catalog rule id + the located `Just path` of the offending node. A clean
+-- tree still passes the whole conjunct.
+--------------------------------------------------------------------------------
+
+||| An `<input type="image">` with no `alt` is now rejected by the
+||| StructuralAA gate with the `input-image-alt` rule id, located at the
+||| offending node (child 0 of the `<main>` root).
+export
+ext_strict_rejects_input_image_no_alt : Property
+ext_strict_rejects_input_image_no_alt = oneShot $
+  let bad : HExpr
+      bad = Element "main" []
+              [Element "input" [MkHAttr "type" (Str "image")] []]
+   in case decStructuralAA bad of
+        Right _                              =>
+          failWith Nothing "expected input-image-alt rejection"
+        Left ("input-image-alt", Just [0]) => success
+        Left other                           =>
+          failWith Nothing ("wrong rule/path: " ++ show other)
+
+||| A bare `<object>` with no fallback text, `aria-label`, or `title` is
+||| rejected with the `object-name` rule id, located.
+export
+ext_strict_rejects_object_no_name : Property
+ext_strict_rejects_object_no_name = oneShot $
+  let bad : HExpr
+      bad = Element "main" [] [Element "object" [] []]
+   in case decStructuralAA bad of
+        Right _                          =>
+          failWith Nothing "expected object-name rejection"
+        Left ("object-name", Just [0]) => success
+        Left other                       =>
+          failWith Nothing ("wrong rule/path: " ++ show other)
+
+||| A `<th scope="diagonal">` carries an out-of-enum scope and is rejected
+||| with the `th-scope-valid` rule id, located.
+export
+ext_strict_rejects_th_invalid_scope : Property
+ext_strict_rejects_th_invalid_scope = oneShot $
+  let bad : HExpr
+      bad = Element "main" []
+              [Element "th"
+                 [MkHAttr "scope" (Str "diagonal")] [Text "H"]]
+   in case decStructuralAA bad of
+        Right _                             =>
+          failWith Nothing "expected th-scope-valid rejection"
+        Left ("th-scope-valid", Just [0]) => success
+        Left other                          =>
+          failWith Nothing ("wrong rule/path: " ++ show other)
+
+||| An empty `<th>` (no accessible name) is rejected with the
+||| `th-has-name` rule id, located. A valid `scope` keeps the th-scope
+||| rule satisfied so th-has-name is the surfacing failure.
+export
+ext_strict_rejects_empty_th : Property
+ext_strict_rejects_empty_th = oneShot $
+  let bad : HExpr
+      bad = Element "main" []
+              [Element "th" [MkHAttr "scope" (Str "col")] []]
+   in case decStructuralAA bad of
+        Right _                          =>
+          failWith Nothing "expected th-has-name rejection"
+        Left ("th-has-name", Just [0]) => success
+        Left other                       =>
+          failWith Nothing ("wrong rule/path: " ++ show other)
+
+||| An empty heading (`<h2></h2>`) is rejected with the `no-empty-heading`
+||| rule id, located.
+export
+ext_strict_rejects_empty_heading : Property
+ext_strict_rejects_empty_heading = oneShot $
+  let bad : HExpr
+      bad = Element "main" [] [Element "h2" [] []]
+   in case decStructuralAA bad of
+        Right _                               =>
+          failWith Nothing "expected no-empty-heading rejection"
+        Left ("no-empty-heading", Just [0]) => success
+        Left other                            =>
+          failWith Nothing ("wrong rule/path: " ++ show other)
+
+||| A clean tree exercising all five newly-promoted element kinds with
+||| valid forms passes the whole StructuralAA conjunct (Right). Guards
+||| against an over-eager rejection that would reject conformant trees.
+export
+ext_strict_accepts_clean_promoted_kinds : Property
+ext_strict_accepts_clean_promoted_kinds = oneShot $
+  let good : HExpr
+      good = Element "main" []
+               [ Element "input"
+                   [ MkHAttr "type" (Str "image")
+                   , MkHAttr "alt" (Str "Search")
+                   ] []
+               , Element "object" [] [Text "a 3D model"]
+               , Element "th" [MkHAttr "scope" (Str "col")] [Text "Name"]
+               , Element "h1" [] [Text "Heading"]
+               ]
+   in case decStructuralAA good of
+        Right _    => success
+        Left other =>
+          failWith Nothing ("clean tree wrongly rejected: " ++ show other)
+
+--------------------------------------------------------------------------------
 -- PDDTs.
 --------------------------------------------------------------------------------
 
@@ -580,6 +685,19 @@ genSimpleInlines = list (linear 0 4) $
     , (\s => InlStrong [InlText s]) <$> string (linear 0 4) ascii
     ]
 
+||| Heading inline content guaranteed to have a non-empty accessible
+||| name. The free `genSimpleInlines` can yield `[]` or whitespace-only
+||| text, which strict elaboration now (rightly) rejects under the
+||| Phase-4 `no-empty-heading` rule; this generator pins a leading
+||| non-blank letter so the heading is always named.
+genHeadingInlines : Gen (List Inline)
+genHeadingInlines = do
+  c    <- element $ the (Vect _ Char)
+            ['a','b','c','d','e','f','g','h','i','j','k','l','m'
+            ,'n','o','p','q','r','s','t','u','v','w','x','y','z']
+  rest <- string (linear 0 7) ascii
+  pure [InlText (pack (c :: unpack rest))]
+
 ||| Clamp any heading sequence so it satisfies the Phase-4 heading-no-skip
 ||| rule (first heading any level; each subsequent heading <= prev + 1). The
 ||| free generator otherwise emits skips like `[h1, h3]` which strict
@@ -600,7 +718,7 @@ genSimpleBlocks : Gen (List Block)
 genSimpleBlocks = normalizeHeadings <$> (list (linear 0 4) $
   choice $ the (Vect _ (Gen Block))
     [ Paragraph emptyAttrs <$> genSimpleInlines
-    , [| Heading (pure emptyAttrs) genHeadingLevel genSimpleInlines |]
+    , [| Heading (pure emptyAttrs) genHeadingLevel genHeadingInlines |]
     , pure (ThematicBreak emptyAttrs)
     ])
 
@@ -1179,6 +1297,12 @@ group = MkGroup "Cribrum.Elaborate"
   , ("ext_per_node_rule_failure_is_located",
         ext_per_node_rule_failure_is_located)
   , ("ext_unique_main_failure_whole_tree",     ext_unique_main_failure_whole_tree)
+  , ("ext_strict_rejects_input_image_no_alt",  ext_strict_rejects_input_image_no_alt)
+  , ("ext_strict_rejects_object_no_name",      ext_strict_rejects_object_no_name)
+  , ("ext_strict_rejects_th_invalid_scope",    ext_strict_rejects_th_invalid_scope)
+  , ("ext_strict_rejects_empty_th",            ext_strict_rejects_empty_th)
+  , ("ext_strict_rejects_empty_heading",       ext_strict_rejects_empty_heading)
+  , ("ext_strict_accepts_clean_promoted_kinds", ext_strict_accepts_clean_promoted_kinds)
   , ("pddt_heading_tags",                      pddt_heading_tags)
   , ("pddt_inline_mapping",                    pddt_inline_mapping)
   , ("ext_inline_math_span",                   ext_inline_math_span)
