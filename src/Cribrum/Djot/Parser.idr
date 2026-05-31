@@ -536,6 +536,15 @@ stripHardBreakMarker ('\\' :: rs) = Just rs
 stripHardBreakMarker (c :: rs)    =
   if c == ' ' || c == '\t' then stripHardBreakMarker rs else Nothing
 
+||| True iff `cs` consists only of spaces/tabs up to a line-ending (`\n`)
+||| or the end of input — i.e. a preceding `\` is the hard-break marker
+||| rather than a non-breaking-space escape.
+skipTrailingWs : List Char -> Bool
+skipTrailingWs []          = True
+skipTrailingWs ('\n' :: _) = True
+skipTrailingWs (c :: cs)   =
+  if c == ' ' || c == '\t' then skipTrailingWs cs else False
+
 --------------------------------------------------------------------------------
 -- Inline attribute blocks (`{#id .cls key=val}` attached to inline content).
 --
@@ -620,6 +629,22 @@ parseInlineAttrBody body =
   foldl mergeInlineAttrs emptyAttrs
         (map braceTokenToAttrs (braceTokens body))
 
+||| `True` iff a single brace token is a valid attribute (`#id`, `.class`,
+||| or `key=val`). A bare token with no `=`/`#`/`.` (e.g. `''` in `{''}`)
+||| makes the braces literal text rather than an attribute block.
+isValidAttrToken : String -> Bool
+isValidAttrToken t = case unpack t of
+  ('#' :: _) => True
+  ('.' :: _) => True
+  cs'        => case break (== '=') cs' of
+    (_, '=' :: _) => True
+    _             => False
+
+||| `True` iff every token of a brace body is a valid attribute token.
+||| An empty body (`{}`) is a valid (empty) attribute block.
+attrBodyValid : List Char -> Bool
+attrBodyValid body = all isValidAttrToken (braceTokens body)
+
 ||| Recognise an inline attribute block at the start of `cs` (which is
 ||| the input AFTER the opening `{`). Returns the parsed `Attrs` and the
 ||| input after the close `}`, or `Nothing` if no matching `}`. The first
@@ -643,14 +668,6 @@ scanInlineAttr cs = case scanBraceBody cs of
         if all isValidAttrToken (braceTokens body)
           then Just (parseInlineAttrBody body, after)
           else Nothing
-  where
-    isValidAttrToken : String -> Bool
-    isValidAttrToken t = case unpack t of
-      ('#' :: _) => True
-      ('.' :: _) => True
-      cs'        => case break (== '=') cs' of
-        (_, '=' :: _) => True
-        _             => False
 
 ||| Split the reversed plain-text accumulator at the last whitespace,
 ||| returning `(beforeWord, word)` where `word` is the trailing run of
@@ -875,6 +892,16 @@ mutual
     -- accumulator so a later marker scan never sees it. A backslash before
     -- a non-punctuation char (or at end of the run) stays literal.
     '\\' => case cs of
+      (' ' :: rest) =>
+        -- `\` + space is a Djot non-breaking space, rendered as the literal
+        -- entity `&nbsp;` (an `InlRaw "html"` so it survives unescaped),
+        -- UNLESS the `\` is the hard-break marker: a `\` followed only by
+        -- trailing whitespace up to end-of-line. In that case leave the
+        -- `\` in `acc` so the `\n`/end handler emits the hard break.
+        if skipTrailingWs cs
+          then assert_total (parseInlinesAcc '\\' opSeen ('\\' :: acc) cs)
+          else flushE acc ++ [EInl (InlRaw "html" "&nbsp;")]
+                 ++ assert_total (parseInlinesAcc ' ' opSeen [] rest)
       (p :: rest) =>
         if isAsciiPunct p
           then assert_total (parseInlinesAcc p opSeen (p :: acc) rest)
@@ -1067,7 +1094,9 @@ mutual
           -- link but its `]` is immediately followed by an attribute block,
           -- the bracket body becomes an `InlSpan` carrying those attrs
           -- (Djot's span construct). Otherwise the `[` stays literal.
-          case findClose ']' cs of
+          -- Bracket-balanced so nested spans (`[a [b]{.x}]{#y}`) match the
+          -- OUTER `]`.
+          case findCloseBracket cs of
             Just (inner, ('{' :: braceRest)) =>
               case scanInlineAttr braceRest of
                 Just (attrs, after) =>
@@ -1118,12 +1147,8 @@ mutual
         flushE acc ++ [EInl (InlSmart Ellipsis)]
           ++ assert_total (parseInlinesAcc '.' opSeen [] rest)
       _ => assert_total (parseInlinesAcc '.' opSeen ('.' :: acc) cs)
-    '"' =>
-      flushE acc ++ [EInl (InlSmart (doubleQuote acc cs))]
-        ++ assert_total (parseInlinesAcc '"' opSeen [] cs)
-    '\'' =>
-      flushE acc ++ [EInl (InlSmart (singleQuote acc cs))]
-        ++ assert_total (parseInlinesAcc '\'' opSeen [] cs)
+    '"' => emitQuote LDQuote RDQuote (doubleQuote acc cs) opSeen acc cs
+    '\'' => emitQuote LSQuote RSQuote (singleQuote acc cs) opSeen acc cs
     -- Line break inside a paragraph body. The paragraph driver joins
     -- continuation lines with literal '\n' so multi-line constructs
     -- (verbatim spans) can swallow the newline naturally; outside such
@@ -1191,6 +1216,34 @@ mutual
      in flushE accNoBrace
           ++ [EDelim marker canOpen canClose bOpen bClose]
           ++ assert_total (parseInlinesAcc marker opSeen' [] rest)
+
+  ||| Emit a smart curly quote (`'` or `"`), honouring Djot's brace
+  ||| orientation markers: a `{` immediately before the quote (head of
+  ||| `acc`) forces the OPENING form and is consumed; a `}` immediately
+  ||| after (head of `cs`) forces the CLOSING form and is consumed. With no
+  ||| brace marker the orientation falls back to the flanking-based
+  ||| `dflt`. (Corpus smart-013: `{''}` -> `‘’`.)
+  emitQuote : SmartPunct -> SmartPunct -> SmartPunct
+           -> (opSeen : List Char) -> List Char -> List Char -> List ETok
+  emitQuote openQ closeQ dflt opSeen acc cs =
+    let bOpen      : Bool
+        bOpen      = case acc of
+                       ('{' :: _) => True
+                       _          => False
+        accNoBrace : List Char
+        accNoBrace = if bOpen then drop 1 acc else acc
+        bClose     : Bool
+        bClose     = case cs of
+                       ('}' :: _) => True
+                       _          => False
+        rest       : List Char
+        rest       = if bClose then drop 1 cs else cs
+        punct      : SmartPunct
+        punct      = if bOpen && not bClose then openQ
+                     else if bClose && not bOpen then closeQ
+                     else dflt
+     in flushE accNoBrace ++ [EInl (InlSmart punct)]
+          ++ assert_total (parseInlinesAcc '\'' opSeen [] rest)
 
   ||| Top-level inline tokenizer over character lists: tokenize, then
   ||| resolve `_`/`*` delimiters into emphasis/strong via the stack pass.
@@ -1753,7 +1806,13 @@ parseAttrBlockLine s =
                   ('+' :: _) => Nothing
                   ('-' :: _) => Nothing
                   ('=' :: _) => Nothing
-                  _          => Just (parseAttrBody body)
+                  -- Only a brace whose body is ALL valid attribute tokens
+                  -- is an attribute block. A line like `{''}hi{''}` has a
+                  -- bare (non-attribute) body and is ordinary paragraph
+                  -- text (corpus smart-013, regression-001).
+                  _          => if attrBodyValid bodyChars
+                                  then Just (parseAttrBody body)
+                                  else Nothing
           _ => Nothing
         _ => Nothing
 
@@ -1796,8 +1855,10 @@ parseMultiLineAttrBlock s rest =
        in case scanBraceBody joined of
             Just (body, leftover) =>
               -- Recognised only when nothing but whitespace trails the
-              -- close brace on the final line.
-              if all isSpace leftover
+              -- close brace on the final line AND the body is all valid
+              -- attribute tokens (so `{1--}` / `{1-}` stay paragraph text —
+              -- corpus regression-001).
+              if all isSpace leftover && attrBodyValid body
                 then Just (parseInlineAttrBody body, remaining)
                 else Nothing
             Nothing => case remaining of

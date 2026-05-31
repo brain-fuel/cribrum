@@ -32,6 +32,7 @@ blockquote-008
 blockquote-009
 blockquote-010
 blockquote-011
+blockquote-012
 blockquote-013
 blockquote-014
 blockquote-015
@@ -61,6 +62,7 @@ emphasis-014
 emphasis-015
 emphasis-016
 emphasis-017
+emphasis-018
 emphasis-019
 emphasis-020
 emphasis-021
@@ -81,6 +83,7 @@ escapes-002
 escapes-003
 escapes-004
 escapes-005
+escapes-006
 fenced-divs-001
 fenced-divs-002
 fenced-divs-003
@@ -183,6 +186,7 @@ smart-009
 smart-010
 smart-011
 smart-012
+smart-013
 smart-014
 smart-015
 smart-016
@@ -190,6 +194,7 @@ smart-017
 smart-018
 spans-001
 spans-002
+spans-003
 super-subscript-001
 super-subscript-002
 super-subscript-003

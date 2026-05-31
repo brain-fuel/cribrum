@@ -190,6 +190,9 @@ disambiguate base seen = disambiguateFrom 0 base seen
 ||| so a nested section disambiguates against its ancestor's id.
 walkNode : List String -> HExpr -> (List String, HExpr)
 
+walkSectionChildren : (skipHeading : Bool) -> List String -> List HExpr
+                   -> (List String, List HExpr)
+
 walkNodeList : List String -> List HExpr -> (List String, List HExpr)
 walkNodeList seen []        = (seen, [])
 walkNodeList seen (h :: hs) =
@@ -201,22 +204,63 @@ walkNode seen (Text s)    = (seen, Text s)
 walkNode seen (Comment s) = (seen, Comment s)
 walkNode seen (Raw s)     = (seen, Raw s)
 walkNode seen (Element t attrs cs) =
-  let (seen1, attrs') =
-        if t == "section" && not (hasAttrL "id" attrs)
-          then
-            let raw  = autoId (sectionHeadingText cs)
-                slug = if raw == ""
-                         then disambiguateFrom 1 "s" seen
-                         else disambiguate raw seen
-             in (slug :: seen, attrs ++ [MkHAttr "id" (Str slug)])
-          else
-            -- Pre-existing id (section or otherwise): record it so
-            -- later sections don't collide with it.
-            case attrValueL "id" attrs of
-              Just v  => (v :: seen, attrs)
-              Nothing => (seen, attrs)
-      (seen2, cs') = walkNodeList seen1 cs
-   in (seen2, Element t attrs' cs')
+  if isHeading t && not (hasAttrL "id" attrs)
+    then
+      -- A bare heading (NOT the direct heading-child of a section — those
+      -- are stripped out by `walkSectionChildren` before reaching here, so
+      -- their id stays on the section). This path catches headings that the
+      -- sectioniser left unwrapped, e.g. inside a `<blockquote>` / `<li>`:
+      -- the Djot reference puts the auto-id directly on the `<hN>`
+      -- (corpus blockquote-012).
+      let raw  = autoId (childrenText cs)
+          slug = if raw == ""
+                   then disambiguateFrom 1 "s" seen
+                   else disambiguate raw seen
+          (seen2, cs') = walkNodeList (slug :: seen) cs
+       in (seen2, Element t (attrs ++ [MkHAttr "id" (Str slug)]) cs')
+    else
+      let (seen1, attrs') =
+            if t == "section" && not (hasAttrL "id" attrs)
+              then
+                let raw  = autoId (sectionHeadingText cs)
+                    slug = if raw == ""
+                             then disambiguateFrom 1 "s" seen
+                             else disambiguate raw seen
+                 in (slug :: seen, attrs ++ [MkHAttr "id" (Str slug)])
+              else
+                -- Pre-existing id (section or otherwise): record it so
+                -- later sections don't collide with it.
+                case attrValueL "id" attrs of
+                  Just v  => (v :: seen, attrs)
+                  Nothing => (seen, attrs)
+          -- A `<section>` walks its children with its OWN direct heading
+          -- exempted from id-assignment (the id already rode onto the
+          -- section); every other context walks children normally.
+          (seen2, cs') = if t == "section"
+                           then walkSectionChildren True seen1 cs
+                           else walkNodeList seen1 cs
+       in (seen2, Element t attrs' cs')
+
+-- Walk a section's children. The first direct `<hN>` child is the
+-- section's own heading — leave it id-less (the id is on the section) and
+-- recurse into ITS inline children. `skipHeading` flips to `False` once
+-- that heading has been passed so any later heading (a malformed sibling)
+-- is treated normally.
+walkSectionChildren _ seen [] = (seen, [])
+walkSectionChildren skip seen (h :: hs) =
+  case h of
+    Element t a cs =>
+      if skip && isHeading t
+        then let (seen1, cs')  = walkNodeList seen cs
+                 (seen2, hs')  = walkSectionChildren False seen1 hs
+              in (seen2, Element t a cs' :: hs')
+        else let (seen1, h')   = walkNode seen h
+                 (seen2, hs')  = walkSectionChildren skip seen1 hs
+              in (seen2, h' :: hs')
+    _ =>
+      let (seen1, h')  = walkNode seen h
+          (seen2, hs') = walkSectionChildren skip seen1 hs
+       in (seen2, h' :: hs')
 
 ||| Decorate every unanchored `<section>` with an `id="<autoId>"`
 ||| attribute derived from its heading text. Idempotent — re-running on an
