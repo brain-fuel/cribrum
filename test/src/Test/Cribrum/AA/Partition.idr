@@ -103,11 +103,17 @@ ext_structural_ids_canonical = oneShot $
 ||| of a new Heuristic / Runtime rule) lands in the audit explicitly.
 |||
 ||| Three hand-curated Cribrum heuristics (`alt-meaningful`,
-||| `aria-label-redundant`, `positive-tabindex`) plus the ACT-rules
-||| ingest proof set (`act-*`, plan §P3.1). The ACT rows land Heuristic
-||| because their expectations are accessible-name / accessibility-tree
-||| predicates not yet statically decidable on Cribrum's HTML tree alone;
-||| a follow-up promotes the tree-decidable ones to Structural.
+||| `aria-label-redundant`, `positive-tabindex`); the §P3.2 Runtime
+||| catalog-metadata rows for the WCAG A/AA success criteria that are
+||| real but NOT statically decidable from a static HExpr (contrast,
+||| reflow, keyboard, focus-visible, error handling, status messages,
+||| captions/audio-description, etc.) — these document the full AA
+||| landscape and the audit proves they stay out of the type layer; and
+||| the ACT-rules ingest corpus (`act-*`, plan §P3.1/§P3.2). The ACT rows
+||| land Heuristic because their expectations are accessible-name /
+||| accessibility-tree predicates not yet statically decidable on
+||| Cribrum's HTML tree alone; a follow-up promotes the tree-decidable
+||| ones to Structural.
 export
 ext_nonstructural_ids_canonical : Property
 ext_nonstructural_ids_canonical = oneShot $
@@ -115,11 +121,48 @@ ext_nonstructural_ids_canonical = oneShot $
     sort [ "alt-meaningful"
          , "aria-label-redundant"
          , "positive-tabindex"
+         -- Runtime catalog-metadata rows (plan §P3.2): undecidable WCAG A/AA.
+         , "audio-description"
+         , "captions-live"
+         , "character-key-shortcuts"
+         , "consistent-identification"
+         , "consistent-navigation"
+         , "content-on-hover-focus"
+         , "contrast-minimum"
+         , "error-identification"
+         , "error-prevention-legal"
+         , "error-suggestion"
+         , "focus-visible"
+         , "images-of-text"
+         , "keyboard"
+         , "label-in-name"
+         , "motion-actuation"
+         , "no-keyboard-trap"
+         , "non-text-contrast"
+         , "orientation"
+         , "pointer-cancellation"
+         , "pointer-gestures"
+         , "reflow"
+         , "resize-text"
+         , "status-messages"
+         , "text-spacing"
+         -- ACT-rules ingest corpus (Heuristic).
+         , "act-aria-state-or-property-has-valid-value-6a7281"
+         , "act-attribute-is-not-duplicated-e6952f"
+         , "act-autocomplete-attribute-has-valid-value-73f2c2"
          , "act-button-has-non-empty-accessible-name-97a4e1"
+         , "act-form-field-has-non-empty-accessible-name-e086e5"
          , "act-html-page-has-lang-attribute-b5c3f8"
+         , "act-html-page-has-non-empty-title-2779a5"
+         , "act-id-attribute-value-is-unique-3ea0c8"
          , "act-iframe-element-has-non-empty-accessible-name-cae760"
+         , "act-image-button-has-non-empty-accessible-name-59796f"
          , "act-image-has-non-empty-accessible-name-23a2a8"
          , "act-link-has-non-empty-accessible-name-c487ae"
+         , "act-meta-viewport-allows-for-zoom-b4f0c3"
+         , "act-object-element-rendering-non-text-content-has-non-empty-accessible-name-8fc3b6"
+         , "act-role-attribute-has-valid-value-674b10"
+         , "act-summary-element-has-non-empty-accessible-name-2t702h"
          ]
 
 --------------------------------------------------------------------------------

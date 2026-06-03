@@ -324,11 +324,25 @@ export function loadActRows(): AARuleRow[] {
 // -----------------------------------------------------------------------------
 
 const PROOF_RULE_FILES = [
+  // Original proof set (plan §P3.1).
   "button-non-empty-accessible-name-97a4e1.md",
   "html-page-lang-b5c3f8.md",
   "iframe-non-empty-accessible-name-cae760.md",
   "image-non-empty-accessible-name-23a2a8.md",
   "link-non-empty-accessible-name-c487ae.md",
+  // Corpus expansion (plan §P3.2) — well-known atomic rules pulled from the
+  // same pinned commit, roughly doubling the ACT set toward the ~35 target.
+  "aria-state-or-property-valid-value-6a7281.md",
+  "attr-not-duplicated-e6952f.md",
+  "autocomplete-valid-value-73f2c2.md",
+  "form-field-non-empty-accessible-name-e086e5.md",
+  "html-page-non-empty-title-2779a5.md",
+  "id-value-unique-3ea0c8.md",
+  "image-button-non-empty-accessible-name-59796f.md",
+  "meta-viewport-b4f0c3.md",
+  "object-has-accessible-name-8fc3b6.md",
+  "role-attribute-valid-value-674b10.md",
+  "summary-non-empty-accessible-name-2t702h.md",
 ];
 
 async function download() {
